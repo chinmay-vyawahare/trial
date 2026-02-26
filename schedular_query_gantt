@@ -1,188 +1,372 @@
-"SELECT
-    -- ======== SITE IDENTIFICATION ========
+---
+
+**PRE-REQUISITE #1: Entitlement Complete**
+```sql
+-- Stakeholder: T-Mobile | Field Type: Date
+-- Client Filter: If pj_a_3710 is non-blank → complete, else use pj_p_3710 as planned date
+-- Logic: Actual date = done. No actual = fall back to planned date for Gantt.
+
+SELECT
+    s_site_id,
     pj_project_id,
     pj_project_name,
-    s_site_id,
-    s_site_name,
-    m_market,
-    m_area,
-    rgn_region,
-    pj_general_contractor,
-    pj_project_status,
-
-    -- ======== FILTER COLUMNS ========
-    pj_hard_cost_vendor_assignment_po,          -- #2: Must contain 'NOKIA'
-    por_plan_type,                               -- #3: Exclude 'Equipment Upgrade' & 'FOA'
-    por_regional_dev_initiatives,                 -- #4: Must contain '2026 Build Plan'
-
-    -- ======== ANCHOR DATE (4225 P Date) ========
-    pj_p_4225_construction_start_finish AS planned_construction_start_4225,
-
-    -- ======== PRE-REQUISITE 1: Entitlement Complete ========
     pj_a_3710_ran_entitlement_complete_finish    AS entitlement_actual,
     pj_p_3710_ran_entitlement_complete_finish    AS entitlement_planned,
     COALESCE(
-        pj_a_3710_ran_entitlement_complete_finish,
-        pj_p_3710_ran_entitlement_complete_finish
-    ) AS entitlement_complete_date,
+        NULLIF(TRIM(pj_a_3710_ran_entitlement_complete_finish), ''),
+        NULLIF(TRIM(pj_p_3710_ran_entitlement_complete_finish), '')
+    )                                            AS entitlement_effective_date,
     CASE
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL THEN 'Complete (Actual)'
-        WHEN pj_p_3710_ran_entitlement_complete_finish IS NOT NULL THEN 'Planned'
+        WHEN NULLIF(TRIM(pj_a_3710_ran_entitlement_complete_finish), '') IS NOT NULL
+            THEN 'Complete (Actual)'
+        WHEN NULLIF(TRIM(pj_p_3710_ran_entitlement_complete_finish), '') IS NOT NULL
+            THEN 'Planned Only'
         ELSE 'Not Started'
-    END AS entitlement_status,
+    END                                          AS entitlement_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
 
-    -- ======== PRE-REQUISITE 5: CPO Available ========
+---
+
+**PRE-REQUISITE #2: Hard Cost Vendor Assignment**
+```sql
+-- Stakeholder: T-Mobile | Field Type: Text
+-- Client Filter: Contains "NOKIA"
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
+    pj_hard_cost_vendor_assignment_po            AS hard_cost_vendor,
+    CASE
+        WHEN pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%'
+            THEN 'PASS (Contains NOKIA)'
+        ELSE 'FAIL (Not NOKIA)'
+    END                                          AS vendor_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
+
+---
+
+**PRE-REQUISITE #3: Plan Type**
+```sql
+-- Stakeholder: T-Mobile | Field Type: Text
+-- Client Column: POR:Plan Type → por_plan_type
+-- Client Filter: Other than "Equipment Upgrade" & "FOA"
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
+    por_plan_type,
+    CASE
+        WHEN por_plan_type IN ('Equipment Upgrade', 'FOA')
+            THEN 'EXCLUDED'
+        WHEN por_plan_type IS NULL
+            THEN 'NULL'
+        ELSE 'INCLUDED'
+    END                                          AS plan_type_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
+
+---
+
+**PRE-REQUISITE #4: POR Planned Year**
+```sql
+-- Stakeholder: T-Mobile | Field Type: Text
+-- Client Column: POR:Regional Dev Initiatives → por_regional_dev_initiatives
+-- Client Filter: Contains "2026 Build Plan"
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
+    por_regional_dev_initiatives,
+    CASE
+        WHEN por_regional_dev_initiatives ILIKE '%2026 Build Plan%'
+            THEN 'PASS (2026 Build Plan)'
+        ELSE 'FAIL (Not 2026 Build Plan)'
+    END                                          AS por_year_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
+
+---
+
+**PRE-REQUISITE #5: CPO Available**
+```sql
+-- Stakeholder: T-Mobile | Field Type: Text
+-- Client Column: MS 1555 Construction Complete CPO # (custom field)
+-- Client Filter: Non Blanks
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
     cpo                                          AS cpo_number,
-    CASE WHEN cpo IS NOT NULL AND cpo != '' THEN 'Available' ELSE 'Missing' END AS cpo_status,
+    CASE
+        WHEN NULLIF(TRIM(cpo), '') IS NOT NULL
+            THEN 'PASS (CPO Available)'
+        ELSE 'FAIL (CPO Blank)'
+    END                                          AS cpo_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
 
-    -- ======== PRE-REQUISITE 6: Site Survey (Talon Drone) ========
-    ms_1321_talon_view_drone_svcs_actual         AS site_survey_date,
-    ms_1321_talon_view_drone_svcs_cit            AS site_survey_cit,
-    CASE WHEN ms_1321_talon_view_drone_svcs_actual IS NOT NULL THEN 'Complete' ELSE 'Pending' END AS site_survey_status,
+---
 
-    -- ======== PRE-REQUISITE 7: BOM Ready (≥4 weeks before 4225) ========
+**PRE-REQUISITE #6: If Site Survey Completed**
+```sql
+-- Stakeholder: Nokia | Field Type: Text
+-- Client Column: MS 1321 Talon View Drone SVCS CPO # (custom field)
+-- Client Filter: Non Blanks
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
+    ms_1321_talon_view_drone_svcs_cit            AS talon_drone_cpo,
+    ms_1321_talon_view_drone_svcs_actual         AS survey_actual_date,
+    CASE
+        WHEN NULLIF(TRIM(ms_1321_talon_view_drone_svcs_cit), '') IS NOT NULL
+            THEN 'PASS (Survey Complete)'
+        ELSE 'FAIL (Survey Blank)'
+    END                                          AS survey_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
+
+---
+
+**PRE-REQUISITE #7: BOM Ready**
+```sql
+-- Stakeholder: T-Mobile | Field Type: Date
+-- Client Column: pj_a_3850_bom_submitted_bom_in_bat_finish
+-- Client Filter: Non blanks & Date diff should be Minimum of 4 weeks before 4225 P Date
+-- 4 weeks = 28 days
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
     pj_a_3850_bom_submitted_bom_in_bat_finish    AS bom_ready_actual,
-    pj_p_3850_bom_submitted_bom_in_bat_finish    AS bom_ready_planned,
-    (pj_p_4225_construction_start_finish::date
-     - pj_a_3850_bom_submitted_bom_in_bat_finish::date) AS bom_ready_days_before_4225,
+    pj_p_4225_construction_start_finish          AS planned_cx_start_4225,
     CASE
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-             AND (pj_p_4225_construction_start_finish::date
-                  - pj_a_3850_bom_submitted_bom_in_bat_finish::date) >= 28
-        THEN 'Met (≥4 wks)'
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-        THEN 'At Risk (<4 wks)'
-        ELSE 'Not Ready'
-    END AS bom_ready_status,
+        WHEN NULLIF(TRIM(pj_a_3850_bom_submitted_bom_in_bat_finish), '') IS NOT NULL
+            THEN (pj_p_4225_construction_start_finish::date
+                  - pj_a_3850_bom_submitted_bom_in_bat_finish::date)
+        ELSE NULL
+    END                                          AS days_before_4225,
+    CASE
+        WHEN NULLIF(TRIM(pj_a_3850_bom_submitted_bom_in_bat_finish), '') IS NULL
+            THEN 'FAIL (Blank)'
+        WHEN (pj_p_4225_construction_start_finish::date
+              - pj_a_3850_bom_submitted_bom_in_bat_finish::date) >= 28
+            THEN 'PASS (≥4 Weeks)'
+        ELSE 'FAIL (<4 Weeks)'
+    END                                          AS bom_ready_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
 
-    -- ======== PRE-REQUISITE 8: BOM Material in MSL (≥1 week before 4225) ========
+---
+
+**PRE-REQUISITE #8: BOM Material avl in MSL**
+```sql
+-- Stakeholder: T-Mobile | Field Type: Date
+-- Client Column: pj_a_3875_bom_received_bom_in_aims_finish
+-- Client Filter: Non blanks & Date diff should be Minimum of 1 week before 4225 P Date
+-- 1 week = 7 days
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
     pj_a_3875_bom_received_bom_in_aims_finish    AS bom_material_actual,
-    (pj_p_4225_construction_start_finish::date
-     - pj_a_3875_bom_received_bom_in_aims_finish::date) AS bom_material_days_before_4225,
+    pj_p_4225_construction_start_finish          AS planned_cx_start_4225,
     CASE
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-             AND (pj_p_4225_construction_start_finish::date
-                  - pj_a_3875_bom_received_bom_in_aims_finish::date) >= 7
-        THEN 'Met (≥1 wk)'
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-        THEN 'At Risk (<1 wk)'
-        ELSE 'Not Received'
-    END AS bom_material_status,
-
-    -- ======== PRE-REQUISITE 9: Material Pickup by GC (≥1 week before 4225) ========
-    pj_a_3925_msI_pickup_date_finish             AS material_pickup_actual,
-    (pj_p_4225_construction_start_finish::date
-     - pj_a_3925_msI_pickup_date_finish::date) AS material_pickup_days_before_4225,
+        WHEN NULLIF(TRIM(pj_a_3875_bom_received_bom_in_aims_finish), '') IS NOT NULL
+            THEN (pj_p_4225_construction_start_finish::date
+                  - pj_a_3875_bom_received_bom_in_aims_finish::date)
+        ELSE NULL
+    END                                          AS days_before_4225,
     CASE
-        WHEN pj_a_3925_msI_pickup_date_finish IS NOT NULL
-             AND (pj_p_4225_construction_start_finish::date
-                  - pj_a_3925_msI_pickup_date_finish::date) >= 7
-        THEN 'Met (≥1 wk)'
-        WHEN pj_a_3925_msI_pickup_date_finish IS NOT NULL
-        THEN 'At Risk (<1 wk)'
-        ELSE 'Not Picked Up'
-    END AS material_pickup_status,
+        WHEN NULLIF(TRIM(pj_a_3875_bom_received_bom_in_aims_finish), '') IS NULL
+            THEN 'FAIL (Blank)'
+        WHEN (pj_p_4225_construction_start_finish::date
+              - pj_a_3875_bom_received_bom_in_aims_finish::date) >= 7
+            THEN 'PASS (≥1 Week)'
+        ELSE 'FAIL (<1 Week)'
+    END                                          AS bom_material_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
 
-    -- ======== PRE-REQUISITE 10: NTP Received (≥4 weeks before 4225) ========
+---
+
+**PRE-REQUISITE #9: Material Pickup by GC**
+```sql
+-- Stakeholder: Nokia | Field Type: Date
+-- Client Column: pj_a_3925_msl_pickup_date_finish
+-- Client Filter: Non blanks & Date diff should be Minimum of 1 week before 4225 P Date
+-- 1 week = 7 days
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
+    pj_a_3925_msi_pickup_date_finish             AS material_pickup_actual,
+    pj_p_4225_construction_start_finish          AS planned_cx_start_4225,
+    CASE
+        WHEN pj_a_3925_msi_pickup_date_finish IS NOT NULL
+            THEN (pj_p_4225_construction_start_finish::date
+                  - pj_a_3925_msi_pickup_date_finish::date)
+        ELSE NULL
+    END                                          AS days_before_4225,
+    CASE
+        WHEN pj_a_3925_msi_pickup_date_finish IS NULL
+            THEN 'FAIL (Blank)'
+        WHEN (pj_p_4225_construction_start_finish::date
+              - pj_a_3925_msi_pickup_date_finish::date) >= 7
+            THEN 'PASS (≥1 Week)'
+        ELSE 'FAIL (<1 Week)'
+    END                                          AS material_pickup_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
+
+---
+
+**PRE-REQUISITE #10: NTP Received**
+```sql
+-- Stakeholder: Nokia | Field Type: Date
+-- Client Column: pj_a_4100_construction_ntp_accepted_by_gc_finish
+-- Client Filter: Non blanks & Date diff should be Minimum of 4 weeks before 4225 P Date
+-- 4 weeks = 28 days
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
     pj_a_4100_construction_ntp_accepted_by_gc_finish AS ntp_received_actual,
-    (pj_p_4225_construction_start_finish::date
-     - pj_a_4100_construction_ntp_accepted_by_gc_finish::date) AS ntp_days_before_4225,
+    pj_p_4225_construction_start_finish              AS planned_cx_start_4225,
     CASE
-        WHEN pj_a_4100_construction_ntp_accepted_by_gc_finish IS NOT NULL
-             AND (pj_p_4225_construction_start_finish::date
-                  - pj_a_4100_construction_ntp_accepted_by_gc_finish::date) >= 28
-        THEN 'Met (≥4 wks)'
-        WHEN pj_a_4100_construction_ntp_accepted_by_gc_finish IS NOT NULL
-        THEN 'At Risk (<4 wks)'
-        ELSE 'Not Received'
-    END AS ntp_status,
+        WHEN NULLIF(TRIM(pj_a_4100_construction_ntp_accepted_by_gc_finish), '') IS NOT NULL
+            THEN (pj_p_4225_construction_start_finish::date
+                  - pj_a_4100_construction_ntp_accepted_by_gc_finish::date)
+        ELSE NULL
+    END                                              AS days_before_4225,
+    CASE
+        WHEN NULLIF(TRIM(pj_a_4100_construction_ntp_accepted_by_gc_finish), '') IS NULL
+            THEN 'FAIL (Blank)'
+        WHEN (pj_p_4225_construction_start_finish::date
+              - pj_a_4100_construction_ntp_accepted_by_gc_finish::date) >= 28
+            THEN 'PASS (≥4 Weeks)'
+        ELSE 'FAIL (<4 Weeks)'
+    END                                              AS ntp_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
 
-    -- ======== PRE-REQUISITE 11: SPO (≥6 weeks from TODAY) ========
+---
+
+**PRE-REQUISITE #11: SPO**
+```sql
+-- Stakeholder: Nokia | Field Type: Text
+-- Client Column: (not specified by client)
+-- Client Filter: Non blanks. 4225 P Date - TODAY & Date diff should be Minimum of 6 weeks
+-- 6 weeks = 42 days
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
     total_spo,
+    pj_p_4225_construction_start_finish          AS planned_cx_start_4225,
     (pj_p_4225_construction_start_finish::date - CURRENT_DATE) AS days_to_4225_from_today,
     CASE
-        WHEN total_spo IS NOT NULL AND total_spo != ''
-             AND (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 42
-        THEN 'Met (≥6 wks)'
-        WHEN total_spo IS NOT NULL AND total_spo != ''
-        THEN 'At Risk (<6 wks)'
-        ELSE 'SPO Missing'
-    END AS spo_status,
+        WHEN NULLIF(TRIM(total_spo), '') IS NULL
+            THEN 'FAIL (SPO Blank)'
+        WHEN (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 42
+            THEN 'PASS (≥6 Weeks to Cx Start)'
+        ELSE 'FAIL (<6 Weeks to Cx Start)'
+    END                                          AS spo_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
 
-    -- ======== PRE-REQUISITE 12: Crane (≥2 weeks from TODAY) ========
-    scoping_package_crane_required                AS crane_required,
+---
+
+**PRE-REQUISITE #12: Crane**
+```sql
+-- Stakeholder: Nokia | Field Type: Text
+-- Client Column: scoping_package_crane_required
+-- Client Filter: Non blanks. 4225 P Date - TODAY & Date diff should be Minimum of 2 weeks
+-- 2 weeks = 14 days
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
+    scoping_package_crane_required               AS crane_required,
+    pj_p_4225_construction_start_finish          AS planned_cx_start_4225,
+    (pj_p_4225_construction_start_finish::date - CURRENT_DATE) AS days_to_4225_from_today,
     CASE
-        WHEN scoping_package_crane_required IS NOT NULL AND scoping_package_crane_required != ''
-             AND (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 14
-        THEN 'Met (≥2 wks)'
-        WHEN scoping_package_crane_required IS NOT NULL AND scoping_package_crane_required != ''
-        THEN 'At Risk (<2 wks)'
-        ELSE 'Not Determined'
-    END AS crane_status,
+        WHEN NULLIF(TRIM(scoping_package_crane_required), '') IS NULL
+            THEN 'FAIL (Crane Decision Blank)'
+        WHEN (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 14
+            THEN 'PASS (≥2 Weeks to Cx Start)'
+        ELSE 'FAIL (<2 Weeks to Cx Start)'
+    END                                          AS crane_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
 
-    -- ======== PRE-REQUISITE 13: Access / NDPC Scoping Session (≥2 weeks from TODAY) ========
-    scop_title                                    AS ndpc_scoping_session,
+---
+
+**PRE-REQUISITE #13: Access**
+```sql
+-- Stakeholder: Nokia | Field Type: Text
+-- Client Column: NDPC Scoping Session Title/Name → mapped to scop_title
+-- Client Filter: Non blanks. 4225 P Date - TODAY & Date diff should be Minimum of 2 weeks
+-- 2 weeks = 14 days
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
+    scop_title                                   AS ndpc_scoping_session,
+    pj_p_4225_construction_start_finish          AS planned_cx_start_4225,
+    (pj_p_4225_construction_start_finish::date - CURRENT_DATE) AS days_to_4225_from_today,
     CASE
-        WHEN scop_title IS NOT NULL AND scop_title != ''
-             AND (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 14
-        THEN 'Met (≥2 wks)'
-        WHEN scop_title IS NOT NULL AND scop_title != ''
-        THEN 'At Risk (<2 wks)'
-        ELSE 'No Session'
-    END AS access_status,
+        WHEN NULLIF(TRIM(scop_title), '') IS NULL
+            THEN 'FAIL (No Scoping Session)'
+        WHEN (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 14
+            THEN 'PASS (≥2 Weeks to Cx Start)'
+        ELSE 'FAIL (<2 Weeks to Cx Start)'
+    END                                          AS access_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
 
-    -- ======== PRE-REQUISITE 14: Site Ready for Ca / NDPC COP (≥2 weeks from TODAY) ========
-    scop_checklist_accepted_by_customer           AS cop_accepted,
-    ms_1559_cop_approved_by_t_mobile_actual       AS cop_approved_date,
+---
+
+**PRE-REQUISITE #14: Site Ready for Ca**
+```sql
+-- Stakeholder: Nokia | Field Type: Text
+-- Client Column: NDPC COP Session Title/Name → mapped to scop_checklist_accepted_by_customer
+-- Client Filter: Non blanks. 4225 P Date - TODAY & Date diff should be Minimum of 2 weeks
+-- 2 weeks = 14 days
+
+SELECT
+    s_site_id,
+    pj_project_id,
+    pj_project_name,
+    scop_checklist_accepted_by_customer          AS cop_accepted,
+    ms_1559_cop_approved_by_t_mobile_actual      AS cop_approved_date,
+    pj_p_4225_construction_start_finish          AS planned_cx_start_4225,
+    (pj_p_4225_construction_start_finish::date - CURRENT_DATE) AS days_to_4225_from_today,
     CASE
-        WHEN (scop_checklist_accepted_by_customer IS NOT NULL
-              OR ms_1559_cop_approved_by_t_mobile_actual IS NOT NULL)
-             AND (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 14
-        THEN 'Met (≥2 wks)'
-        WHEN scop_checklist_accepted_by_customer IS NOT NULL
-             OR ms_1559_cop_approved_by_t_mobile_actual IS NOT NULL
-        THEN 'At Risk (<2 wks)'
-        ELSE 'Not Ready'
-    END AS site_ready_status,
+        WHEN NULLIF(TRIM(scop_checklist_accepted_by_customer), '') IS NULL
+             AND ms_1559_cop_approved_by_t_mobile_actual IS NULL
+            THEN 'FAIL (No COP Acceptance)'
+        WHEN (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 14
+            THEN 'PASS (≥2 Weeks to Cx Start)'
+        ELSE 'FAIL (<2 Weeks to Cx Start)'
+    END                                          AS site_ready_status
+FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined;
+```
 
-    -- ======== OVERALL READINESS ========
-    CASE
-        WHEN
-            COALESCE(pj_a_3710_ran_entitlement_complete_finish, pj_p_3710_ran_entitlement_complete_finish) IS NOT NULL
-            AND (cpo IS NOT NULL AND cpo != '')
-            AND ms_1321_talon_view_drone_svcs_actual IS NOT NULL
-            AND pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-            AND pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-            AND pj_a_3925_msI_pickup_date_finish IS NOT NULL
-            AND pj_a_4100_construction_ntp_accepted_by_gc_finish IS NOT NULL
-            AND (total_spo IS NOT NULL AND total_spo != '')
-            AND (scoping_package_crane_required IS NOT NULL AND scoping_package_crane_required != '')
-            AND (scop_title IS NOT NULL AND scop_title != '')
-            AND (scop_checklist_accepted_by_customer IS NOT NULL
-                 OR ms_1559_cop_approved_by_t_mobile_actual IS NOT NULL)
-        THEN 'ALL PRE-REQS MET'
-        ELSE 'GAPS EXIST'
-    END AS overall_readiness
+---
 
-FROM stg_ndpd_mbt_tmobile_macro_combined
-
-WHERE
-    -- Filter #2: Hard Cost Vendor = NOKIA
-    pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%'
-
-    -- Filter #3: Exclude Equipment Upgrade & FOA
-    AND por_plan_type NOT IN ('Equipment Upgrade', 'FOA')
-
-    -- Filter #4: 2026 Build Plan only
-    AND por_regional_dev_initiatives ILIKE '%2026 Build Plan%'
-
-    -- Active projects only
-    AND pj_project_status = 'Active'
-
-    -- Must have a planned construction start date
-    AND pj_p_4225_construction_start_finish IS NOT NULL
-
-ORDER BY
-    pj_p_4225_construction_start_finish ASC,
-    rgn_region,
-    m_market;"
+Each query is standalone — run them one by one and you'll see exactly which pre-requisite is causing the failures. The ones most likely to be the problem are **#5 (CPO)**, **#11 (SPO)**, and **#14 (Site Ready)** since those have ambiguous column mappings from the client doc.
