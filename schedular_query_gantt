@@ -1,403 +1,377 @@
+WITH
+
+base AS (
+    SELECT
+        s_site_id                                    AS site_id,
+        pj_project_id                                AS project_id,
+        pj_project_name                              AS project_name,
+        m_market                                     AS market,
+
+        pj_p_3710_ran_entitlement_complete_finish::date AS p_3710,
+        pj_a_3710_ran_entitlement_complete_finish::date AS a_3710,
+
+        pj_a_3850_bom_submitted_bom_in_bat_finish::date AS a_3850,
+        pj_a_3875_bom_received_bom_in_aims_finish::date AS a_3875,
+        pj_a_3925_msl_pickup_date_finish::date           AS a_3925,
+        pj_a_4100_construction_ntp_accepted_by_gc_finish::date AS a_4100,
+        ms_1321_talon_view_drone_svcs_actual::date       AS a_site_walk,
+        ms_1323_ready_for_scoping_actual::date           AS a_ready_scoping,
+        ms_1327_scoping_and_quoting_package_validated_actual::date AS a_scoping_validated,
+        pj_p_4225_construction_start_finish::date        AS p_4225,
+
+        cpo,
+        total_spo,
+        scoping_package_crane_required,
+        scop_title,
+        scop_checklist_accepted_by_customer,
+        ms_1559_cop_approved_by_t_mobile_actual,
+        pj_steel_received_status,
+        pj_steel_received_date
+
+    FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined
+
+    WHERE pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%'
+      AND por_plan_type NOT IN ('Equipment Upgrade', 'FOA')
+      AND por_regional_dev_initiatives ILIKE '%2026 Build Plan%'
+),
+
+planned AS (
+    SELECT
+        *,
+
+        -- PATH 1: BOM CHAIN
+        p_3710 + 1                                   AS ps_3850,
+        p_3710 + 1 + 2                               AS pf_3850,
+
+        (p_3710 + 1 + 2) + 1                         AS ps_3875,
+        (p_3710 + 1 + 2) + 1 + 21                    AS pf_3875,
+
+        (p_3710 + 1 + 2 + 1 + 21) + 1               AS ps_3925,
+        (p_3710 + 1 + 2 + 1 + 21) + 1 + 7           AS pf_3925,
+
+        -- PATH 2: NTP
+        p_3710 + 1                                   AS ps_4100,
+        p_3710 + 1 + 2                               AS pf_4100,
+
+        -- PATH 2a: Steel
+        p_3710 + 1                                   AS ps_steel,
+        p_3710 + 1 + 14                              AS pf_steel,
+
+        -- PATH 3: SCOPING CHAIN
+        p_3710 + 1                                   AS ps_site_walk,
+        p_3710 + 1 + 0                               AS pf_site_walk,
+
+        (p_3710 + 1 + 0) + 1                         AS ps_ready_scoping,
+        (p_3710 + 1 + 0) + 1 + 3                     AS pf_ready_scoping,
+
+        (p_3710 + 1 + 0 + 1 + 3) + 1                AS ps_scoping_validated,
+        (p_3710 + 1 + 0 + 1 + 3) + 1 + 7            AS pf_scoping_validated,
+
+        (p_3710 + 1 + 0 + 1 + 3 + 1 + 7) + 1       AS ps_crs_cqt,
+        (p_3710 + 1 + 0 + 1 + 3 + 1 + 7) + 1 + 10  AS pf_crs_cqt,
+
+        (p_3710 + 1+0+1+3+1+7+1+10) + 1             AS ps_quote,
+        (p_3710 + 1+0+1+3+1+7+1+10) + 1 + 7         AS pf_quote,
+
+        (p_3710 + 1+0+1+3+1+7+1+10+1+7) + 1         AS ps_cpo,
+        (p_3710 + 1+0+1+3+1+7+1+10+1+7) + 1 + 14    AS pf_cpo,
+
+        (p_3710 + 1+0+1+3+1+7+1+10+1+7+1+14) + 1    AS ps_spo,
+        (p_3710 + 1+0+1+3+1+7+1+10+1+7+1+14) + 1 + 2 AS pf_spo,
+
+        (p_3710 + 1+0+1+3+1+7+1+10) + 1             AS ps_access,
+        (p_3710 + 1+0+1+3+1+7+1+10) + 1 + 7         AS pf_access,
+
+        (p_3710 + 1+0+1+3+1+7+1+10) + 1             AS ps_crane,
+        (p_3710 + 1+0+1+3+1+7+1+10) + 1 + 7         AS pf_crane
+
+    FROM base
+    WHERE p_3710 IS NOT NULL
+)
+
 SELECT
-    s_site_id                                        AS site_id,
-    pj_project_id                                    AS project_id,
-    pj_project_name                                  AS project_name,
-    m_market                                         AS market,
-    pj_p_4225_construction_start_finish              AS construction_start_4225,
+    site_id,
+    project_id,
+    project_name,
+    market,
+    p_4225                                           AS construction_start_4225,
 
-    -- ══════════════════════════════════════════════
-    -- MILESTONE 3710: Entitlement Complete
-    -- Starts from: Site Assigned to Nokia
-    -- Expected days: 0 (immediate)
-    -- ══════════════════════════════════════════════
-
-    pj_p_3710_ran_entitlement_complete_finish        AS planned_finish_3710,
-    pj_a_3710_ran_entitlement_complete_finish        AS actual_finish_3710,
-    '0'                                              AS expected_days_3710,
-
+    -- ══════════════════════════════════════
+    -- MS 3710: Entitlement Complete
+    -- Expected days: 0 | Source: DB planned
+    -- ══════════════════════════════════════
+    p_3710                                           AS planned_start_3710,
+    p_3710                                           AS planned_finish_3710,
+    0                                                AS expected_days_3710,
+    a_3710                                           AS actual_finish_3710,
+    CASE WHEN a_3710 IS NOT NULL THEN CURRENT_DATE - a_3710 ELSE NULL END
+                                                     AS days_since_3710,
+    CASE WHEN a_3710 IS NULL AND p_3710 IS NOT NULL THEN p_3710 - CURRENT_DATE ELSE NULL END
+                                                     AS days_remaining_3710,
     CASE
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN CURRENT_DATE - pj_a_3710_ran_entitlement_complete_finish::date
-        ELSE NULL
-    END                                              AS days_since_completion_3710,
-
-    CASE
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NULL
-          AND pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN pj_p_3710_ran_entitlement_complete_finish::date - CURRENT_DATE
-        ELSE NULL
-    END                                              AS days_remaining_3710,
-
-    CASE
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND pj_a_3710_ran_entitlement_complete_finish::date
-              < pj_p_3710_ran_entitlement_complete_finish::date
-        THEN 'COMPLETED EARLY'
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND pj_a_3710_ran_entitlement_complete_finish::date
-              = pj_p_3710_ran_entitlement_complete_finish::date
-        THEN 'COMPLETED ON TIME'
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND pj_a_3710_ran_entitlement_complete_finish::date
-              > pj_p_3710_ran_entitlement_complete_finish::date
-        THEN 'COMPLETED LATE'
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NULL
-          AND pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND pj_p_3710_ran_entitlement_complete_finish::date >= CURRENT_DATE
-        THEN 'IN PROGRESS (ON TRACK)'
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NULL
-          AND pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND pj_p_3710_ran_entitlement_complete_finish::date < CURRENT_DATE
-        THEN 'DELAYED'
+        WHEN a_3710 IS NOT NULL AND a_3710 < p_3710  THEN 'COMPLETED EARLY'
+        WHEN a_3710 IS NOT NULL AND a_3710 = p_3710  THEN 'COMPLETED ON TIME'
+        WHEN a_3710 IS NOT NULL AND a_3710 > p_3710  THEN 'COMPLETED LATE'
+        WHEN a_3710 IS NULL AND p_3710 >= CURRENT_DATE THEN 'IN PROGRESS (ON TRACK)'
+        WHEN a_3710 IS NULL AND p_3710 < CURRENT_DATE  THEN 'DELAYED'
         ELSE 'NOT STARTED'
     END                                              AS status_3710,
 
-    -- ══════════════════════════════════════════════
-    -- PATH 1 (TOP): BOM CHAIN
-    -- ══════════════════════════════════════════════
-
-    -- ── MILESTONE 3850: BOM in BAT Tool ──
-    -- Chains from: 3710 + 2 days
-    -- Expected days: 2
-    -- Client condition: Non blanks & ≥4 weeks before 4225 P Date
-
+    -- ══════════════════════════════════════
+    -- MS 3850: BOM in BAT Tool
+    -- Expected days: 2 | Chains from: 3710
+    -- Client: Non blanks & ≥4 weeks before 4225
+    -- ══════════════════════════════════════
+    ps_3850                                          AS planned_start_3850,
+    pf_3850                                          AS planned_finish_3850,
+    2                                                AS expected_days_3850,
+    a_3850                                           AS actual_finish_3850,
+    CASE WHEN a_3850 IS NOT NULL THEN CURRENT_DATE - a_3850 ELSE NULL END
+                                                     AS days_since_3850,
+    CASE WHEN a_3850 IS NULL THEN pf_3850 - CURRENT_DATE ELSE NULL END
+                                                     AS days_remaining_3850,
     CASE
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN pj_a_3710_ran_entitlement_complete_finish::date + 1
-        WHEN pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN pj_p_3710_ran_entitlement_complete_finish::date + 1
-        ELSE NULL
-    END                                              AS start_date_3850,
-
-    '2'                                              AS expected_days_3850,
-
-    CASE
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN pj_a_3710_ran_entitlement_complete_finish::date + 1 + 2
-        WHEN pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN pj_p_3710_ran_entitlement_complete_finish::date + 1 + 2
-        ELSE NULL
-    END                                              AS planned_finish_3850,
-
-    pj_a_3850_bom_submitted_bom_in_bat_finish        AS actual_finish_3850,
-
-    CASE
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-        THEN CURRENT_DATE - pj_a_3850_bom_submitted_bom_in_bat_finish::date
-        ELSE NULL
-    END                                              AS days_since_completion_3850,
-
-    CASE
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-          AND pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND pj_a_3850_bom_submitted_bom_in_bat_finish::date
-              <= (pj_p_3710_ran_entitlement_complete_finish::date + 3)
-        THEN 'COMPLETED ON TIME'
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-        THEN 'COMPLETED LATE'
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NULL
-          AND pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND (pj_p_3710_ran_entitlement_complete_finish::date + 3) >= CURRENT_DATE
-        THEN 'IN PROGRESS (ON TRACK)'
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NULL
-          AND pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND (pj_p_3710_ran_entitlement_complete_finish::date + 3) < CURRENT_DATE
-        THEN 'DELAYED'
+        WHEN a_3850 IS NOT NULL AND a_3850 <= pf_3850 THEN 'COMPLETED ON TIME'
+        WHEN a_3850 IS NOT NULL AND a_3850 > pf_3850  THEN 'COMPLETED LATE'
+        WHEN a_3850 IS NULL AND pf_3850 >= CURRENT_DATE THEN 'IN PROGRESS (ON TRACK)'
+        WHEN a_3850 IS NULL AND pf_3850 < CURRENT_DATE  THEN 'DELAYED'
         ELSE 'NOT STARTED'
     END                                              AS status_3850,
-
-    -- ★ Client 4225 check for 3850
     CASE
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NULL
-        THEN 'NOT READY — BOM date blank'
-        WHEN pj_p_4225_construction_start_finish IS NULL
-        THEN 'NO 4225 DATE'
-        WHEN (pj_p_4225_construction_start_finish::date
-              - pj_a_3850_bom_submitted_bom_in_bat_finish::date) >= 28
-        THEN 'PASS — ≥4 weeks before Cx start'
-        ELSE 'FAIL — <4 weeks before Cx start'
+        WHEN a_3850 IS NULL THEN 'NOT READY'
+        WHEN p_4225 IS NULL THEN 'NO 4225 DATE'
+        WHEN (p_4225 - a_3850) >= 28 THEN 'PASS ≥4wks'
+        ELSE 'FAIL <4wks'
     END                                              AS client_4225_check_3850,
 
-    -- ── MILESTONE 3875: BOM in AIMS ──
-    -- Chains from: 3850 + 21 days
-    -- Expected days: 21
-    -- Client condition: Non blanks & ≥1 week before 4225 P Date
-
+    -- ══════════════════════════════════════
+    -- MS 3875: BOM in AIMS
+    -- Expected days: 21 | Chains from: 3850
+    -- Client: Non blanks & ≥1 week before 4225
+    -- ══════════════════════════════════════
+    ps_3875                                          AS planned_start_3875,
+    pf_3875                                          AS planned_finish_3875,
+    21                                               AS expected_days_3875,
+    a_3875                                           AS actual_finish_3875,
+    CASE WHEN a_3875 IS NOT NULL THEN CURRENT_DATE - a_3875 ELSE NULL END
+                                                     AS days_since_3875,
+    CASE WHEN a_3875 IS NULL THEN pf_3875 - CURRENT_DATE ELSE NULL END
+                                                     AS days_remaining_3875,
     CASE
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-        THEN pj_a_3850_bom_submitted_bom_in_bat_finish::date + 1
-        ELSE NULL
-    END                                              AS start_date_3875,
-
-    '21'                                             AS expected_days_3875,
-
-    CASE
-        WHEN pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-        THEN pj_a_3850_bom_submitted_bom_in_bat_finish::date + 1 + 21
-        ELSE NULL
-    END                                              AS planned_finish_3875,
-
-    pj_a_3875_bom_received_bom_in_aims_finish        AS actual_finish_3875,
-
-    CASE
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-        THEN CURRENT_DATE - pj_a_3875_bom_received_bom_in_aims_finish::date
-        ELSE NULL
-    END                                              AS days_since_completion_3875,
-
-    CASE
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-          AND pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-          AND pj_a_3875_bom_received_bom_in_aims_finish::date
-              <= (pj_a_3850_bom_submitted_bom_in_bat_finish::date + 22)
-        THEN 'COMPLETED ON TIME'
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-        THEN 'COMPLETED LATE'
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NULL
-          AND pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-          AND (pj_a_3850_bom_submitted_bom_in_bat_finish::date + 22) >= CURRENT_DATE
-        THEN 'IN PROGRESS (ON TRACK)'
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NULL
-          AND pj_a_3850_bom_submitted_bom_in_bat_finish IS NOT NULL
-        THEN 'DELAYED'
+        WHEN a_3875 IS NOT NULL AND a_3875 <= pf_3875 THEN 'COMPLETED ON TIME'
+        WHEN a_3875 IS NOT NULL AND a_3875 > pf_3875  THEN 'COMPLETED LATE'
+        WHEN a_3875 IS NULL AND pf_3875 >= CURRENT_DATE THEN 'IN PROGRESS (ON TRACK)'
+        WHEN a_3875 IS NULL AND pf_3875 < CURRENT_DATE  THEN 'DELAYED'
         ELSE 'NOT STARTED'
     END                                              AS status_3875,
-
-    -- ★ Client 4225 check for 3875
     CASE
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NULL
-        THEN 'NOT READY — BOM material date blank'
-        WHEN pj_p_4225_construction_start_finish IS NULL
-        THEN 'NO 4225 DATE'
-        WHEN (pj_p_4225_construction_start_finish::date
-              - pj_a_3875_bom_received_bom_in_aims_finish::date) >= 7
-        THEN 'PASS — ≥1 week before Cx start'
-        ELSE 'FAIL — <1 week before Cx start'
+        WHEN a_3875 IS NULL THEN 'NOT READY'
+        WHEN p_4225 IS NULL THEN 'NO 4225 DATE'
+        WHEN (p_4225 - a_3875) >= 7 THEN 'PASS ≥1wk'
+        ELSE 'FAIL <1wk'
     END                                              AS client_4225_check_3875,
 
-    -- ── MILESTONE 3925: Material Picked Up by GC ──
-    -- Chains from: 3875 + 7 days
-    -- Expected days: 7
-    -- Client condition: Non blanks & ≥1 week before 4225 P Date
-
+    -- ══════════════════════════════════════
+    -- MS 3925: Material Pickup by GC
+    -- Expected days: 7 | Chains from: 3875
+    -- Client: Non blanks & ≥1 week before 4225
+    -- ══════════════════════════════════════
+    ps_3925                                          AS planned_start_3925,
+    pf_3925                                          AS planned_finish_3925,
+    7                                                AS expected_days_3925,
+    a_3925                                           AS actual_finish_3925,
+    CASE WHEN a_3925 IS NOT NULL THEN CURRENT_DATE - a_3925 ELSE NULL END
+                                                     AS days_since_3925,
+    CASE WHEN a_3925 IS NULL THEN pf_3925 - CURRENT_DATE ELSE NULL END
+                                                     AS days_remaining_3925,
     CASE
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-        THEN pj_a_3875_bom_received_bom_in_aims_finish::date + 1
-        ELSE NULL
-    END                                              AS start_date_3925,
-
-    '7'                                              AS expected_days_3925,
-
-    CASE
-        WHEN pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-        THEN pj_a_3875_bom_received_bom_in_aims_finish::date + 1 + 7
-        ELSE NULL
-    END                                              AS planned_finish_3925,
-
-    pj_a_3925_msi_pickup_date_finish                 AS actual_finish_3925,
-
-    CASE
-        WHEN pj_a_3925_msi_pickup_date_finish IS NOT NULL
-        THEN CURRENT_DATE - pj_a_3925_msi_pickup_date_finish::date
-        ELSE NULL
-    END                                              AS days_since_completion_3925,
-
-    CASE
-        WHEN pj_a_3925_msi_pickup_date_finish IS NOT NULL
-          AND pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-          AND pj_a_3925_msi_pickup_date_finish::date
-              <= (pj_a_3875_bom_received_bom_in_aims_finish::date + 8)
-        THEN 'COMPLETED ON TIME'
-        WHEN pj_a_3925_msi_pickup_date_finish IS NOT NULL
-        THEN 'COMPLETED LATE'
-        WHEN pj_a_3925_msi_pickup_date_finish IS NULL
-          AND pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-          AND (pj_a_3875_bom_received_bom_in_aims_finish::date + 8) >= CURRENT_DATE
-        THEN 'IN PROGRESS (ON TRACK)'
-        WHEN pj_a_3925_msi_pickup_date_finish IS NULL
-          AND pj_a_3875_bom_received_bom_in_aims_finish IS NOT NULL
-        THEN 'DELAYED'
+        WHEN a_3925 IS NOT NULL AND a_3925 <= pf_3925 THEN 'COMPLETED ON TIME'
+        WHEN a_3925 IS NOT NULL AND a_3925 > pf_3925  THEN 'COMPLETED LATE'
+        WHEN a_3925 IS NULL AND pf_3925 >= CURRENT_DATE THEN 'IN PROGRESS (ON TRACK)'
+        WHEN a_3925 IS NULL AND pf_3925 < CURRENT_DATE  THEN 'DELAYED'
         ELSE 'NOT STARTED'
     END                                              AS status_3925,
-
-    -- ★ Client 4225 check for 3925
     CASE
-        WHEN pj_a_3925_msi_pickup_date_finish IS NULL
-        THEN 'NOT READY — Pickup date blank'
-        WHEN pj_p_4225_construction_start_finish IS NULL
-        THEN 'NO 4225 DATE'
-        WHEN (pj_p_4225_construction_start_finish::date
-              - pj_a_3925_msi_pickup_date_finish::date) >= 7
-        THEN 'PASS — ≥1 week before Cx start'
-        ELSE 'FAIL — <1 week before Cx start'
+        WHEN a_3925 IS NULL THEN 'NOT READY'
+        WHEN p_4225 IS NULL THEN 'NO 4225 DATE'
+        WHEN (p_4225 - a_3925) >= 7 THEN 'PASS ≥1wk'
+        ELSE 'FAIL <1wk'
     END                                              AS client_4225_check_3925,
 
-    -- ══════════════════════════════════════════════
-    -- PATH 2 (MIDDLE): NTP CHAIN
-    -- ══════════════════════════════════════════════
-
-    -- ── MILESTONE 4100: NTP Received ──
-    -- Chains from: 3710 + 2 days (Pre-NTP path)
-    -- Expected days: 2
-    -- Client condition: Non blanks & ≥4 weeks before 4225 P Date
-
+    -- ══════════════════════════════════════
+    -- MS 4100: NTP Received
+    -- Expected days: 2 | Chains from: 3710
+    -- Client: Non blanks & ≥4 weeks before 4225
+    -- ══════════════════════════════════════
+    ps_4100                                          AS planned_start_4100,
+    pf_4100                                          AS planned_finish_4100,
+    2                                                AS expected_days_4100,
+    a_4100                                           AS actual_finish_4100,
+    CASE WHEN a_4100 IS NOT NULL THEN CURRENT_DATE - a_4100 ELSE NULL END
+                                                     AS days_since_4100,
+    CASE WHEN a_4100 IS NULL THEN pf_4100 - CURRENT_DATE ELSE NULL END
+                                                     AS days_remaining_4100,
     CASE
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN pj_a_3710_ran_entitlement_complete_finish::date + 1
-        WHEN pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN pj_p_3710_ran_entitlement_complete_finish::date + 1
-        ELSE NULL
-    END                                              AS start_date_4100,
-
-    '2'                                              AS expected_days_4100,
-
-    CASE
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN pj_a_3710_ran_entitlement_complete_finish::date + 1 + 2
-        WHEN pj_p_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN pj_p_3710_ran_entitlement_complete_finish::date + 1 + 2
-        ELSE NULL
-    END                                              AS planned_finish_4100,
-
-    pj_a_4100_construction_ntp_accepted_by_gc_finish AS actual_finish_4100,
-
-    CASE
-        WHEN pj_a_4100_construction_ntp_accepted_by_gc_finish IS NOT NULL
-        THEN CURRENT_DATE - pj_a_4100_construction_ntp_accepted_by_gc_finish::date
-        ELSE NULL
-    END                                              AS days_since_completion_4100,
-
-    CASE
-        WHEN pj_a_4100_construction_ntp_accepted_by_gc_finish IS NOT NULL
-        THEN 'COMPLETED'
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-          AND (pj_a_3710_ran_entitlement_complete_finish::date + 3) >= CURRENT_DATE
-        THEN 'IN PROGRESS (ON TRACK)'
-        WHEN pj_a_3710_ran_entitlement_complete_finish IS NOT NULL
-        THEN 'DELAYED'
+        WHEN a_4100 IS NOT NULL AND a_4100 <= pf_4100 THEN 'COMPLETED ON TIME'
+        WHEN a_4100 IS NOT NULL AND a_4100 > pf_4100  THEN 'COMPLETED LATE'
+        WHEN a_4100 IS NULL AND pf_4100 >= CURRENT_DATE THEN 'IN PROGRESS (ON TRACK)'
+        WHEN a_4100 IS NULL AND pf_4100 < CURRENT_DATE  THEN 'DELAYED'
         ELSE 'NOT STARTED'
     END                                              AS status_4100,
-
-    -- ★ Client 4225 check for 4100
     CASE
-        WHEN pj_a_4100_construction_ntp_accepted_by_gc_finish IS NULL
-        THEN 'NOT READY — NTP date blank'
-        WHEN pj_p_4225_construction_start_finish IS NULL
-        THEN 'NO 4225 DATE'
-        WHEN (pj_p_4225_construction_start_finish::date
-              - pj_a_4100_construction_ntp_accepted_by_gc_finish::date) >= 28
-        THEN 'PASS — ≥4 weeks before Cx start'
-        ELSE 'FAIL — <4 weeks before Cx start'
+        WHEN a_4100 IS NULL THEN 'NOT READY'
+        WHEN p_4225 IS NULL THEN 'NO 4225 DATE'
+        WHEN (p_4225 - a_4100) >= 28 THEN 'PASS ≥4wks'
+        ELSE 'FAIL <4wks'
     END                                              AS client_4225_check_4100,
 
-    -- ══════════════════════════════════════════════
-    -- PATH 3 (BOTTOM): SCOPING CHAIN
-    -- Site Walk → Ready for Scoping → Scoping Validated
-    -- → CRs in CQT → Quote → CPO → SPO
-    --                → Access Confirmation
-    --                → Crane Readiness
-    -- ══════════════════════════════════════════════
+    -- ══════════════════════════════════════
+    -- Steel Received (14 days after 3710)
+    -- ══════════════════════════════════════
+    ps_steel                                         AS planned_start_steel,
+    pf_steel                                         AS planned_finish_steel,
+    14                                               AS expected_days_steel,
+    pj_steel_received_date::date                     AS actual_finish_steel,
+    pj_steel_received_status                         AS steel_status_raw,
 
-    -- ── Site Walk (MS 1321) ──
-    ms_1321_talon_view_drone_svcs_actual             AS actual_site_walk,
-
-    -- ── Ready for Scoping (3 days after site walk) ──
-    ms_1323_ready_for_scoping_actual                 AS actual_ready_for_scoping,
-    '3'                                              AS expected_days_ready_for_scoping,
-
-    -- ── Scoping Validated by GC (7 days after ready for scoping) ──
-    ms_1327_scoping_and_quoting_package_validated_actual AS actual_scoping_validated,
-    '7'                                              AS expected_days_scoping_validated,
-
-    -- ── All CRs in CQT tool (10 days after scoping validated) ──
-    -- No direct DB column — derived milestone
-    '10'                                             AS expected_days_crs_in_cqt,
-
-    -- ── Quote to Customer (7 days after CRs) ──
-    '7'                                              AS expected_days_quote_to_customer,
-
-    -- ── CPO (14 days after quote) ──
-    cpo                                              AS cpo_number,
-    '14'                                             AS expected_days_cpo,
-
+    -- ══════════════════════════════════════
+    -- Site Walk (MS 1321)
+    -- Expected days: 0 | Chains from: 3710
+    -- ══════════════════════════════════════
+    ps_site_walk                                     AS planned_start_site_walk,
+    pf_site_walk                                     AS planned_finish_site_walk,
+    0                                                AS expected_days_site_walk,
+    a_site_walk                                      AS actual_finish_site_walk,
     CASE
-        WHEN NULLIF(TRIM(cpo), '') IS NOT NULL THEN 'AVAILABLE'
+        WHEN a_site_walk IS NOT NULL AND a_site_walk <= pf_site_walk THEN 'COMPLETED ON TIME'
+        WHEN a_site_walk IS NOT NULL THEN 'COMPLETED LATE'
+        WHEN pf_site_walk >= CURRENT_DATE THEN 'IN PROGRESS (ON TRACK)'
+        WHEN pf_site_walk < CURRENT_DATE THEN 'DELAYED'
+        ELSE 'NOT STARTED'
+    END                                              AS status_site_walk,
+
+    -- ══════════════════════════════════════
+    -- Ready for Scoping (MS 1323)
+    -- Expected days: 3 | Chains from: Site Walk
+    -- ══════════════════════════════════════
+    ps_ready_scoping                                 AS planned_start_ready_scoping,
+    pf_ready_scoping                                 AS planned_finish_ready_scoping,
+    3                                                AS expected_days_ready_scoping,
+    a_ready_scoping                                  AS actual_finish_ready_scoping,
+    CASE
+        WHEN a_ready_scoping IS NOT NULL AND a_ready_scoping <= pf_ready_scoping THEN 'COMPLETED ON TIME'
+        WHEN a_ready_scoping IS NOT NULL THEN 'COMPLETED LATE'
+        WHEN pf_ready_scoping >= CURRENT_DATE THEN 'IN PROGRESS (ON TRACK)'
+        WHEN pf_ready_scoping < CURRENT_DATE THEN 'DELAYED'
+        ELSE 'NOT STARTED'
+    END                                              AS status_ready_scoping,
+
+    -- ══════════════════════════════════════
+    -- Scoping Validated by GC (MS 1327)
+    -- Expected days: 7 | Chains from: Ready for Scoping
+    -- ══════════════════════════════════════
+    ps_scoping_validated                             AS planned_start_scoping_validated,
+    pf_scoping_validated                             AS planned_finish_scoping_validated,
+    7                                                AS expected_days_scoping_validated,
+    a_scoping_validated                              AS actual_finish_scoping_validated,
+    CASE
+        WHEN a_scoping_validated IS NOT NULL AND a_scoping_validated <= pf_scoping_validated THEN 'COMPLETED ON TIME'
+        WHEN a_scoping_validated IS NOT NULL THEN 'COMPLETED LATE'
+        WHEN pf_scoping_validated >= CURRENT_DATE THEN 'IN PROGRESS (ON TRACK)'
+        WHEN pf_scoping_validated < CURRENT_DATE THEN 'DELAYED'
+        ELSE 'NOT STARTED'
+    END                                              AS status_scoping_validated,
+
+    -- ══════════════════════════════════════
+    -- All CRs in CQT Tool
+    -- Expected days: 10 | Chains from: Scoping Validated
+    -- ══════════════════════════════════════
+    ps_crs_cqt                                       AS planned_start_crs_cqt,
+    pf_crs_cqt                                       AS planned_finish_crs_cqt,
+    10                                               AS expected_days_crs_cqt,
+
+    -- ══════════════════════════════════════
+    -- Quote to Customer
+    -- Expected days: 7 | Chains from: CRs in CQT
+    -- ══════════════════════════════════════
+    ps_quote                                         AS planned_start_quote,
+    pf_quote                                         AS planned_finish_quote,
+    7                                                AS expected_days_quote,
+
+    -- ══════════════════════════════════════
+    -- CPO
+    -- Expected days: 14 | Chains from: Quote
+    -- Client: Non Blanks
+    -- ══════════════════════════════════════
+    ps_cpo                                           AS planned_start_cpo,
+    pf_cpo                                           AS planned_finish_cpo,
+    14                                               AS expected_days_cpo,
+    cpo                                              AS cpo_value,
+    CASE
+        WHEN cpo IS NOT NULL AND cpo != '' THEN 'AVAILABLE'
         ELSE 'MISSING'
-    END                                              AS cpo_status,
+    END                                              AS status_cpo,
 
-    -- ── SPO (2 days after CPO) ──
+    -- ══════════════════════════════════════
+    -- SPO
+    -- Expected days: 2 | Chains from: CPO
+    -- Client: Non blanks & ≥6 weeks from TODAY to 4225
+    -- ══════════════════════════════════════
+    ps_spo                                           AS planned_start_spo,
+    pf_spo                                           AS planned_finish_spo,
+    2                                                AS expected_days_spo,
     total_spo                                        AS spo_value,
-    '2'                                              AS expected_days_spo,
-
     CASE
-        WHEN NULLIF(TRIM(total_spo), '') IS NULL
-        THEN 'MISSING — SPO blank'
-        WHEN pj_p_4225_construction_start_finish IS NULL
-        THEN 'NO 4225 DATE'
-        WHEN (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 42
-        THEN 'PASS — ≥6 weeks to Cx start'
-        ELSE 'FAIL — <6 weeks to Cx start'
+        WHEN total_spo IS NULL OR total_spo = '' THEN 'MISSING'
+        WHEN p_4225 IS NULL THEN 'NO 4225 DATE'
+        WHEN (p_4225 - CURRENT_DATE) >= 42 THEN 'PASS ≥6wks'
+        ELSE 'FAIL <6wks'
     END                                              AS client_4225_check_spo,
 
-    -- ── Access Confirmation (7 days after CRs + 7 days) ──
-    scop_title                                       AS access_scoping_session,
-    '7'                                              AS expected_days_access,
-
+    -- ══════════════════════════════════════
+    -- Access Confirmation
+    -- Expected days: 7 | Chains from: CRs in CQT (parallel)
+    -- Client: Non blanks & ≥2 weeks from TODAY to 4225
+    -- ══════════════════════════════════════
+    ps_access                                        AS planned_start_access,
+    pf_access                                        AS planned_finish_access,
+    7                                                AS expected_days_access,
+    scop_title                                       AS access_session,
     CASE
-        WHEN NULLIF(TRIM(scop_title), '') IS NULL
-        THEN 'MISSING — No scoping session'
-        WHEN pj_p_4225_construction_start_finish IS NULL
-        THEN 'NO 4225 DATE'
-        WHEN (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 14
-        THEN 'PASS — ≥2 weeks to Cx start'
-        ELSE 'FAIL — <2 weeks to Cx start'
+        WHEN scop_title IS NULL OR scop_title = '' THEN 'MISSING'
+        WHEN p_4225 IS NULL THEN 'NO 4225 DATE'
+        WHEN (p_4225 - CURRENT_DATE) >= 14 THEN 'PASS ≥2wks'
+        ELSE 'FAIL <2wks'
     END                                              AS client_4225_check_access,
 
-    -- ── Crane Readiness (7 days after CRs + 7 days) ──
-    scoping_package_crane_required                   AS crane_required,
-    '7'                                              AS expected_days_crane,
-
+    -- ══════════════════════════════════════
+    -- Crane Readiness
+    -- Expected days: 7 | Chains from: CRs in CQT (parallel)
+    -- Client: Non blanks & ≥2 weeks from TODAY to 4225
+    -- ══════════════════════════════════════
+    ps_crane                                         AS planned_start_crane,
+    pf_crane                                         AS planned_finish_crane,
+    7                                                AS expected_days_crane,
+    scoping_package_crane_required                   AS crane_value,
     CASE
-        WHEN NULLIF(TRIM(scoping_package_crane_required), '') IS NULL
-        THEN 'MISSING — Crane decision blank'
-        WHEN pj_p_4225_construction_start_finish IS NULL
-        THEN 'NO 4225 DATE'
-        WHEN (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 14
-        THEN 'PASS — ≥2 weeks to Cx start'
-        ELSE 'FAIL — <2 weeks to Cx start'
+        WHEN scoping_package_crane_required IS NULL OR scoping_package_crane_required = '' THEN 'MISSING'
+        WHEN p_4225 IS NULL THEN 'NO 4225 DATE'
+        WHEN (p_4225 - CURRENT_DATE) >= 14 THEN 'PASS ≥2wks'
+        ELSE 'FAIL <2wks'
     END                                              AS client_4225_check_crane,
 
-    -- ══════════════════════════════════════════════
-    -- STEEL PATH (from Entitlement, 14 days)
-    -- ══════════════════════════════════════════════
-
-    pj_steel_received_date                           AS steel_received_date,
-    pj_steel_received_status                         AS steel_received_status,
-    '14'                                             AS expected_days_steel,
-
-    -- ══════════════════════════════════════════════
-    -- SITE READY FOR CA (MS 1559 / COP)
-    -- ══════════════════════════════════════════════
-
-    scop_checklist_accepted_by_customer              AS cop_checklist_accepted,
+    -- ══════════════════════════════════════
+    -- Site Ready / COP
+    -- Client: Non blanks & ≥2 weeks from TODAY to 4225
+    -- ══════════════════════════════════════
+    scop_checklist_accepted_by_customer              AS cop_accepted,
     ms_1559_cop_approved_by_t_mobile_actual          AS cop_approved_date,
-
     CASE
-        WHEN NULLIF(TRIM(scop_checklist_accepted_by_customer), '') IS NULL
-             AND ms_1559_cop_approved_by_t_mobile_actual IS NULL
-        THEN 'NOT READY — No COP acceptance'
-        WHEN pj_p_4225_construction_start_finish IS NULL
-        THEN 'NO 4225 DATE'
-        WHEN (pj_p_4225_construction_start_finish::date - CURRENT_DATE) >= 14
-        THEN 'PASS — ≥2 weeks to Cx start'
-        ELSE 'FAIL — <2 weeks to Cx start'
+        WHEN (scop_checklist_accepted_by_customer IS NULL OR scop_checklist_accepted_by_customer = '')
+             AND ms_1559_cop_approved_by_t_mobile_actual IS NULL THEN 'NOT READY'
+        WHEN p_4225 IS NULL THEN 'NO 4225 DATE'
+        WHEN (p_4225 - CURRENT_DATE) >= 14 THEN 'PASS ≥2wks'
+        ELSE 'FAIL <2wks'
     END                                              AS client_4225_check_site_ready
 
-FROM pwc_macro_staging_schema.stg_ndpd_mbt_tmobile_macro_combined
-
-WHERE pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%'
-  AND por_plan_type NOT IN ('Equipment Upgrade', 'FOA')
-  AND por_regional_dev_initiatives ILIKE '%2026 Build Plan%';
+FROM planned;
