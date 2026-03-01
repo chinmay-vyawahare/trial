@@ -93,7 +93,7 @@ Entitlement (3710) [0d] ─── origin
 | 3 | Site Walk Performed | 7d | Pre-NTP | `site_walk` |
 | 4 | Ready for Scoping (MS 1323) | 3d | Site Walk | `1323` |
 | 5 | Scoping Validated by GC (MS 1327) | 7d | Ready for Scoping | `1327` |
-| 6 | BOM in BAT (MS 3850) | 2d | max(Entitlement, Scoping Validated) | `3850` |
+| 6 | BOM in BAT (MS 3850) | 14d | max(Entitlement, Scoping Validated) | `3850` |
 | 7 | BOM Received in AIMS (MS 3875) | 21d | BOM in BAT | `3875` |
 | 8 | Steel Received (If applicable) | 14d | **Scoping Validated** | `steel` |
 | 9 | Material Pickup by GC (MS 3925) | 5d | Steel Received | `3925` |
