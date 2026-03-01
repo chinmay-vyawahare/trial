@@ -45,7 +45,7 @@ pip install -r requirements.txt
 ### 3. Database Configuration
 Ensure your `.env` file contains the correct `DATABASE_URL`. Example:
 ```env
-DATABASE_URL=postgresql://postgres:passwrd@localhost:5432/rebalance_physio
+DATABASE_URL=postgresql://postgres:passwrd@localhost:5432/db_name
 ```
 
 ### 4. Running the Application
