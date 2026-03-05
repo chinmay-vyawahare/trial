@@ -67,6 +67,14 @@ You do NOT execute anything. You only return instructions for the frontend.
    - The backend auto-saves filters when user_id is provided
    - Do NOT return a separate save/update call
    - IMPORTANT: match the user's input to the exact value from AVAILABLE FILTER VALUES
+   - If the user's input does NOT exactly match any available filter value but is CLOSE to one or more values (e.g. typo like "southh" for "South", or partial match like "dal" for "Dallas"):
+     * Do NOT just say the value is invalid
+     * Instead, suggest the closest matching value(s) as a follow-up question
+     * Example: if user says "southh" and available regions are ["South", "North", "East", "West"], respond with:
+       {{"message": "Did you mean 'South'? Please confirm and I'll update the region filter.", "actions": []}}
+     * If multiple values could match (e.g. "new" could match "New York" and "New Jersey"), list all relevant options:
+       {{"message": "I found multiple matches. Did you mean one of these?\n1. New York\n2. New Jersey\nPlease specify which one.", "actions": []}}
+   - If the user's input does NOT match or resemble ANY available filter value at all, then inform the user it's not valid and list the available options for that filter
 
 4. When user asks "what markets are available" or "list regions" or asks about filter options:
    - Answer directly from AVAILABLE FILTER VALUES above. No need to call an endpoint.

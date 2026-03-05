@@ -2,7 +2,7 @@ import json
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db, get_config_db
-from app.models.prerequisite import UserFilter, UserSkippedPrerequisite
+from app.models.prerequisite import UserFilter, MilestoneDefinition
 from app.services.gantt import get_all_sites_gantt, get_dashboard_summary
 
 router = APIRouter(prefix="/api/v1/schedular/gantt-charts", tags=["gantt-charts"])
@@ -105,13 +105,11 @@ def _resolve_filters(
     return region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives
 
 
-def _get_skipped_keys(config_db: Session, user_id: str | None) -> set[str]:
-    """Return the set of milestone keys the user has chosen to skip."""
-    if not user_id:
-        return set()
+def _get_skipped_keys(config_db: Session) -> set[str]:
+    """Return the set of globally skipped milestone keys (admin-set)."""
     rows = (
-        config_db.query(UserSkippedPrerequisite.milestone_key)
-        .filter(UserSkippedPrerequisite.user_id == user_id)
+        config_db.query(MilestoneDefinition.key)
+        .filter(MilestoneDefinition.is_skipped == True)
         .all()
     )
     return {r[0] for r in rows}
@@ -128,7 +126,7 @@ def list_sites(
     site_id: str = Query(None, description="Filter by site ID"),
     vendor: str = Query(None, description="Filter by vendor"),
     area: str = Query(None, description="Filter by area (m_area column)"),
-    user_id: str = Query(None, description="User ID for saved filters & skipped prerequisites"),
+    user_id: str = Query(None, description="User ID for saved filters"),
     limit: int = Query(None, description="Limit the number of results"),
     offset: int = Query(None, description="Offset the results"),
     db: Session = Depends(get_db),
@@ -137,7 +135,7 @@ def list_sites(
     region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives = _resolve_filters(
         config_db, user_id, region, market, site_id, vendor, area
     )
-    skipped_keys = _get_skipped_keys(config_db, user_id)
+    skipped_keys = _get_skipped_keys(config_db)
 
     sites, total_count, count = get_all_sites_gantt(
         db,
@@ -166,18 +164,32 @@ def list_sites(
 
 @router.get("/dashboard")
 def dashboard(
-    region: str = Query(None, description="Filter by region"),
-    market: str = Query(None, description="Filter by market"),
-    vendor: str = Query(None, description="Filter by vendor"),
-    area: str = Query(None, description="Filter by area (m_area column)"),
-    user_id: str = Query(None, description="User ID for saved filters & skipped prerequisites"),
+    user_id: str = Query(..., description="User ID — filters are loaded from saved preferences"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
-    region, market, _, vendor, area, plan_type_include, regional_dev_initiatives = _resolve_filters(
-        config_db, user_id, region, market, None, vendor, area
-    )
-    skipped_keys = _get_skipped_keys(config_db, user_id)
+    """
+    Dashboard summary. All filters are read from the user's saved
+    UserFilter row — no manual filter params needed.
+    """
+    saved = _get_user_filters(config_db, user_id)
+
+    region = saved.region if saved else None
+    market = saved.market if saved else None
+    vendor = saved.vendor if saved else None
+    area = saved.area if saved else None
+
+    plan_type_include = None
+    regional_dev_initiatives = None
+    if saved:
+        if saved.plan_type_include:
+            try:
+                plan_type_include = json.loads(saved.plan_type_include)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        regional_dev_initiatives = saved.regional_dev_initiatives
+
+    skipped_keys = _get_skipped_keys(config_db)
 
     return get_dashboard_summary(
         db,

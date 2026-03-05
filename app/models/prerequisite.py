@@ -24,6 +24,7 @@ class MilestoneDefinition(ConfigBase):
     phase_type = Column(String(100), nullable=True)       # e.g. "Pre-Con Phase", "Scoping Phase", "Material & NTP Phase"
     preceding_milestones = Column(Text, nullable=True)    # JSON array of milestone names this one depends on
     following_milestones = Column(Text, nullable=True)    # JSON array of milestone names that depend on this one
+    is_skipped = Column(Boolean, default=False, nullable=False, server_default="false")  # admin-set global skip
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

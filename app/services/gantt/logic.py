@@ -309,15 +309,9 @@ def compute_milestones_for_site(
         preceding = preceding_map.get(key, [])
         following = following_map.get(key, [])
 
-        # User-skipped prerequisite — treat as instantly complete
+        # User-skipped prerequisite — excluded from response entirely
+        # (planned dates still computed with 0 duration so downstream milestones shift)
         if key in skipped:
-            milestones.append(_build_milestone_row(
-                key, ms, ps, pf,
-                actual=None, status="Skipped", delay=0,
-                days_since=None, days_remaining=None,
-                is_text=False, text_val=None,
-                preceding=preceding, following=following,
-            ))
             continue
 
         actual, is_text, text_val, skip = _get_actual_date(row, ms)
@@ -351,21 +345,58 @@ def compute_milestones_for_site(
     # ----------------------------------------------------------------
     # All Prerequisites Complete
     # ----------------------------------------------------------------
+    # Build a child→parents map for walking up the dependency chain
+    child_to_parents: Dict[str, List[str]] = {}
+    for ms in milestones_config:
+        dep = ms["depends_on"]
+        if dep is None:
+            child_to_parents[ms["key"]] = []
+        elif isinstance(dep, list):
+            child_to_parents[ms["key"]] = dep
+        else:
+            child_to_parents[ms["key"]] = [dep]
+
+    name_lookup = {m["key"]: m["name"] for m in milestones_config}
     tail_dates = []
+    effective_tail_keys = []
+
     for tail in prereq_tails:
-        if tail["key"] in dates:
-            pf_tail = dates[tail["key"]]["pf"]
-            tail_dates.append(pf_tail + timedelta(days=tail["offset_days"]))
+        key = tail["key"]
+        offset = tail["offset_days"]
+
+        if key not in skipped:
+            # Tail is not skipped — use it directly
+            if key in dates:
+                pf_tail = dates[key]["pf"]
+                tail_dates.append(pf_tail + timedelta(days=offset))
+                effective_tail_keys.append(key)
+        else:
+            # Tail is skipped — walk up the dependency chain to find the
+            # nearest non-skipped ancestor(s) and use them instead
+            queue = list(child_to_parents.get(key, []))
+            visited = {key}
+            while queue:
+                ancestor = queue.pop(0)
+                if ancestor in visited:
+                    continue
+                visited.add(ancestor)
+                if ancestor in skipped:
+                    # This ancestor is also skipped, keep walking up
+                    queue.extend(child_to_parents.get(ancestor, []))
+                else:
+                    # Found a non-skipped ancestor — use it as effective tail
+                    if ancestor in dates:
+                        pf_tail = dates[ancestor]["pf"]
+                        tail_dates.append(pf_tail + timedelta(days=offset))
+                        effective_tail_keys.append(ancestor)
 
     if not tail_dates:
         return milestones, None
 
     all_prereq_complete = max(tail_dates)
 
-    # Collect tail milestone names for preceding_milestones
-    tail_keys = [t["key"] for t in prereq_tails]
-    name_lookup = {m["key"]: m["name"] for m in milestones_config}
-    all_prereq_preceding = [name_lookup.get(k, k) for k in tail_keys if k in dates]
+    # Collect effective tail milestone names for preceding_milestones
+    all_prereq_preceding = [name_lookup.get(k, k) for k in effective_tail_keys]
 
     milestones.append({
         "key": "all_prereq",

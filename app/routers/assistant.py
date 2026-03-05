@@ -7,7 +7,7 @@ POST /api/v1/schedular/assistant/chat?user_id=xxx
   - Returns recommended API endpoints + params for the frontend to call
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,7 @@ router = APIRouter(
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(default="Give the current filters", description="User message to the assistant")
 
 
 @router.post("/chat")

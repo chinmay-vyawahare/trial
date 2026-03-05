@@ -56,7 +56,7 @@ def get_all_sites_gantt(
         if not milestones:
             continue
 
-        # Exclude virtual milestones (all_prereq, cx_start_forecast) from status counting
+        # Exclude virtual milestones from status counting (skipped are already omitted)
         countable = [m for m in milestones if not m.get("is_virtual", False)]
         total = len(countable)
         on_track_count = sum(1 for m in countable if m["status"] == "On Track")
@@ -132,18 +132,18 @@ def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipp
         ps = max(dep_finishes) + timedelta(days=gap)
         dates[key] = ps + timedelta(days=expected)
 
-    # Count on-track milestones
+    # Count on-track milestones (exclude user-skipped from counting entirely)
     on_track = 0
     total = 0
     for ms in milestones_config:
         key = ms["key"]
         if key not in dates:
             continue
-        total += 1
 
         if key in skipped:
-            on_track += 1
-            continue
+            continue  # exclude skipped milestones from counting
+
+        total += 1
 
         actual, is_text, text_val, skip_flag = _get_actual_date(row, ms)
         if skip_flag:

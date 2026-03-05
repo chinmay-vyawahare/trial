@@ -172,6 +172,67 @@ class MilestoneDefinitionUpdate(BaseModel):
     phase_type: Optional[str] = None
 
 
+class MilestoneColumnCreate(BaseModel):
+    """Column definition for a new prerequisite."""
+    column_name: str                             # staging table column name
+    column_role: str = "date"                    # "date", "text", "status"
+    logic: Optional[str] = None                  # JSON string: {"pick":"min"}, {"skip":[...],"use_date":[...]}
+
+
+class MilestoneDefinitionCreate(BaseModel):
+    """
+    Input schema for creating a new prerequisite.
+
+    preceding_milestone_keys: list of milestone keys that this new prerequisite depends on.
+                              These become the depends_on value.
+                              e.g. ["1310"] or ["3710", "1327"] for multi-dependency.
+    following_milestone_keys: list of milestone keys that should depend on this new prerequisite.
+                              Those milestones will have their depends_on rewired from their
+                              current dependency to the new milestone's key.
+    insert_after_key:         the milestone key after which to insert (for sort_order).
+                              If null, inferred from preceding_milestone_keys or appended at end.
+    columns:                  list of column definitions for the staging table.
+    """
+    key: str
+    name: str
+    expected_days: int = 0
+    start_gap_days: int = 1
+    task_owner: Optional[str] = None
+    phase_type: Optional[str] = None
+    preceding_milestone_keys: Optional[list[str]] = None   # keys this milestone depends on
+    following_milestone_keys: Optional[list[str]] = None    # keys that should depend on this milestone
+    insert_after_key: Optional[str] = None                  # for sort_order positioning (None = auto)
+    columns: list[MilestoneColumnCreate] = []               # staging table column mappings
+
+
+class MilestoneDefinitionCreateOut(BaseModel):
+    """Output schema after creating a new prerequisite — includes computed dependency info."""
+    model_config = {"from_attributes": True}
+
+    id: int
+    key: str
+    name: str
+    sort_order: int
+    expected_days: int
+    start_gap_days: int = 1
+    task_owner: Optional[str] = None
+    phase_type: Optional[str] = None
+    depends_on: Optional[str] = None
+    preceding_milestones: Optional[list[str]] = None
+    following_milestones: Optional[list[str]] = None
+    columns: list[dict] = []
+
+    @field_validator("preceding_milestones", "following_milestones", mode="before")
+    @classmethod
+    def parse_json_string_create(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return None
+        return v
+
+
 class MilestoneReorderItem(BaseModel):
     key: str
     sort_order: int
@@ -216,7 +277,6 @@ class UserFilterOut(BaseModel):
 # ----------------------------------------------------------------
 
 class SkipPrerequisiteRequest(BaseModel):
-    user_id: str
     milestone_key: str
 
 
@@ -224,5 +284,6 @@ class SkipPrerequisiteOut(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    user_id: str
-    milestone_key: str
+    key: str
+    name: str
+    is_skipped: bool
