@@ -1,9 +1,10 @@
 import json
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db, get_config_db
 from app.models.prerequisite import UserFilter, MilestoneDefinition
 from app.services.gantt import get_all_sites_gantt, get_dashboard_summary
+from app.services.gantt.milestones import get_user_expected_days_overrides
 
 router = APIRouter(prefix="/api/v1/schedular/gantt-charts", tags=["gantt-charts"])
 
@@ -132,10 +133,16 @@ def list_sites(
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
+    if limit is not None and limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be a positive integer.")
+    if offset is not None and offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be >= 0.")
+
     region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives = _resolve_filters(
         config_db, user_id, region, market, site_id, vendor, area
     )
     skipped_keys = _get_skipped_keys(config_db)
+    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
 
     sites, total_count, count = get_all_sites_gantt(
         db,
@@ -150,6 +157,7 @@ def list_sites(
         limit=limit,
         offset=offset,
         skipped_keys=skipped_keys,
+        user_expected_days_overrides=user_ed_overrides,
     )
     return {
         "count": count,
@@ -172,6 +180,9 @@ def dashboard(
     Dashboard summary. All filters are read from the user's saved
     UserFilter row — no manual filter params needed.
     """
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required and cannot be empty.")
+
     saved = _get_user_filters(config_db, user_id)
 
     region = saved.region if saved else None
@@ -190,6 +201,7 @@ def dashboard(
         regional_dev_initiatives = saved.regional_dev_initiatives
 
     skipped_keys = _get_skipped_keys(config_db)
+    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id)
 
     return get_dashboard_summary(
         db,
@@ -201,4 +213,5 @@ def dashboard(
         plan_type_include=plan_type_include,
         regional_dev_initiatives=regional_dev_initiatives,
         skipped_keys=skipped_keys,
+        user_expected_days_overrides=user_ed_overrides,
     )

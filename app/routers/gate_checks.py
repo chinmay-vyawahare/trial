@@ -84,6 +84,9 @@ def save_gate_checks(
     config_db: Session = Depends(get_config_db),
 ):
     """Save or update gate check selections for a user."""
+    if not body.user_id or not body.user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required and cannot be empty.")
+
     pti_json = json.dumps(body.plan_type_include) if body.plan_type_include else None
 
     existing = (
@@ -117,6 +120,9 @@ def get_gate_checks(
     config_db: Session = Depends(get_config_db),
 ):
     """Return saved gate checks for a user."""
+    if not user_id or not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required and cannot be empty.")
+
     row = (
         config_db.query(UserFilter)
         .filter(UserFilter.user_id == user_id)

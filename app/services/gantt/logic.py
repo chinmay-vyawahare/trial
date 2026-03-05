@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .utils import parse_date
 from .milestones import (
     get_milestones, get_prereq_tails, get_cx_start_offset_days,
-    get_planned_start_column,
+    get_planned_start_column, apply_user_expected_days,
 )
 
 
@@ -108,12 +108,12 @@ def _handle_single(row: Dict, cfg: Dict):
     return actual, False, None, False
 
 
-def _handle_min(row: Dict, cfg: Dict):
-    """Multiple date columns — return earliest non-null."""
+def _handle_max(row: Dict, cfg: Dict):
+    """Multiple date columns — return latest (max) non-null date."""
     parsed = [parse_date(row.get(c)) for c in cfg.get("columns", [])]
     valid = [d for d in parsed if d is not None]
     if len(valid) >= 2:
-        return min(valid), False, None, False
+        return max(valid), False, None, False
     return (valid[0] if valid else None), False, None, False
 
 
@@ -153,7 +153,7 @@ def _handle_with_status(row: Dict, cfg: Dict):
 
 COLUMN_HANDLERS = {
     "single": _handle_single,
-    "min": _handle_min,
+    "max": _handle_max,
     "text": _handle_text,
     "with_status": _handle_with_status,
 }
@@ -282,10 +282,12 @@ def compute_milestones_for_site(
     row: Dict,
     db: Session,
     skipped_keys: set | None = None,
+    user_expected_days_overrides: dict | None = None,
 ) -> tuple[List[Dict], Optional[date]]:
     today = date.today()
 
     milestones_config = get_milestones(db)
+    milestones_config = apply_user_expected_days(milestones_config, user_expected_days_overrides or {})
     prereq_tails = get_prereq_tails(db)
     cx_start_offset_days = get_cx_start_offset_days(db)
     planned_start_col = get_planned_start_column(db)

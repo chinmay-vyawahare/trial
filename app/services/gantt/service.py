@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from .queries import build_gantt_query, build_dashboard_query
 from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold
-from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds
+from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides
 from .utils import parse_date
 
 def get_all_sites_gantt(
@@ -18,6 +18,7 @@ def get_all_sites_gantt(
     limit: int = None,
     offset: int = None,
     skipped_keys: set[str] | None = None,
+    user_expected_days_overrides: dict[str, int] | None = None,
 ):
     # Load milestone config from config DB
     milestones_config = get_milestones(config_db)
@@ -52,6 +53,7 @@ def get_all_sites_gantt(
     for row in rows:
         milestones, forecasted_cx_start = compute_milestones_for_site(
             row, config_db, skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_expected_days_overrides,
         )
         if not milestones:
             continue
@@ -96,7 +98,7 @@ def get_all_sites_gantt(
 
     return sites, total_count, count
 
-def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipped_keys):
+def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipped_keys, user_expected_days_overrides=None):
     """Compute overall status for one row — only dates, no full milestone dicts."""
     origin_date = parse_date(row.get(planned_start_col))
     if origin_date is None:
@@ -104,7 +106,11 @@ def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipp
 
     today = date.today()
     skipped = skipped_keys or set()
-    expected_by_key = {m["key"]: m["expected_days"] for m in milestones_config}
+    overrides = user_expected_days_overrides or {}
+    expected_by_key = {
+        m["key"]: overrides.get(m["key"], m["expected_days"])
+        for m in milestones_config
+    }
 
     # Compute planned finish dates
     dates = {}
@@ -118,7 +124,7 @@ def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipp
         elif dep is not None and isinstance(dep, list) and len(dep) > 1:
             expected = max(expected_by_key.get(d, 0) for d in dep)
         else:
-            expected = ms["expected_days"]
+            expected = expected_by_key.get(key, ms["expected_days"])
 
         if dep is None:
             pf = origin_date + timedelta(days=expected) if expected > 0 else origin_date
@@ -169,9 +175,11 @@ def get_dashboard_summary(
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
     skipped_keys: set[str] | None = None,
+    user_expected_days_overrides: dict[str, int] | None = None,
 ):
     # Load config once
     milestones_config = get_milestones(config_db)
+    milestones_config = apply_user_expected_days(milestones_config, user_expected_days_overrides or {})
     milestone_columns = get_all_actual_columns(milestones_config)
     planned_start_col = get_planned_start_column(config_db)
     ms_thresholds = get_milestone_thresholds(config_db)
@@ -204,7 +212,7 @@ def get_dashboard_summary(
     # Compute per-site status
     statuses = []
     for row in rows:
-        status = _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipped_keys)
+        status = _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipped_keys, user_expected_days_overrides)
         if status is not None:
             statuses.append(status)
 
@@ -234,3 +242,69 @@ def get_dashboard_summary(
         "critical_sites": critical,
         "on_track_sites": on_track,
     }
+
+
+def get_history_gantt(
+    db: Session,
+    config_db: Session,
+    date_from: date,
+    date_to: date,
+    region: str = None,
+    market: str = None,
+    site_id: str = None,
+    vendor: str = None,
+    area: str = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
+    limit: int = None,
+    offset: int = None,
+    skipped_keys: set[str] | None = None,
+):
+    """
+    Gantt chart using history-based SLA.
+
+    Computes history_expected_days from the given date range, saves them
+    into milestone_definitions.history_expected_days, then runs the gantt
+    logic using those values as expected_days overrides.
+    """
+    # Import here to avoid circular import (sla_history → gantt.milestones → gantt.service)
+    from app.services.sla_history import compute_history_expected_days
+    from app.models.prerequisite import MilestoneDefinition
+
+    # Compute history-based expected_days from actual dates
+    history_results = compute_history_expected_days(db, config_db, date_from, date_to)
+
+    # Build overrides dict and save to DB
+    history_overrides = {}
+    for item in history_results:
+        if item["history_expected_days"] is None:
+            continue
+        history_overrides[item["milestone_key"]] = item["history_expected_days"]
+
+        # Save/update in milestone_definitions
+        ms_def = (
+            config_db.query(MilestoneDefinition)
+            .filter(MilestoneDefinition.key == item["milestone_key"])
+            .first()
+        )
+        if ms_def:
+            ms_def.history_expected_days = item["history_expected_days"]
+
+    config_db.commit()
+
+    # Reuse the standard gantt function with history overrides
+    return get_all_sites_gantt(
+        db=db,
+        config_db=config_db,
+        region=region,
+        market=market,
+        site_id=site_id,
+        vendor=vendor,
+        area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+        limit=limit,
+        offset=offset,
+        skipped_keys=skipped_keys,
+        user_expected_days_overrides=history_overrides,
+    )

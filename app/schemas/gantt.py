@@ -146,7 +146,9 @@ class MilestoneDefinitionOut(BaseModel):
     name: str
     sort_order: int
     expected_days: int
+    history_expected_days: Optional[int] = None
     start_gap_days: int = 1
+    sla_type: str = "default"
     task_owner: Optional[str] = None
     phase_type: Optional[str] = None
     preceding_milestones: Optional[list[str]] = None    # milestones this one depends on (before)
@@ -176,7 +178,7 @@ class MilestoneColumnCreate(BaseModel):
     """Column definition for a new prerequisite."""
     column_name: str                             # staging table column name
     column_role: str = "date"                    # "date", "text", "status"
-    logic: Optional[str] = None                  # JSON string: {"pick":"min"}, {"skip":[...],"use_date":[...]}
+    logic: Optional[str] = None                  # JSON string: {"pick":"max"}, {"skip":[...],"use_date":[...]}
 
 
 class MilestoneDefinitionCreate(BaseModel):
@@ -287,3 +289,39 @@ class SkipPrerequisiteOut(BaseModel):
     key: str
     name: str
     is_skipped: bool
+
+
+# ----------------------------------------------------------------
+# User Expected Days (SLA override) schemas
+# ----------------------------------------------------------------
+
+class UserExpectedDaysRequest(BaseModel):
+    milestone_key: str
+    expected_days: int
+
+
+class UserExpectedDaysOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    user_id: str
+    milestone_key: str
+    expected_days: int
+
+
+# ----------------------------------------------------------------
+# SLA History schemas
+# ----------------------------------------------------------------
+
+class SlaHistoryRequest(BaseModel):
+    """Request to compute expected_days from historical actual dates."""
+    date_from: str          # "2025-01-01"
+    date_to: str            # "2025-06-30"
+
+class SlaHistoryMilestoneResult(BaseModel):
+    """Computed history-based expected_days for one milestone."""
+    milestone_key: str
+    milestone_name: str
+    default_expected_days: int
+    history_expected_days: Optional[int] = None   # None if no data
+    sample_count: int = 0                         # sites used for calc

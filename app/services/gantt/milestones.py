@@ -7,7 +7,7 @@ Single source of truth: database tables seeded by init_milestone_data.py.
 import json
 from collections import defaultdict
 from sqlalchemy.orm import Session
-from app.models.prerequisite import MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig, ConstraintThreshold
+from app.models.prerequisite import MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig, ConstraintThreshold, UserExpectedDays
 
 
 def _parse_json_or_str(raw: str):
@@ -38,7 +38,7 @@ def _build_columns_config(columns: list[dict]) -> dict:
     Build the column_config dict from normalized MilestoneColumn rows.
 
     Returns the same structure that logic.py handlers expect:
-      {"type": "single"|"min"|"text"|"with_status", "columns": [...], ...extra}
+      {"type": "single"|"max"|"text"|"with_status", "columns": [...], ...extra}
 
     This bridges the normalized DB schema to the handler interface.
     """
@@ -67,15 +67,15 @@ def _build_columns_config(columns: list[dict]) -> dict:
             "use_date": (status_logic or {}).get("use_date", []),
         }
 
-    # --- multiple date columns with pick=min ---
+    # --- multiple date columns with pick=max (latest date) ---
     if len(date_cols) > 1:
-        has_min = any(
-            (_parse_logic(c["logic"]) or {}).get("pick") == "min"
+        has_max = any(
+            (_parse_logic(c["logic"]) or {}).get("pick") == "max"
             for c in date_cols
         )
-        if has_min:
+        if has_max:
             return {
-                "type": "min",
+                "type": "max",
                 "columns": [c["column_name"] for c in date_cols],
             }
 
@@ -117,6 +117,50 @@ def get_milestones(db: Session) -> list[dict]:
             "phase_type": r.phase_type,
             "column_config": column_config,
         })
+    return result
+
+
+def get_user_expected_days_overrides(db: Session, user_id: str) -> dict[str, int]:
+    """
+    Return a {milestone_key: expected_days} map of user-level SLA overrides.
+
+    Returns an empty dict if the user has no overrides.
+    """
+    if not user_id:
+        return {}
+    rows = (
+        db.query(UserExpectedDays)
+        .filter(UserExpectedDays.user_id == user_id)
+        .all()
+    )
+    return {r.milestone_key: r.expected_days for r in rows}
+
+
+def get_history_expected_days_overrides(db: Session) -> dict[str, int]:
+    """
+    Return a {milestone_key: history_expected_days} map from the
+    milestone_definitions table (only where history_expected_days is set).
+    """
+    rows = (
+        db.query(MilestoneDefinition.key, MilestoneDefinition.history_expected_days)
+        .filter(MilestoneDefinition.history_expected_days.isnot(None))
+        .all()
+    )
+    return {r[0]: r[1] for r in rows}
+
+
+def apply_user_expected_days(milestones: list[dict], overrides: dict[str, int]) -> list[dict]:
+    """
+    Return a new milestones list with expected_days replaced by user overrides
+    where applicable. Does NOT mutate the original list.
+    """
+    if not overrides:
+        return milestones
+    result = []
+    for ms in milestones:
+        if ms["key"] in overrides:
+            ms = {**ms, "expected_days": overrides[ms["key"]]}
+        result.append(ms)
     return result
 
 

@@ -183,7 +183,7 @@ SEED_MILESTONES = [
         "sort_order": 13,
         "expected_days": 7,
         "depends_on": "1327",
-        "start_gap_days": 14,
+        "start_gap_days": 1,
         "task_owner": "TMO",
         "phase_type": "Material & NTP Phase",
         "preceding_milestones": json.dumps(["Scoping Validated by GC (MS 1327)"]),
@@ -195,7 +195,7 @@ SEED_MILESTONES = [
         "sort_order": 14,
         "expected_days": 7,
         "depends_on": "1327",
-        "start_gap_days": 7,
+        "start_gap_days": 1,
         "task_owner": "CM",
         "phase_type": "Material & NTP Phase",
         "preceding_milestones": json.dumps(["Scoping Validated by GC (MS 1327)"]),
@@ -208,7 +208,7 @@ SEED_MILESTONES = [
 #
 # column_role: "date", "text", "status"
 # logic (JSON):
-#   date   → {"pick": "single"} or {"pick": "min"}
+#   date   → {"pick": "single"} or {"pick": "max"}
 #   text   → null
 #   status → {"skip": [...], "use_date": [...]}
 # ----------------------------------------------------------------
@@ -221,11 +221,11 @@ SEED_MILESTONE_COLUMNS = [
     {"milestone_key": "1310", "column_name": "ms_1310_pre_construction_package_received_actual",
      "column_role": "date", "logic": None, "sort_order": 2},
 
-    # site_walk — min of 2 date columns
+    # site_walk — max (latest) of 2 date columns
     {"milestone_key": "site_walk", "column_name": "ms_1316_pre_con_site_walk_completed_actual",
-     "column_role": "date", "logic": json.dumps({"pick": "min"}), "sort_order": 3},
+     "column_role": "date", "logic": json.dumps({"pick": "max"}), "sort_order": 3},
     {"milestone_key": "site_walk", "column_name": "ms_1321_talon_view_drone_svcs_actual",
-     "column_role": "date", "logic": json.dumps({"pick": "min"}), "sort_order": 4},
+     "column_role": "date", "logic": json.dumps({"pick": "max"}), "sort_order": 4},
 
     # 1323 — single date
     {"milestone_key": "1323", "column_name": "ms_1323_ready_for_scoping_actual",
@@ -371,6 +371,19 @@ SEED_CONSTRAINT_THRESHOLDS = [
 ]
 
 
+def _ensure_columns(engine):
+    """Add columns that may not exist on an older schema."""
+    from sqlalchemy import text, inspect
+    inspector = inspect(engine)
+    cols = {c["name"] for c in inspector.get_columns("milestone_definitions")}
+    with engine.begin() as conn:
+        if "history_expected_days" not in cols:
+            conn.execute(text(
+                "ALTER TABLE milestone_definitions ADD COLUMN history_expected_days INTEGER"
+            ))
+            logger.info("Added history_expected_days column to milestone_definitions.")
+
+
 def init_milestone_data():
     """Create tables and seed default data if not already present."""
     ConfigBase.metadata.create_all(bind=config_engine, tables=[
@@ -380,6 +393,9 @@ def init_milestone_data():
         GanttConfig.__table__,
         ConstraintThreshold.__table__,
     ])
+
+    # Ensure new columns exist on pre-existing tables
+    _ensure_columns(config_engine)
 
     db: Session = ConfigSessionLocal()
     try:

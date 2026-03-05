@@ -80,6 +80,19 @@ def create_constraint(
     The id is auto-generated — do not send it in the request body.
     Duplicate entries (same constraint_type + name) are rejected with 409.
     """
+    if body.constraint_type not in ("milestone", "overall"):
+        raise HTTPException(status_code=400, detail="constraint_type must be 'milestone' or 'overall'.")
+    if body.min_pct < 0 or body.min_pct > 100:
+        raise HTTPException(status_code=400, detail="min_pct must be between 0 and 100.")
+    if body.max_pct is not None and (body.max_pct < 0 or body.max_pct > 100):
+        raise HTTPException(status_code=400, detail="max_pct must be between 0 and 100.")
+    if body.max_pct is not None and body.min_pct > body.max_pct:
+        raise HTTPException(status_code=400, detail="min_pct cannot be greater than max_pct.")
+    if not body.name or not body.name.strip():
+        raise HTTPException(status_code=400, detail="name is required and cannot be empty.")
+    if not body.color or not body.color.strip():
+        raise HTTPException(status_code=400, detail="color is required and cannot be empty.")
+
     # Prevent duplicate (same constraint_type + name)
     existing = (
         db.query(ConstraintThreshold)
@@ -122,6 +135,17 @@ def update_constraint(
         raise HTTPException(status_code=404, detail=f"Constraint threshold {constraint_id} not found")
 
     updates = body.model_dump(exclude_unset=True)
+
+    # Validate percentage fields if provided
+    new_min = updates.get("min_pct", row.min_pct)
+    new_max = updates.get("max_pct", row.max_pct)
+    if new_min is not None and (new_min < 0 or new_min > 100):
+        raise HTTPException(status_code=400, detail="min_pct must be between 0 and 100.")
+    if new_max is not None and (new_max < 0 or new_max > 100):
+        raise HTTPException(status_code=400, detail="max_pct must be between 0 and 100.")
+    if new_min is not None and new_max is not None and new_min > new_max:
+        raise HTTPException(status_code=400, detail="min_pct cannot be greater than max_pct.")
+
     for field, value in updates.items():
         setattr(row, field, value)
 

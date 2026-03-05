@@ -24,6 +24,8 @@ class MilestoneDefinition(ConfigBase):
     phase_type = Column(String(100), nullable=True)       # e.g. "Pre-Con Phase", "Scoping Phase", "Material & NTP Phase"
     preceding_milestones = Column(Text, nullable=True)    # JSON array of milestone names this one depends on
     following_milestones = Column(Text, nullable=True)    # JSON array of milestone names that depend on this one
+    history_expected_days = Column(Integer, nullable=True)  # computed from historical actual dates
+    sla_type = Column(String(20), nullable=False, default="default", server_default="default")  # "default" | "history"
     is_skipped = Column(Boolean, default=False, nullable=False, server_default="false")  # admin-set global skip
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -39,7 +41,7 @@ class MilestoneColumn(ConfigBase):
       "status" — status column that controls skip/use logic
 
     logic (JSON, nullable) — role-specific rules:
-      For "date":   {"pick": "single"} or {"pick": "min"} when multiple date columns
+      For "date":   {"pick": "single"} or {"pick": "max"} when multiple date columns
       For "text":   null (just checks if populated)
       For "status": {"skip": ["N","Not Applicable",""], "use_date": ["A"]}
 
@@ -204,6 +206,23 @@ class UserSkippedPrerequisite(ConfigBase):
     user_id = Column(String(100), nullable=False)
     milestone_key = Column(String(50), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class UserExpectedDays(ConfigBase):
+    """
+    Per-user SLA overrides for milestone expected_days.
+
+    When a user sets a custom expected_days for a milestone, planned-date
+    calculations use this value instead of the global MilestoneDefinition.expected_days.
+    """
+    __tablename__ = "user_expected_days"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    milestone_key = Column(String(50), nullable=False)
+    expected_days = Column(Integer, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class ChatHistory(ConfigBase):

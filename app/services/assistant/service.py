@@ -1,26 +1,29 @@
 """
-AI Assistant service — ChatOpenAI.
+AI Assistant service — ChatOpenAI with tool calling.
 
-The LLM does NOT execute anything. It returns API endpoint(s) + params
+The LLM does NOT execute anything directly. It returns API endpoint(s) + params
 that the frontend should call.
 
-All available filter values (markets, regions, etc.) are loaded from DB
-and injected into the system prompt so the LLM can match user input to
-real values.
+Instead of dumping all filter values (3000+ sites) into the system prompt,
+the LLM has **tools** it can call on demand to fetch only the filter data
+it needs (regions, markets, areas, sites, vendors, plan types, dev initiatives).
 
 Chat history is persisted per user_id in the chat_history table.
 The last 5 message pairs are summarized and included in the system prompt.
 """
 
 import json
+import logging
 import os
-from langchain_openai import ChatOpenAI
+from openai import OpenAI
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from .tools import API_REGISTRY
+from .tools import API_REGISTRY, FILTER_TOOLS
 from app.services.gantt import get_filter_options
 from app.models.prerequisite import UserFilter, ChatHistory
+
+logger = logging.getLogger(__name__)
 
 _BASE_WHERE = (
     "smp_name = 'NTM' "
@@ -35,13 +38,25 @@ the frontend should call, with the correct query params filled in.
 
 You do NOT execute anything. You only return instructions for the frontend.
 
+## TOOLS YOU CAN CALL
+
+You have access to tools that fetch filter values from the database in real time:
+- get_available_regions — fetch all region values
+- get_available_markets — fetch all market values
+- get_available_areas — fetch all area values
+- get_available_sites — fetch all site IDs
+- get_available_vendors — fetch all vendor/GC values
+- get_available_plan_types — fetch all plan type values
+- get_available_dev_initiatives — fetch all dev initiative values
+
+**ALWAYS call the relevant tool** when:
+- The user asks "what markets/regions/areas/sites/vendors are available?"
+- You need to validate or match a user-provided filter value
+- The user asks to change a filter and you need to confirm the value exists
+
 ## AVAILABLE API ENDPOINTS:
 
 {api_registry}
-
-## AVAILABLE FILTER VALUES (from database):
-
-{filter_values}
 
 ## CURRENT USER FILTERS:
 
@@ -54,70 +69,116 @@ You do NOT execute anything. You only return instructions for the frontend.
 ## RULES:
 
 1. Always respond with a JSON object:
-   - "message": short human-readable explanation
-   - "actions": list of API calls for the frontend
+   - "message": a human-readable explanation that MUST ALWAYS be present and descriptive.
+     When listing filter values, include a friendly intro like "Here are the available markets:" followed by the list.
+     When changing a filter, confirm what was changed.
+     When showing dashboard, explain what data will be shown.
+     NEVER leave the message empty or vague — the message is displayed directly to the user in the UI.
+   - "actions": list of API calls for the frontend (can be empty if just answering a question)
 
 2. Each action must have:
    - "method": GET
    - "endpoint": full path (replace {{user_id}} with actual value)
    - "params": query params dict (only include non-null values)
 
-3. When user asks to change a filter (e.g. "change market to Dallas"):
-   - Return the gantt-charts endpoint with user_id + the changed filter param
+3. **CRITICAL — ONLY change what the user explicitly asked for:**
+   - If user says "change market to Dallas", ONLY include "market" and "user_id" in params. Do NOT add region, vendor, area, or any other filter.
+   - If user says "set region to South", ONLY include "region" and "user_id" in params.
+   - NEVER add extra filters that the user did not mention in their request.
+   - The backend merges with saved filters automatically — you do NOT need to re-send existing filters.
+   - Only include the filter(s) the user explicitly mentioned + user_id. Nothing else.
+
+4. When user asks to change a filter (e.g. "change market to Dallas"):
+   - First call the relevant tool (e.g. get_available_markets) to get the real values
+   - Match the user's input to the exact value from the tool results
+   - Return the gantt-charts endpoint with ONLY user_id + the changed filter param
    - The backend auto-saves filters when user_id is provided
    - Do NOT return a separate save/update call
-   - IMPORTANT: match the user's input to the exact value from AVAILABLE FILTER VALUES
-   - If the user's input does NOT exactly match any available filter value but is CLOSE to one or more values (e.g. typo like "southh" for "South", or partial match like "dal" for "Dallas"):
-     * Do NOT just say the value is invalid
-     * Instead, suggest the closest matching value(s) as a follow-up question
-     * Example: if user says "southh" and available regions are ["South", "North", "East", "West"], respond with:
-       {{"message": "Did you mean 'South'? Please confirm and I'll update the region filter.", "actions": []}}
-     * If multiple values could match (e.g. "new" could match "New York" and "New Jersey"), list all relevant options:
-       {{"message": "I found multiple matches. Did you mean one of these?\n1. New York\n2. New Jersey\nPlease specify which one.", "actions": []}}
-   - If the user's input does NOT match or resemble ANY available filter value at all, then inform the user it's not valid and list the available options for that filter
+   - If the user's input does NOT exactly match any available value but is CLOSE (e.g. typo like "southh" for "South", or partial match like "dal" for "Dallas"):
+     * Suggest the closest matching value(s) as a follow-up question
+     * Example: {{"message": "Did you mean 'South'? Please confirm and I'll update the region filter.", "actions": []}}
+   - If multiple values could match, list all options:
+     * Example: {{"message": "I found multiple matches. Did you mean one of these? 1. New York, 2. New Jersey. Please specify which one.", "actions": []}}
+   - If no match at all, inform the user and list available options for that filter
 
-4. When user asks "what markets are available" or "list regions" or asks about filter options:
-   - Answer directly from AVAILABLE FILTER VALUES above. No need to call an endpoint.
-   - Just return the list in the "message" field with empty "actions"
+5. When user asks "what markets are available" or "list regions" or asks about filter options:
+   - Call the relevant tool to get the current values from the database
+   - Return the list in the "message" field with a friendly intro and the complete list
+   - The "actions" array should be empty
+   - Format the list as comma-separated values for clean display (e.g. "Dallas, Houston, Chicago, ...")
 
-5. When user asks "show dashboard" or "how are things looking":
+6. When user asks "show dashboard" or "how are things looking":
    - Return the dashboard endpoint with user_id
 
-6. When user asks about constraints or thresholds:
+7. When user asks about constraints or thresholds:
    - Return the constraints endpoint
-    
-7. Only include params that have actual values. Skip null/empty params.
 
-8. ONLY respond with valid JSON. No markdown, no code blocks.
+8. Only include params that have actual values. Skip null/empty params.
 
-9. Use the RECENT CONVERSATION SUMMARY to maintain context from prior messages.
+9. ONLY respond with valid JSON. No markdown, no code blocks.
 
-10. If user asked for the user's filter return the filters in the message field and do not return an action.
+10. Use the RECENT CONVERSATION SUMMARY to maintain context from prior messages.
+
+11. If user asked for the user's current filters, return the filters in the message field with a clear explanation and do not return an action.
 """
 
 
-def _get_filter_values(db: Session) -> dict:
-    """Fetch all distinct filter values from the staging DB."""
+# ── Tool execution helpers ─────────────────────────────────────────────
+
+def _exec_get_available_regions(db: Session) -> list[str]:
     filters = get_filter_options(db)
+    return filters.get("regions", [])
 
-    # Gate check values
-    plan_types = [
-        r[0] for r in db.execute(text(
-            f"SELECT DISTINCT por_plan_type FROM public.stg_ndpd_mbt_tmobile_macro_combined "
-            f"WHERE {_BASE_WHERE} AND por_plan_type IS NOT NULL ORDER BY por_plan_type"
-        ))
-    ]
-    dev_initiatives = [
-        r[0] for r in db.execute(text(
-            f"SELECT DISTINCT por_regional_dev_initiatives FROM public.stg_ndpd_mbt_tmobile_macro_combined "
-            f"WHERE {_BASE_WHERE} AND por_regional_dev_initiatives IS NOT NULL ORDER BY por_regional_dev_initiatives"
-        ))
-    ]
 
-    filters["plan_types"] = plan_types
-    filters["regional_dev_initiatives"] = dev_initiatives
-    return filters
+def _exec_get_available_markets(db: Session) -> list[str]:
+    filters = get_filter_options(db)
+    return filters.get("markets", [])
 
+
+def _exec_get_available_areas(db: Session) -> list[str]:
+    filters = get_filter_options(db)
+    return filters.get("areas", [])
+
+
+def _exec_get_available_sites(db: Session) -> list[str]:
+    filters = get_filter_options(db)
+    return filters.get("site_ids", [])
+
+
+def _exec_get_available_vendors(db: Session) -> list[str]:
+    filters = get_filter_options(db)
+    return filters.get("vendors", [])
+
+
+def _exec_get_available_plan_types(db: Session) -> list[str]:
+    rows = db.execute(text(
+        f"SELECT DISTINCT por_plan_type FROM public.stg_ndpd_mbt_tmobile_macro_combined "
+        f"WHERE {_BASE_WHERE} AND por_plan_type IS NOT NULL ORDER BY por_plan_type"
+    ))
+    return [r[0] for r in rows]
+
+
+def _exec_get_available_dev_initiatives(db: Session) -> list[str]:
+    rows = db.execute(text(
+        f"SELECT DISTINCT por_regional_dev_initiatives FROM public.stg_ndpd_mbt_tmobile_macro_combined "
+        f"WHERE {_BASE_WHERE} AND por_regional_dev_initiatives IS NOT NULL ORDER BY por_regional_dev_initiatives"
+    ))
+    return [r[0] for r in rows]
+
+
+# Map tool name → executor function
+TOOL_EXECUTORS = {
+    "get_available_regions": _exec_get_available_regions,
+    "get_available_markets": _exec_get_available_markets,
+    "get_available_areas": _exec_get_available_areas,
+    "get_available_sites": _exec_get_available_sites,
+    "get_available_vendors": _exec_get_available_vendors,
+    "get_available_plan_types": _exec_get_available_plan_types,
+    "get_available_dev_initiatives": _exec_get_available_dev_initiatives,
+}
+
+
+# ── Existing helpers ───────────────────────────────────────────────────
 
 def _get_user_filters(config_db: Session, user_id: str) -> dict:
     """Fetch currently saved filters for this user."""
@@ -151,7 +212,6 @@ def _get_recent_messages(config_db: Session, user_id: str, limit: int = 10) -> l
         .limit(limit)
         .all()
     )
-    # Reverse to chronological order
     rows.reverse()
     return [{"role": r.role, "content": r.content} for r in rows]
 
@@ -165,7 +225,6 @@ def _summarize_history(messages: list[dict]) -> str:
     for msg in messages:
         role = "User" if msg["role"] == "user" else "Assistant"
         content = msg["content"]
-        # Truncate long assistant responses to keep summary concise
         if len(content) > 300:
             content = content[:300] + "..."
         lines.append(f"- {role}: {content}")
@@ -180,17 +239,20 @@ def _save_messages(config_db: Session, user_id: str, user_msg: str, assistant_ms
     config_db.commit()
 
 
-def _build_system_prompt(user_id: str, filter_values: dict, user_filters: dict, chat_summary: str) -> str:
+def _build_system_prompt(user_id: str, user_filters: dict, chat_summary: str) -> str:
     registry_text = json.dumps(API_REGISTRY, indent=2)
-    filters_text = json.dumps(filter_values, indent=2)
     user_filters_text = json.dumps(user_filters, indent=2)
 
     prompt = SYSTEM_PROMPT.replace("{api_registry}", registry_text)
-    prompt = prompt.replace("{filter_values}", filters_text)
     prompt = prompt.replace("{user_filters}", user_filters_text)
     prompt = prompt.replace("{chat_summary}", chat_summary)
     prompt += f"\n\nCurrent user_id: {user_id}"
     return prompt
+
+
+# ── Main entry point ───────────────────────────────────────────────────
+
+MAX_TOOL_ROUNDS = 5  # safety limit to prevent infinite loops
 
 
 def run_assistant(
@@ -199,38 +261,89 @@ def run_assistant(
     db: Session,
     config_db: Session,
 ) -> dict:
-    # Load filter values from DB
-    filter_values = _get_filter_values(db)
     user_filters = _get_user_filters(config_db, user_id)
 
     # Load last 5 message pairs (10 rows) from DB and summarize
     recent_messages = _get_recent_messages(config_db, user_id, limit=10)
     chat_summary = _summarize_history(recent_messages)
 
-    llm = ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        api_key=os.getenv("OPENAI_API_KEY"),
-        temperature=0,
-    )
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-    system_prompt = _build_system_prompt(user_id, filter_values, user_filters, chat_summary)
+    system_prompt = _build_system_prompt(user_id, user_filters, chat_summary)
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message},
     ]
 
-    response = llm.invoke(messages)
-    raw = response.content.strip()
+    # Tool-calling loop: let the LLM call tools until it produces a final answer
+    for _ in range(MAX_TOOL_ROUNDS):
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=FILTER_TOOLS,
+            tool_choice="auto",
+            temperature=0,
+        )
 
+        choice = response.choices[0]
+
+        # If the LLM wants to call tool(s), execute them and feed results back
+        if choice.finish_reason == "tool_calls" or choice.message.tool_calls:
+            # Append the assistant message (with tool_calls) to conversation
+            messages.append(choice.message)
+
+            for tool_call in choice.message.tool_calls:
+                fn_name = tool_call.function.name
+                executor = TOOL_EXECUTORS.get(fn_name)
+
+                if executor:
+                    try:
+                        result = executor(db)
+                        tool_result = json.dumps(result)
+                    except Exception as e:
+                        logger.error(f"Tool {fn_name} failed: {e}")
+                        tool_result = json.dumps({"error": str(e)})
+                else:
+                    tool_result = json.dumps({"error": f"Unknown tool: {fn_name}"})
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": tool_result,
+                })
+
+            # Continue the loop — the LLM will now see the tool results
+            continue
+
+        # No more tool calls — the LLM produced its final text response
+        raw = choice.message.content.strip() if choice.message.content else ""
+        break
+    else:
+        # Exhausted MAX_TOOL_ROUNDS
+        raw = json.dumps({
+            "message": "I had trouble processing your request. Please try again.",
+            "actions": [],
+        })
+
+    # Parse the final JSON response
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:
         result = {"message": raw, "actions": []}
 
+    # Ensure message is never empty
+    if not result.get("message"):
+        result["message"] = "Here is the information you requested."
+
+    # Clean newlines from message — replace \n with spaces for clean UI display
+    message = result.get("message", "")
+    message = message.replace("\n", " ").replace("  ", " ").strip()
+
     # Save this exchange to DB
     _save_messages(config_db, user_id, user_message, raw)
 
     return {
-        "message": result.get("message", ""),
+        "message": message,
         "actions": result.get("actions", []),
     }
