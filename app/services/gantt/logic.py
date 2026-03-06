@@ -224,33 +224,62 @@ def _compute_planned_dates(
     return dates
 
 
-def _build_dependency_maps(milestones_config: List[Dict]) -> tuple[Dict, Dict]:
+def _build_dependency_maps(milestones_config: List[Dict], skipped_keys: set | None = None) -> tuple[Dict, Dict]:
     """
     Build preceding and following milestone name maps from the dependency graph.
+
+    When *skipped_keys* is provided, skipped milestones are resolved through:
+    if A → B(skipped) → C, then C's preceding shows A and A's following shows C.
 
     Returns:
         preceding_map: {key: [names of milestones this key depends on]}
         following_map: {key: [names of milestones that depend on this key]}
-
-    For milestones with multiple predecessors (e.g. depends_on=["3710","1327"]),
-    all predecessors are listed. The planned_start uses max(predecessor finish dates)
-    as per the critical-path logic.
     """
     name_lookup = {m["key"]: m["name"] for m in milestones_config}
-    preceding_map: Dict[str, List[str]] = {}
-    following_map: Dict[str, List[str]] = {m["key"]: [] for m in milestones_config}
+    skipped = skipped_keys or set()
 
+    # Build raw dependency graph by key
+    raw_preceding: Dict[str, List[str]] = {}
     for ms in milestones_config:
         key = ms["key"]
         dep = ms["depends_on"]
         if dep is None:
+            raw_preceding[key] = []
+        else:
+            raw_preceding[key] = dep if isinstance(dep, list) else [dep]
+
+    # Resolve preceding: walk through skipped predecessors to non-skipped ancestors
+    def _resolve(key: str, visited: set | None = None) -> List[str]:
+        if visited is None:
+            visited = set()
+        result = []
+        for p in raw_preceding.get(key, []):
+            if p in visited:
+                continue
+            visited.add(p)
+            if p in skipped:
+                result.extend(_resolve(p, visited))
+            else:
+                result.append(p)
+        return result
+
+    preceding_map: Dict[str, List[str]] = {}
+    for ms in milestones_config:
+        key = ms["key"]
+        if key in skipped:
             preceding_map[key] = []
+        else:
+            preceding_map[key] = [name_lookup.get(k, k) for k in _resolve(key)]
+
+    # Build following as reverse of resolved preceding
+    following_map: Dict[str, List[str]] = {m["key"]: [] for m in milestones_config}
+    for ms in milestones_config:
+        key = ms["key"]
+        if key in skipped:
             continue
-        dep_list = dep if isinstance(dep, list) else [dep]
-        preceding_map[key] = [name_lookup.get(d, d) for d in dep_list]
-        for d in dep_list:
-            if d in following_map:
-                following_map[d].append(name_lookup.get(key, key))
+        for p in _resolve(key):
+            if p not in skipped and p in following_map:
+                following_map[p].append(name_lookup.get(key, key))
 
     return preceding_map, following_map
 
@@ -298,7 +327,7 @@ def compute_milestones_for_site(
     dates = _compute_planned_dates(origin_date, milestones_config, skipped_keys=skipped_keys)
 
     skipped = skipped_keys or set()
-    preceding_map, following_map = _build_dependency_maps(milestones_config)
+    preceding_map, following_map = _build_dependency_maps(milestones_config, skipped_keys=skipped)
     milestones = []
 
     for ms in milestones_config:

@@ -53,21 +53,51 @@ def _parse_depends_on(raw: str):
 
 
 def _enrich_with_dependencies(rows: list[MilestoneDefinition]) -> list[dict]:
-    """Build preceding/following milestone name maps from the dependency graph."""
+    """Build preceding/following milestone name maps from the dependency graph,
+    resolving through skipped milestones (is_skipped=True)."""
     name_lookup = {r.key: r.name for r in rows}
-    following_map: dict[str, list[str]] = {r.key: [] for r in rows}
-    preceding_map: dict[str, list[str]] = {}
+    skipped_keys = {r.key for r in rows if r.is_skipped}
 
+    # Build raw dependency graph by key
+    raw_preceding: dict[str, list[str]] = {}
     for r in rows:
         dep = _parse_depends_on(r.depends_on)
         if dep is None:
+            raw_preceding[r.key] = []
+        else:
+            dep_list = dep if isinstance(dep, list) else [dep]
+            raw_preceding[r.key] = dep_list
+
+    # Resolve preceding: walk through skipped predecessors to non-skipped ancestors
+    def _resolve(key: str, visited: set | None = None) -> list[str]:
+        if visited is None:
+            visited = set()
+        result = []
+        for p in raw_preceding.get(key, []):
+            if p in visited:
+                continue
+            visited.add(p)
+            if p in skipped_keys:
+                result.extend(_resolve(p, visited))
+            else:
+                result.append(p)
+        return result
+
+    preceding_map: dict[str, list[str]] = {}
+    for r in rows:
+        if r.key in skipped_keys:
             preceding_map[r.key] = []
+        else:
+            preceding_map[r.key] = [name_lookup.get(k, k) for k in _resolve(r.key)]
+
+    # Build following as reverse of resolved preceding
+    following_map: dict[str, list[str]] = {r.key: [] for r in rows}
+    for r in rows:
+        if r.key in skipped_keys:
             continue
-        dep_list = dep if isinstance(dep, list) else [dep]
-        preceding_map[r.key] = [name_lookup.get(d, d) for d in dep_list]
-        for d in dep_list:
-            if d in following_map:
-                following_map[d].append(name_lookup.get(r.key, r.key))
+        for p in _resolve(r.key):
+            if p not in skipped_keys and p in following_map:
+                following_map[p].append(name_lookup.get(r.key, r.key))
 
     result = []
     for r in rows:
@@ -175,6 +205,81 @@ def _recompute_and_persist_dependencies(db: Session):
             ms_row.preceding_milestones = json.dumps(item.get("preceding_milestones", []))
             ms_row.following_milestones = json.dumps(item.get("following_milestones", []))
     return refreshed, enriched
+
+
+def _recompute_skip_aware_dependencies(db: Session):
+    """
+    Recompute preceding/following for all milestones, skipping over
+    milestones that have is_skipped=True.
+
+    When milestone B is skipped and the chain is A → B → C:
+      - C's preceding becomes [A] instead of [B]
+      - A's following becomes [C] instead of [B]
+
+    Persists the updated preceding/following to DB for all non-skipped milestones.
+    Skipped milestones get empty preceding/following.
+    """
+    all_rows = (
+        db.query(MilestoneDefinition)
+        .order_by(MilestoneDefinition.sort_order)
+        .all()
+    )
+    name_lookup = {r.key: r.name for r in all_rows}
+    skipped_keys = {r.key for r in all_rows if r.is_skipped}
+
+    # Build raw dependency graph (ignoring skips)
+    raw_preceding: dict[str, list[str]] = {}
+    for r in all_rows:
+        dep = _parse_depends_on(r.depends_on)
+        if dep is None:
+            raw_preceding[r.key] = []
+        else:
+            raw_preceding[r.key] = dep if isinstance(dep, list) else [dep]
+
+    # Resolve preceding: replace any skipped predecessor with its own predecessors
+    def _resolve_preceding(key: str, visited: set | None = None) -> list[str]:
+        if visited is None:
+            visited = set()
+        result = []
+        for p in raw_preceding.get(key, []):
+            if p in visited:
+                continue
+            visited.add(p)
+            if p in skipped_keys:
+                result.extend(_resolve_preceding(p, visited))
+            else:
+                result.append(p)
+        return result
+
+    resolved_preceding: dict[str, list[str]] = {}
+    for r in all_rows:
+        if r.key in skipped_keys:
+            resolved_preceding[r.key] = []
+        else:
+            resolved_preceding[r.key] = _resolve_preceding(r.key)
+
+    # Build following from resolved preceding (reverse map)
+    resolved_following: dict[str, list[str]] = {r.key: [] for r in all_rows}
+    for r in all_rows:
+        if r.key in skipped_keys:
+            continue
+        for p in resolved_preceding[r.key]:
+            if p not in skipped_keys:
+                resolved_following[p].append(r.key)
+
+    # Persist to DB using milestone names
+    for r in all_rows:
+        if r.key in skipped_keys:
+            r.preceding_milestones = json.dumps([])
+            r.following_milestones = json.dumps([])
+        else:
+            r.preceding_milestones = json.dumps(
+                [name_lookup.get(k, k) for k in resolved_preceding[r.key]]
+            )
+            r.following_milestones = json.dumps(
+                [name_lookup.get(k, k) for k in resolved_following[r.key]]
+            )
+    db.flush()
 
 
 # ----------------------------------------------------------------
@@ -366,6 +471,8 @@ def skip_prerequisite(
         raise HTTPException(status_code=404, detail=f"Milestone '{body.milestone_key}' not found")
 
     ms.is_skipped = True
+    db.flush()
+    _recompute_skip_aware_dependencies(db)
     db.commit()
     db.refresh(ms)
     return ms
@@ -399,6 +506,8 @@ def unskip_prerequisite(
         raise HTTPException(status_code=404, detail=f"Milestone '{milestone_key}' is not skipped")
 
     ms.is_skipped = False
+    db.flush()
+    _recompute_skip_aware_dependencies(db)
     db.commit()
     return {"detail": f"Un-skipped '{milestone_key}' globally"}
 
@@ -411,7 +520,9 @@ def unskip_all_prerequisites(db: Session = Depends(get_config_db)):
         .filter(MilestoneDefinition.is_skipped == True)
         .update({"is_skipped": False})
     )
-    db.commit()
     if updated == 0:
         raise HTTPException(status_code=404, detail="No skipped prerequisites found")
+    db.flush()
+    _recompute_skip_aware_dependencies(db)
+    db.commit()
     return {"detail": f"Un-skipped all prerequisites globally, updated {updated} entries"}

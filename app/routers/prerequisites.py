@@ -34,21 +34,51 @@ def _parse_depends_on(raw: str):
 
 
 def _enrich_with_dependencies(rows: list[MilestoneDefinition]) -> list[dict]:
-    """Build preceding/following milestone name maps from the dependency graph."""
+    """Build preceding/following milestone name maps from the dependency graph,
+    resolving through skipped milestones (is_skipped=True)."""
     name_lookup = {r.key: r.name for r in rows}
-    following_map: dict[str, list[str]] = {r.key: [] for r in rows}
-    preceding_map: dict[str, list[str]] = {}
+    skipped_keys = {r.key for r in rows if r.is_skipped}
 
+    # Build raw dependency graph by key
+    raw_preceding: dict[str, list[str]] = {}
     for r in rows:
         dep = _parse_depends_on(r.depends_on)
         if dep is None:
+            raw_preceding[r.key] = []
+        else:
+            dep_list = dep if isinstance(dep, list) else [dep]
+            raw_preceding[r.key] = dep_list
+
+    # Resolve preceding: walk through skipped predecessors to non-skipped ancestors
+    def _resolve(key: str, visited: set | None = None) -> list[str]:
+        if visited is None:
+            visited = set()
+        result = []
+        for p in raw_preceding.get(key, []):
+            if p in visited:
+                continue
+            visited.add(p)
+            if p in skipped_keys:
+                result.extend(_resolve(p, visited))
+            else:
+                result.append(p)
+        return result
+
+    preceding_map: dict[str, list[str]] = {}
+    for r in rows:
+        if r.key in skipped_keys:
             preceding_map[r.key] = []
+        else:
+            preceding_map[r.key] = [name_lookup.get(k, k) for k in _resolve(r.key)]
+
+    # Build following as reverse of resolved preceding
+    following_map: dict[str, list[str]] = {r.key: [] for r in rows}
+    for r in rows:
+        if r.key in skipped_keys:
             continue
-        dep_list = dep if isinstance(dep, list) else [dep]
-        preceding_map[r.key] = [name_lookup.get(d, d) for d in dep_list]
-        for d in dep_list:
-            if d in following_map:
-                following_map[d].append(name_lookup.get(r.key, r.key))
+        for p in _resolve(r.key):
+            if p not in skipped_keys and p in following_map:
+                following_map[p].append(name_lookup.get(r.key, r.key))
 
     result = []
     for r in rows:
