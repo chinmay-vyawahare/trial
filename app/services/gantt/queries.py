@@ -69,6 +69,8 @@ def build_gantt_query(
         "region",
         planned_start_column,
         "construction_gc",
+        "pj_construction_start_delay_comments",
+        "pj_construction_complete_delay_code",
     ]
 
     # Combine fixed + milestone actual columns (deduplicated, preserving order)
@@ -141,9 +143,11 @@ def build_dashboard_query(
 
     where_sql = " AND ".join(where_clauses)
 
-    # Only fetch: planned_start + milestone date cols
+    # Only fetch: planned_start + milestone date cols + delay columns
     fixed_columns = [
         planned_start_column,
+        "pj_construction_start_delay_comments",
+        "pj_construction_complete_delay_code",
     ]
 
     all_columns = list(fixed_columns)

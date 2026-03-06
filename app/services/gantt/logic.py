@@ -151,6 +151,15 @@ def _handle_with_status(row: Dict, cfg: Dict):
         return None, False, None, False  # pending
 
 
+def is_site_blocked(row: Dict) -> bool:
+    """
+    A site is blocked if either delay comments or delay code is present.
+    """
+    comments = (row.get("pj_construction_start_delay_comments") or "").strip()
+    code = (row.get("pj_construction_complete_delay_code") or "").strip()
+    return bool(comments or code)
+
+
 COLUMN_HANDLERS = {
     "single": _handle_single,
     "max": _handle_max,

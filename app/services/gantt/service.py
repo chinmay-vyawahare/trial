@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from .queries import build_gantt_query, build_dashboard_query
-from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold
+from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, is_site_blocked
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides
 from .utils import parse_date
 
@@ -65,9 +65,14 @@ def get_all_sites_gantt(
         in_progress_count = sum(1 for m in countable if m["status"] == "In Progress")
         delayed_count = sum(1 for m in countable if m["status"] == "Delayed")
 
-        overall = compute_overall_status(on_track_count, total, ms_thresholds)
-
-        on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
+        # Check if site is blocked (delay comments or delay code present)
+        blocked = is_site_blocked(row)
+        if blocked:
+            overall = "Blocked"
+            on_track_pct = 0
+        else:
+            overall = compute_overall_status(on_track_count, total, ms_thresholds)
+            on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
 
         sites.append(
             {
@@ -78,6 +83,8 @@ def get_all_sites_gantt(
                 "market": row["m_market"],
                 "area": row.get("m_area") or "",
                 "region": row.get("region") or "",
+                "delay_comments": row.get("pj_construction_start_delay_comments") or "",
+                "delay_code": row.get("pj_construction_complete_delay_code") or "",
                 "forecasted_cx_start_date": (
                     str(forecasted_cx_start) if forecasted_cx_start else None
                 ),
@@ -100,6 +107,10 @@ def get_all_sites_gantt(
 
 def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipped_keys, user_expected_days_overrides=None):
     """Compute overall status for one row — only dates, no full milestone dicts."""
+    # Blocked sites get their own status — excluded from on_track/in_progress/critical counts
+    if is_site_blocked(row):
+        return "BLOCKED"
+
     origin_date = parse_date(row.get(planned_start_col))
     if origin_date is None:
         return None
@@ -205,6 +216,7 @@ def get_dashboard_summary(
         "in_progress_sites": 0,
         "critical_sites": 0,
         "on_track_sites": 0,
+        "blocked_sites": 0,
     }
     if not rows:
         return empty
@@ -220,11 +232,15 @@ def get_dashboard_summary(
     if total == 0:
         return empty
 
-    on_track = sum(1 for s in statuses if s == "ON TRACK")
-    in_progress = sum(1 for s in statuses if s == "IN PROGRESS")
-    critical = sum(1 for s in statuses if s == "CRITICAL")
+    blocked = sum(1 for s in statuses if s == "BLOCKED")
+    # Exclude blocked sites from percentage calculations
+    non_blocked_statuses = [s for s in statuses if s != "BLOCKED"]
+    on_track = sum(1 for s in non_blocked_statuses if s == "ON TRACK")
+    in_progress = sum(1 for s in non_blocked_statuses if s == "IN PROGRESS")
+    critical = sum(1 for s in non_blocked_statuses if s == "CRITICAL")
 
-    on_track_pct = on_track / total * 100
+    non_blocked_total = len(non_blocked_statuses)
+    on_track_pct = (on_track / non_blocked_total * 100) if non_blocked_total > 0 else 0
     if overall_thresholds:
         dashboard_status, _ = _match_pct_threshold(on_track_pct, overall_thresholds)
     elif on_track_pct >= 60:
@@ -241,6 +257,7 @@ def get_dashboard_summary(
         "in_progress_sites": in_progress,
         "critical_sites": critical,
         "on_track_sites": on_track,
+        "blocked_sites": blocked,
     }
 
 

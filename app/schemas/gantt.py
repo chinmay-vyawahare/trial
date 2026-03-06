@@ -47,6 +47,7 @@ class DashboardSummary(BaseModel):
     in_progress_sites: int
     critical_sites: int
     on_track_sites: int
+    blocked_sites: int = 0
 
 
 class PrerequisiteTemplateSchema(BaseModel):
