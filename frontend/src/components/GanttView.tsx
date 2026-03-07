@@ -99,24 +99,8 @@ function getBarColor(m: Milestone): string {
   return "#cbd5e1";
 }
 
-function getMilestoneName(key: string): string {
-  const map: Record<string, string> = {
-    "3710": "Entitlement",
-    "Pre-NTP Document Received": "Pre-NTP",
-    "Site Walk Performed": "Site Walk",
-    "1323": "Ready Scoping",
-    "1327": "Scoping Validated",
-    "Quote Submitted to Customer": "Quote Submitted",
-    "3850": "BOM in BAT",
-    "3875": "BOM in AIMS",
-    "Steel Received": "Steel",
-    "3925": "Material Pickup",
-    "CPO Available": "CPO",
-    "Access Confirmation": "Access",
-    "NTP Received": "NTP",
-    "SPO Issued": "SPO",
-  };
-  return map[key] || key;
+function getMilestoneName(m: Milestone): string {
+  return m.name || m.key;
 }
 
 type Row =
@@ -354,7 +338,7 @@ export default function GanttView({
                 className="flex items-center pl-12 pr-3 border-b border-gray-50"
                 style={{ height: ROW_H, background: idx % 2 === 0 ? "#fff" : "#fafbfc" }}
               >
-                <span className="text-[11px] font-medium text-gray-600">{getMilestoneName(m.key)}</span>
+                <span className="text-[11px] font-medium text-gray-600">{getMilestoneName(m)}</span>
               </div>
             );
           })}
@@ -500,7 +484,7 @@ export default function GanttView({
                       boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
                     }}
                   >
-                    <span className="font-semibold">{getMilestoneName(m.key)}</span>
+                    <span className="font-semibold">{getMilestoneName(m)}</span>
                     <span className="text-gray-400">|</span>
                     <span>{m.planned_start} → {m.planned_finish}</span>
                     {m.delay_days > 0 && (
