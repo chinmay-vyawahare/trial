@@ -31,11 +31,15 @@ class ChatRequest(BaseModel):
 def chat(
     body: ChatRequest,
     user_id: str = Query(..., description="User ID (required)"),
+    thread_id: str = Query(..., description="Thread ID for conversation isolation"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
     if not user_id or not user_id.strip():
         raise HTTPException(status_code=400, detail="user_id is required and cannot be empty.")
+
+    if not thread_id or not thread_id.strip():
+        raise HTTPException(status_code=400, detail="thread_id is required and cannot be empty.")
 
     if not body.message or not body.message.strip():
         raise HTTPException(status_code=400, detail="message is required and cannot be empty.")
@@ -44,6 +48,7 @@ def chat(
         return run_assistant(
             user_message=body.message.strip(),
             user_id=user_id.strip(),
+            thread_id=thread_id.strip(),
             db=db,
             config_db=config_db,
         )

@@ -14,7 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from app.core.database import get_db, get_config_db
+from app.core.database import get_db, get_config_db, STAGING_TABLE
 from app.models.prerequisite import UserFilter
 
 router = APIRouter(prefix="/api/v1/schedular/gate-checks", tags=["gate-checks"])
@@ -52,7 +52,7 @@ def get_por_plan_type(db: Session = Depends(get_db)):
     q = text(
         f"""
         SELECT DISTINCT por_plan_type
-        FROM public.stg_ndpd_mbt_tmobile_macro_combined
+        FROM {STAGING_TABLE}
         WHERE {_BASE_WHERE} AND por_plan_type IS NOT NULL
         ORDER BY por_plan_type
         """
@@ -66,7 +66,7 @@ def get_por_regional_dev_initiatives(db: Session = Depends(get_db)):
     q = text(
         f"""
         SELECT DISTINCT por_regional_dev_initiatives
-        FROM public.stg_ndpd_mbt_tmobile_macro_combined
+        FROM {STAGING_TABLE}
         WHERE {_BASE_WHERE} AND por_regional_dev_initiatives IS NOT NULL
         ORDER BY por_regional_dev_initiatives
         """

@@ -1,8 +1,19 @@
 import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%H:%M:%S",
+    stream=sys.stdout,
+)
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.database import config_engine, ConfigBase
+from sqlalchemy import text as sa_text, inspect
+from app.core.database import engine, config_engine, ConfigBase
+from app.core.config import settings
 from app.models.prerequisite import (
     PrerequisiteTemplate, SitePrerequisiteOverride,
     ConstraintThreshold, VendorCapacity,
@@ -12,10 +23,16 @@ from app.routers import sites, filters, gate_checks
 from app.routers import prerequisites, constraints, admin
 from app.routers import assistant, user_filters, sla_history
 from app.routers import user_expected_days
-from app.routers import export
+from app.routers import export, dashboard
 from app.init_milestone_data import init_milestone_data
 
 logger = logging.getLogger(__name__)
+
+# Ensure both schemas exist in the database
+with engine.begin() as conn:
+    conn.execute(sa_text(f"CREATE SCHEMA IF NOT EXISTS {settings.UTILITY_SCHEMA}"))
+    conn.execute(sa_text(f"CREATE SCHEMA IF NOT EXISTS {settings.STAGING_SCHEMA}"))
+    logger.info("Ensured schemas exist: %s, %s", settings.UTILITY_SCHEMA, settings.STAGING_SCHEMA)
 
 ConfigBase.metadata.create_all(bind=config_engine, tables=[
     PrerequisiteTemplate.__table__,
@@ -40,6 +57,7 @@ app.add_middleware(
 )
 
 app.include_router(sites.router)
+app.include_router(dashboard.router)
 app.include_router(filters.router)
 app.include_router(prerequisites.router)
 app.include_router(constraints.router)

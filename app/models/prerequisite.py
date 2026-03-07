@@ -1,6 +1,9 @@
 from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Boolean
 from sqlalchemy.sql import func
 from app.core.database import ConfigBase
+from app.core.config import settings
+
+_S = settings.UTILITY_SCHEMA
 
 
 class MilestoneDefinition(ConfigBase):
@@ -12,6 +15,7 @@ class MilestoneDefinition(ConfigBase):
     is extracted from the staging row.
     """
     __tablename__ = "milestone_definitions"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     key = Column(String(50), unique=True, nullable=False)
@@ -48,6 +52,7 @@ class MilestoneColumn(ConfigBase):
     sort_order — when a milestone has multiple columns, controls processing order.
     """
     __tablename__ = "milestone_columns"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     milestone_key = Column(String(50), nullable=False)    # FK to milestone_definitions.key
@@ -62,6 +67,7 @@ class MilestoneColumn(ConfigBase):
 class PrereqTail(ConfigBase):
     """Prereq tail milestones with offset days."""
     __tablename__ = "prereq_tails"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     milestone_key = Column(String(50), nullable=False, unique=True)
@@ -73,6 +79,7 @@ class PrereqTail(ConfigBase):
 class GanttConfig(ConfigBase):
     """Key-value config for gantt settings (e.g. CX_START_OFFSET_DAYS)."""
     __tablename__ = "gantt_config"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     config_key = Column(String(100), unique=True, nullable=False)
@@ -85,6 +92,7 @@ class GanttConfig(ConfigBase):
 class PrerequisiteTemplate(ConfigBase):
     """Default milestone templates with expected durations."""
     __tablename__ = "prerequisite_templates"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     milestone_key = Column(String(50), unique=True, nullable=False)
@@ -102,6 +110,7 @@ class PrerequisiteTemplate(ConfigBase):
 class SitePrerequisiteOverride(ConfigBase):
     """Per-site overrides for manual mode."""
     __tablename__ = "site_prerequisite_overrides"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     site_id = Column(String(50), nullable=False)
@@ -121,23 +130,14 @@ class ConstraintThreshold(ConfigBase):
     constraint_type splits the rows into two groups:
 
       "milestone"  — site-level status derived from milestone percentages.
-        Out of all milestones on a site, compute % On Track, % In Progress,
-        % Delayed and match against these percentage ranges.
-          e.g. min_pct=60, max_pct=100 for "on_track_pct" → ON TRACK
-               min_pct=30, max_pct=59  for "on_track_pct" → IN PROGRESS
-               min_pct=0,  max_pct=29  for "on_track_pct" → CRITICAL
-
       "overall"    — dashboard-level status derived from site percentages.
-        Out of all sites, compute % ON TRACK, % IN PROGRESS, % CRITICAL
-        and match against these percentage ranges.
 
-    status_label is the string returned in the API response
-    (e.g. "ON TRACK", "IN PROGRESS", "CRITICAL").
-
+    status_label is the string returned in the API response.
     min_pct / max_pct define the percentage range (0–100).
     max_pct=null means no upper bound (100%).
     """
     __tablename__ = "constraint_thresholds"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     constraint_type = Column(String(20), nullable=False, default="milestone")  # "milestone" | "overall"
@@ -154,6 +154,7 @@ class ConstraintThreshold(ConfigBase):
 class VendorCapacity(ConfigBase):
     """Vendor capacity tracking."""
     __tablename__ = "vendor_capacity"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     vendor_name = Column(String(200), nullable=False)
@@ -171,13 +172,11 @@ class UserFilter(ConfigBase):
     so filters are column-wise.  One row per user — upserted on every save.
 
     Gate checks (saved per-user, applied on every gantt/dashboard query):
-      plan_type_include          — JSON array of por_plan_type values to include (IN),
-                                   e.g. '["New Build","FOA"]'
-      regional_dev_initiatives   — free-text ILIKE pattern for
-                                   por_regional_dev_initiatives,
-                                   e.g. '2026 Build Plan'
+      plan_type_include          — JSON array of por_plan_type values to include (IN)
+      regional_dev_initiatives   — free-text ILIKE pattern
     """
     __tablename__ = "user_filters"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(100), unique=True, nullable=False)
@@ -201,6 +200,7 @@ class UserSkippedPrerequisite(ConfigBase):
     and recalculates all downstream milestones accordingly.
     """
     __tablename__ = "user_skipped_prerequisites"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(100), nullable=False)
@@ -216,6 +216,7 @@ class UserExpectedDays(ConfigBase):
     calculations use this value instead of the global MilestoneDefinition.expected_days.
     """
     __tablename__ = "user_expected_days"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(100), nullable=False, index=True)
@@ -227,15 +228,18 @@ class UserExpectedDays(ConfigBase):
 
 class ChatHistory(ConfigBase):
     """
-    Per-user chat history for the AI assistant.
+    Per-user, per-thread chat history for the AI assistant.
 
     Stores each message (user or assistant) so the conversation context
     can be loaded from DB instead of being sent from the frontend.
+    Each thread_id represents a separate conversation thread.
     """
     __tablename__ = "chat_history"
+    __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(100), nullable=False, index=True)
+    thread_id = Column(String(100), nullable=False, index=True)
     role = Column(String(20), nullable=False)       # "user" or "assistant"
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())

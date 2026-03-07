@@ -374,12 +374,14 @@ SEED_CONSTRAINT_THRESHOLDS = [
 def _ensure_columns(engine):
     """Add columns that may not exist on an older schema."""
     from sqlalchemy import text, inspect
+    from app.core.config import settings
+    _schema = settings.UTILITY_SCHEMA
     inspector = inspect(engine)
-    cols = {c["name"] for c in inspector.get_columns("milestone_definitions")}
+    cols = {c["name"] for c in inspector.get_columns("milestone_definitions", schema=_schema)}
     with engine.begin() as conn:
         if "history_expected_days" not in cols:
             conn.execute(text(
-                "ALTER TABLE milestone_definitions ADD COLUMN history_expected_days INTEGER"
+                f"ALTER TABLE {_schema}.milestone_definitions ADD COLUMN history_expected_days INTEGER"
             ))
             logger.info("Added history_expected_days column to milestone_definitions.")
 

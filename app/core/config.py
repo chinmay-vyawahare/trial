@@ -17,7 +17,10 @@ class Settings(BaseSettings):
     PG_PASSWORD: str = os.getenv("PG_PASSWORD")
     APP_NAME: str = os.getenv("APP_NAME", "Nokia Gantt Chart API")
     DEBUG: bool = bool(int(os.getenv("DEBUG", 1)))
-    CONFIG_PG_DATABASE: str = "schedular_agent"
+
+    # Schema names within PG_DATABASE (hardcoded)
+    UTILITY_SCHEMA: str = "pwc_agent_utility_schema"
+    STAGING_SCHEMA: str = "pwc_macro_staging_schema"
 
 
 settings = Settings()

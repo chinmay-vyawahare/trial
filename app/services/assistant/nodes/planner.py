@@ -1,0 +1,71 @@
+"""
+Planner node — classifies user intent into one of:
+  greeting, scheduler, simulation
+"""
+
+import json
+import logging
+
+from app.services.assistant.llm import get_chat_llm, LLM_MODEL
+
+logger = logging.getLogger(__name__)
+
+PLANNER_PROMPT = """You are an intent classifier for Nokia's construction project tracker assistant.
+
+Given a user message, classify it into EXACTLY ONE of these intents:
+
+1. "greeting" — greetings, small talk, thank you, goodbye, how are you, pleasantries,
+   or any casual/non-work message that doesn't relate to filters or simulation.
+
+2. "scheduler" — anything related to viewing or changing FILTERS:
+   - Setting/changing/clearing filters (region, market, area, vendor, site, plan type, dev initiatives)
+   - Asking what filter values are available ("list markets", "what regions exist?")
+   - Asking about the user's current/saved filters
+   - Any request to update or get filter-related data
+
+3. "simulation" — anything else work-related that is NOT about filters:
+   - What-if scenarios, simulating changes
+   - Dashboard, status, milestones, prerequisites
+   - Constraints, thresholds, SLA
+   - Exporting data, gate checks
+   - Construction progress, forecasts
+   - Backward planning, impact analysis
+
+Respond with ONLY a JSON object: {"intent": "greeting" | "scheduler" | "simulation"}
+
+No explanation, no markdown, just the JSON.
+"""
+
+
+def classify_intent(user_message: str, chat_summary: str) -> str:
+    """Classify user message intent. Returns 'greeting', 'scheduler', or 'simulation'."""
+    llm = get_chat_llm(temperature=0, max_tokens=50)
+
+    messages = [
+        ("system", PLANNER_PROMPT),
+    ]
+
+    if chat_summary and chat_summary != "No previous conversation.":
+        messages.append(("system", f"Recent conversation context:\n{chat_summary}"))
+
+    messages.append(("human", user_message))
+
+    try:
+        logger.info(
+            "\n"
+            "  [PLANNER] Classifying intent ...\n"
+            "  [PLANNER] Model: %s\n"
+            "  [PLANNER] Input: \"%s\"",
+            LLM_MODEL, user_message[:100],
+        )
+        response = llm.invoke(messages)
+        raw = response.content.strip()
+        result = json.loads(raw)
+        intent = result.get("intent", "scheduler")
+        if intent not in ("greeting", "scheduler", "simulation"):
+            intent = "scheduler"
+        logger.info("  [PLANNER] Intent => %s", intent)
+        return intent
+    except Exception as e:
+        logger.error("  [PLANNER] Classification failed: %s — defaulting to 'scheduler'", e)
+        return "scheduler"

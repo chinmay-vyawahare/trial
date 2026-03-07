@@ -1,5 +1,6 @@
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from app.core.database import STAGING_TABLE
 
 
 def build_gantt_query(
@@ -89,7 +90,7 @@ def build_gantt_query(
         SELECT
             {columns_sql},
             COUNT(*) OVER () AS total_count
-        FROM public.stg_ndpd_mbt_tmobile_macro_combined
+        FROM {STAGING_TABLE}
         WHERE {where_sql}
     )
     SELECT * FROM filtered_records
@@ -163,7 +164,7 @@ def build_dashboard_query(
         f"""
     SELECT
         {columns_sql}
-    FROM public.stg_ndpd_mbt_tmobile_macro_combined
+    FROM {STAGING_TABLE}
     WHERE {where_sql}
     """
     )
@@ -186,35 +187,35 @@ def get_filter_options(db: Session):
 
     regions_q = text(
         f"""
-        SELECT DISTINCT region FROM public.stg_ndpd_mbt_tmobile_macro_combined
+        SELECT DISTINCT region FROM {STAGING_TABLE}
         WHERE {base_where} AND region IS NOT NULL
         ORDER BY region
         """
     )
     markets_q = text(
         f"""
-        SELECT DISTINCT m_market FROM public.stg_ndpd_mbt_tmobile_macro_combined
+        SELECT DISTINCT m_market FROM {STAGING_TABLE}
         WHERE {base_where} AND m_market IS NOT NULL
         ORDER BY m_market
         """
     )
     areas_q = text(
         f"""
-        SELECT DISTINCT m_area FROM public.stg_ndpd_mbt_tmobile_macro_combined
+        SELECT DISTINCT m_area FROM {STAGING_TABLE}
         WHERE {base_where} AND m_area IS NOT NULL
         ORDER BY m_area
         """
     )
     sites_q = text(
         f"""
-        SELECT DISTINCT s_site_id FROM public.stg_ndpd_mbt_tmobile_macro_combined
+        SELECT DISTINCT s_site_id FROM {STAGING_TABLE}
         WHERE {base_where} AND s_site_id IS NOT NULL
         ORDER BY s_site_id
         """
     )
     vendors_q = text(
         f"""
-        SELECT DISTINCT construction_gc FROM public.stg_ndpd_mbt_tmobile_macro_combined
+        SELECT DISTINCT construction_gc FROM {STAGING_TABLE}
         WHERE {base_where} AND construction_gc IS NOT NULL
         ORDER BY construction_gc
         """

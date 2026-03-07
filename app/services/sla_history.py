@@ -20,6 +20,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sa_text
 
+from app.core.database import STAGING_TABLE
 from app.services.gantt.milestones import get_milestones
 
 
@@ -88,6 +89,7 @@ def compute_history_expected_days(
     config_db: Session,
     date_from: date,
     date_to: date,
+    use_median: bool = True,
 ) -> list[dict]:
     """
     Compute expected_days for each milestone based on historical actual dates.
@@ -179,11 +181,16 @@ def compute_history_expected_days(
             not_null_checks.append(f"{col} IS NOT NULL")
         not_null_sql = " AND ".join(not_null_checks)
 
+        if use_median:
+            agg_expr = f"ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ({ms_date_expr} - {pred_date_expr})))::int"
+        else:
+            agg_expr = f"ROUND(AVG(({ms_date_expr} - {pred_date_expr})))::int"
+
         query = sa_text(f"""
             SELECT
-                ROUND(AVG(({ms_date_expr} - {pred_date_expr})))::int AS avg_days,
+                {agg_expr} AS computed_days,
                 COUNT(*) AS sample_count
-            FROM public.stg_ndpd_mbt_tmobile_macro_combined
+            FROM {STAGING_TABLE}
             WHERE {_BASE_WHERE}
               AND {not_null_sql}
               AND {ms_date_expr} BETWEEN :date_from AND :date_to

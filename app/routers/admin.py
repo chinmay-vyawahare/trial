@@ -15,8 +15,9 @@ and prereq tails are admin-only.
 
 import json
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
-from app.core.database import get_config_db
+from app.core.database import get_config_db, get_db, STAGING_TABLE
 from app.models.prerequisite import (
     MilestoneDefinition, MilestoneColumn, PrereqTail,
 )
@@ -526,3 +527,21 @@ def unskip_all_prerequisites(db: Session = Depends(get_config_db)):
     _recompute_skip_aware_dependencies(db)
     db.commit()
     return {"detail": f"Un-skipped all prerequisites globally, updated {updated} entries"}
+
+
+# ----------------------------------------------------------------
+# Staging table columns
+# ----------------------------------------------------------------
+
+@router.get("/staging-columns")
+def get_staging_columns(db: Session = Depends(get_db)):
+    """Return all column names from the staging table (stg_ndpd_mbt_tmobile_macro_combined)."""
+    rows = db.execute(sa_text(
+        f"""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema || '.' || table_name = :table
+        ORDER BY ordinal_position
+        """
+    ), {"table": STAGING_TABLE}).fetchall()
+    return [r[0] for r in rows]

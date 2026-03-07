@@ -14,7 +14,7 @@ API_REGISTRY = {
     "get_gantt_charts": {
         "method": "GET",
         "endpoint": "/api/v1/schedular/gantt-charts",
-        "description": "Fetch Gantt chart data — sites with milestone timelines, statuses, delays. When user_id is passed with filters, the filters are auto-saved for that user.",
+        "description": "Fetch Gantt chart data with filters applied. When user_id is passed with filters, the filters are auto-saved for that user.",
         "params": {
             "region": "string | null",
             "market": "string | null",
@@ -26,55 +26,11 @@ API_REGISTRY = {
             "offset": "int | null",
         },
     },
-    "get_dashboard": {
-        "method": "GET",
-        "endpoint": "/api/v1/schedular/gantt-charts/dashboard",
-        "description": "Fetch dashboard summary — on-track/in-progress/critical site counts and percentages.",
-        "params": {
-            "region": "string | null",
-            "market": "string | null",
-            "vendor": "string | null",
-            "area": "string | null",
-            "user_id": "string | null",
-        },
-    },
     "get_user_filters": {
         "method": "GET",
         "endpoint": "/api/v1/schedular/user-filters/{user_id}",
         "description": "Get currently saved filters for a user.",
         "params": {"user_id": "string — path param"},
-    },
-    "get_user_gate_checks": {
-        "method": "GET",
-        "endpoint": "/api/v1/schedular/gate-checks/{user_id}",
-        "description": "Get saved gate checks for a user.",
-        "params": {"user_id": "string — path param"},
-    },
-    "get_constraints": {
-        "method": "GET",
-        "endpoint": "/api/v1/schedular/constraints",
-        "description": "Get all constraint thresholds (status rules).",
-        "params": {},
-    },
-    "get_constraints_milestone": {
-        "method": "GET",
-        "endpoint": "/api/v1/schedular/constraints/milestone",
-        "description": "Get milestone-level constraint thresholds only.",
-        "params": {},
-    },
-    "get_constraints_overall": {
-        "method": "GET",
-        "endpoint": "/api/v1/schedular/constraints/overall",
-        "description": "Get dashboard-level constraint thresholds only.",
-        "params": {},
-    },
-    "export_gantt_csv": {
-        "method": "GET",
-        "endpoint": "/api/v1/schedular/export/gantt-csv",
-        "description": "Export gantt chart data as a downloadable CSV file. If user_id is provided, applies that user's saved filters. If not, exports all sites.",
-        "params": {
-            "user_id": "string | null",
-        },
     },
 }
 

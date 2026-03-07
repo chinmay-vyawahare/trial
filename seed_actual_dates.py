@@ -71,7 +71,7 @@ def run():
         # Get all site rows
         rows = conn.execute(text(f"""
             SELECT s_site_id, {PLANNED_START_COL}
-            FROM public.stg_ndpd_mbt_tmobile_macro_combined
+            FROM {settings.STAGING_SCHEMA}.stg_ndpd_mbt_tmobile_macro_combined
             WHERE {BASE_WHERE}
               AND {PLANNED_START_COL} IS NOT NULL
         """)).fetchall()
@@ -162,7 +162,7 @@ def run():
 
             set_sql = ", ".join(set_clauses)
             conn.execute(text(f"""
-                UPDATE public.stg_ndpd_mbt_tmobile_macro_combined
+                UPDATE {settings.STAGING_SCHEMA}.stg_ndpd_mbt_tmobile_macro_combined
                 SET {set_sql}
                 WHERE s_site_id = :site_id
             """), params)

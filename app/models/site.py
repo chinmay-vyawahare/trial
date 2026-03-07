@@ -1,10 +1,11 @@
 from sqlalchemy import Column, Integer, Text
 from app.core.database import Base
+from app.core.config import settings
 
 
 class StagingMacro(Base):
     __tablename__ = "stg_ndpd_mbt_tmobile_macro_combined"
-    __table_args__ = {"schema": "public"}
+    __table_args__ = {"schema": settings.STAGING_SCHEMA}
 
     id = Column(Integer, primary_key=True)
     s_site_id = Column(Text)
