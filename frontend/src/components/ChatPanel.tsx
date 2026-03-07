@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { sendChat, resumeSimulation, getChatHistory, getUserThreads, getThreadMessages, deleteThread, deleteUserHistory } from "@/lib/api";
+import { sendChat, resumeSimulation, getChatHistory, getUserThreads, getThreadMessages, deleteThread, deleteUserHistory, createThread } from "@/lib/api";
 import type { ChatAction, ChatHistoryUser, ChatThread, ChatThreadSummary } from "@/lib/types";
 
 interface Message {
@@ -25,7 +25,7 @@ export default function ChatPanel({ userId, onActions }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [threadId, setThreadId] = useState(() => crypto.randomUUID());
+  const [threadId, setThreadId] = useState("");
   const [pendingHitl, setPendingHitl] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyScrollRef = useRef<HTMLDivElement>(null);
@@ -40,6 +40,25 @@ export default function ChatPanel({ userId, onActions }: Props) {
   const [threadsLoading, setThreadsLoading] = useState(false);
   const [selectedThread, setSelectedThread] = useState<ChatThread | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
+
+  // Create a new thread via the API
+  async function newThread() {
+    try {
+      const res = await createThread(effectiveUserId);
+      setThreadId(res.thread_id);
+    } catch {
+      // Fallback to client-side UUID if API fails
+      setThreadId(crypto.randomUUID());
+    }
+    setMessages([]);
+    setPendingHitl(null);
+  }
+
+  // Create initial thread on mount
+  useEffect(() => {
+    newThread();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-scroll chat messages
   useEffect(() => {
@@ -98,10 +117,9 @@ export default function ChatPanel({ userId, onActions }: Props) {
 
   function handleOpenHistory() {
     setShowHistory(true);
-    setHistoryView("users");
-    setSelectedUserId(null);
     setSelectedThread(null);
-    loadAllHistory();
+    // Skip users list — go directly to the current user's threads
+    loadUserThreads(effectiveUserId);
   }
 
   function handleBackToChat() {
@@ -288,21 +306,18 @@ export default function ChatPanel({ userId, onActions }: Props) {
               {!showHistory && (
                 <>
                   <button
+                    onClick={newThread}
+                    className="w-6 h-6 flex items-center justify-center rounded bg-blue-500 hover:bg-blue-400 transition-colors text-white text-sm font-bold"
+                    title="New thread"
+                  >
+                    +
+                  </button>
+                  <button
                     onClick={handleOpenHistory}
                     className="text-[10px] px-2 py-1 rounded bg-blue-500 hover:bg-blue-400 transition-colors"
                     title="View chat history"
                   >
                     History
-                  </button>
-                  <button
-                    onClick={() => {
-                      setMessages([]);
-                      setThreadId(crypto.randomUUID());
-                      setPendingHitl(null);
-                    }}
-                    className="text-[10px] px-2 py-1 rounded bg-blue-500 hover:bg-blue-400 transition-colors"
-                  >
-                    Clear
                   </button>
                 </>
               )}
@@ -388,49 +403,33 @@ export default function ChatPanel({ userId, onActions }: Props) {
                     <button
                       key={t.thread_id}
                       onClick={() => loadThreadMessages(selectedUserId!, t.thread_id)}
-                      className="w-full px-3 py-3 text-left hover:bg-blue-50/50 transition-colors"
+                      className="w-full px-3 py-2.5 text-left hover:bg-blue-50/50 transition-colors flex items-center justify-between gap-2"
                     >
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="text-[10px] text-gray-400">
-                          {t.message_count} msg{t.message_count !== 1 ? "s" : ""}
+                      <div className="min-w-0">
+                        <div className="text-xs font-mono text-gray-700 truncate">
+                          {t.thread_id.slice(0, 8)}...
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="text-[10px] text-gray-400 whitespace-nowrap">
-                            {formatTime(t.last_message_at)}
-                          </div>
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => handleDeleteThread(e, selectedUserId!, t.thread_id)}
-                            onKeyDown={(e) => { if (e.key === "Enter") handleDeleteThread(e as unknown as React.MouseEvent, selectedUserId!, t.thread_id); }}
-                            className="text-gray-300 hover:text-red-500 transition-colors"
-                            title="Delete thread"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </span>
+                        <div className="text-[10px] text-gray-400 mt-0.5">
+                          {t.message_count} msg{t.message_count !== 1 ? "s" : ""} · {formatTime(t.last_message_at)}
                         </div>
                       </div>
-                      <div className="space-y-1.5">
-                        {t.first_user_message && (
-                          <div className="flex justify-end">
-                            <div className="max-w-[85%] px-2.5 py-1.5 rounded-xl rounded-br-sm bg-blue-600 text-white text-[11px] line-clamp-2 break-words">
-                              {t.first_user_message}
-                            </div>
-                          </div>
-                        )}
-                        {t.first_assistant_message && (
-                          <div className="flex justify-start">
-                            <div className="max-w-[85%] px-2.5 py-1.5 rounded-xl rounded-bl-sm bg-gray-100 text-gray-700 text-[11px] line-clamp-2 break-words">
-                              {t.first_assistant_message}
-                            </div>
-                          </div>
-                        )}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => handleDeleteThread(e, selectedUserId!, t.thread_id)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleDeleteThread(e as unknown as React.MouseEvent, selectedUserId!, t.thread_id); }}
+                          className="text-gray-300 hover:text-red-500 transition-colors"
+                          title="Delete thread"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </span>
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       </div>
-                      {!t.first_user_message && !t.first_assistant_message && (
-                        <div className="text-xs text-gray-400">{t.thread_id.slice(0, 8)}...</div>
-                      )}
                     </button>
                   ))}
                 </div>

@@ -33,6 +33,7 @@ interface Props {
   onSlaDateFromChange: (d: string) => void;
   onSlaDateToChange: (d: string) => void;
   onApply: () => void;
+  onClear: () => void;
   loading: boolean;
   totalSites: number;
 }
@@ -94,6 +95,7 @@ export default function Sidebar({
   onSlaDateFromChange,
   onSlaDateToChange,
   onApply,
+  onClear,
   loading,
   totalSites,
 }: Props) {
@@ -280,8 +282,8 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* Apply button */}
-      <div className="p-3 border-t border-gray-200 bg-gray-50">
+      {/* Apply / Clear buttons */}
+      <div className="p-3 border-t border-gray-200 bg-gray-50 space-y-2">
         <button
           onClick={onApply}
           disabled={loading}
@@ -295,6 +297,12 @@ export default function Sidebar({
           ) : (
             "Create Gantt Chart"
           )}
+        </button>
+        <button
+          onClick={onClear}
+          className="w-full px-3 py-2 text-xs font-medium rounded-lg border border-gray-200 text-gray-500 bg-white hover:bg-gray-50 transition-colors"
+        >
+          Clear Filters
         </button>
       </div>
     </aside>

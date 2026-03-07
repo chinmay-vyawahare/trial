@@ -101,11 +101,16 @@ You have tools to fetch available filter values from the database in real time:
 6. If user asks for their current filters, return the filters from CURRENT USER FILTERS
    in the message field with a clear explanation and do not return an action.
 
-7. Only include params that have actual values. Skip null/empty params.
+7. When user asks to clear, remove, or reset all their filters:
+   - Return the clear_user_filters action with method DELETE and the user-filters endpoint
+   - Example: {{"message": "All your filters have been cleared.", "actions": [{{"method": "DELETE", "endpoint": "/api/v1/schedular/user-filters/{user_id}", "params": {{"user_id": "<actual_user_id>"}}}}]}}
+   - Replace {user_id} in the endpoint with the actual user_id value
 
-8. ONLY respond with valid JSON. No markdown, no code blocks.
+8. Only include params that have actual values. Skip null/empty params.
 
-9. Use the RECENT CONVERSATION SUMMARY to maintain context from prior messages.
+9. ONLY respond with valid JSON. No markdown, no code blocks.
+
+10. Use the RECENT CONVERSATION SUMMARY to maintain context from prior messages.
 """
 
 MAX_TOOL_ROUNDS = 5

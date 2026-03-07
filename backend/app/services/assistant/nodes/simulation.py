@@ -161,18 +161,12 @@ def handle_simulation(user_message: str, chat_summary: str) -> dict:
     logger.info("  [SIMULATION] Starting simulation for query: %s", user_message[:100])
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                result = pool.submit(
-                    asyncio.run,
-                    simulate_tool(query=user_message, user_id="system", thread_id=None),
-                ).result()
-        else:
-            result = loop.run_until_complete(
-                simulate_tool(query=user_message, user_id="system", thread_id=None)
-            )
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            result = pool.submit(
+                asyncio.run,
+                simulate_tool(query=user_message, user_id="system", thread_id=None),
+            ).result()
     except Exception as e:
         logger.exception(f"Simulation failed: {e}")
         return {

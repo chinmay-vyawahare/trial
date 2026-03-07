@@ -341,6 +341,14 @@ export async function adminUnskipAllPrerequisites(): Promise<{ detail: string }>
 
 /* ── Assistant / Chat ─────────────────────────────────────────────── */
 
+export async function createThread(userId: string): Promise<{ thread_id: string; user_id: string }> {
+  return fetchAPI<{ thread_id: string; user_id: string }>("/api/v1/schedular/assistant/threads", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
 export async function sendChat(params: {
   message: string;
   user_id: string;

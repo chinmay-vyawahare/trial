@@ -2,11 +2,10 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { SiteGantt, DashboardSummary, FilterOptions, ChatAction } from "@/lib/types";
-import { getGanttCharts, getDashboardSummary, getAllFilters, getExportCsvUrl, getSlaHistoryGantt, getUserFilters } from "@/lib/api";
+import { getGanttCharts, getDashboardSummary, getAllFilters, getExportCsvUrl, getSlaHistoryGantt, getUserFilters, deleteUserFilters } from "@/lib/api";
 import Sidebar, { SlaMode } from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import SummaryCards from "@/components/SummaryCards";
-import FilterBar from "@/components/FilterBar";
 import TabBar, { TimelineView } from "@/components/TabBar";
 import GanttView from "@/components/GanttView";
 import ChatPanel from "@/components/ChatPanel";
@@ -199,6 +198,11 @@ export default function Home() {
         // Switch to gantt tab and trigger reload
         setActiveTab("gantt");
         setTimeout(() => loadData(), 100);
+      } else if (action.method === "DELETE" && action.endpoint.includes("/user-filters/")) {
+        // AI assistant asked to clear filters
+        clearFilters();
+        setActiveTab("gantt");
+        setTimeout(() => loadData(), 100);
       } else if (action.method === "GET" && action.endpoint.includes("/user-filters/")) {
         // Extract user_id from endpoint and fetch their filters
         const uid = action.params.user_id || action.endpoint.split("/").pop();
@@ -213,6 +217,12 @@ export default function Home() {
     setArea("");
     setSiteIdFilter("");
     setVendor("");
+    setPlanType("");
+    setDevInitiative("");
+    // Also wipe saved filters on the backend so they don't get merged back
+    if (userId) {
+      deleteUserFilters(userId).catch(() => {});
+    }
   }
 
   function handleExport() {
@@ -259,33 +269,13 @@ export default function Home() {
           onSlaDateFromChange={setSlaDateFrom}
           onSlaDateToChange={setSlaDateTo}
           onApply={loadData}
+          onClear={clearFilters}
           loading={loading}
           totalSites={totalCount}
         />
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {dashboard && <SummaryCards data={dashboard} />}
-
-          <FilterBar
-            regions={filterOptions.regions}
-            markets={filterOptions.markets}
-            areas={filterOptions.areas}
-            siteIds={filterOptions.site_ids}
-            vendors={filterOptions.vendors}
-            selectedRegion={region}
-            selectedMarket={market}
-            selectedArea={area}
-            selectedSiteId={siteIdFilter}
-            selectedVendor={vendor}
-            onRegionChange={setRegion}
-            onMarketChange={setMarket}
-            onAreaChange={setArea}
-            onSiteIdChange={setSiteIdFilter}
-            onVendorChange={setVendor}
-            onApply={loadData}
-            onClear={clearFilters}
-            loading={loading}
-          />
 
           <DashboardSummaryPanel
             regions={filterOptions.regions}

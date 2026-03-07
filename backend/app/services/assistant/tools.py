@@ -32,6 +32,12 @@ API_REGISTRY = {
         "description": "Get currently saved filters for a user.",
         "params": {"user_id": "string — path param"},
     },
+    "clear_user_filters": {
+        "method": "DELETE",
+        "endpoint": "/api/v1/schedular/user-filters/{user_id}",
+        "description": "Clear/remove all saved filters for a user. Use when user asks to remove, clear, or reset their filters.",
+        "params": {"user_id": "string — path param"},
+    },
 }
 
 # ── LLM TOOL DEFINITIONS (OpenAI function-calling format) ──────────────

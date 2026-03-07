@@ -14,6 +14,7 @@ POST /api/v1/schedular/resume
 import asyncio
 import json
 import logging
+import uuid
 from typing import Optional
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -36,6 +37,10 @@ router = APIRouter(
 
 class ChatRequest(BaseModel):
     message: str = Field(default="Give the current filters", description="User message to the assistant")
+
+
+class CreateThreadRequest(BaseModel):
+    user_id: str = Field(..., description="User ID to create the thread for")
 
 
 class ResumeRequest(BaseModel):
@@ -74,6 +79,30 @@ def chat(
             status_code=500,
             detail="Failed to process your request. Please try again.",
         )
+
+
+@router.post("/assistant/threads")
+def create_thread(
+    body: CreateThreadRequest,
+    config_db: Session = Depends(get_config_db),
+):
+    """Create a new chat thread for a user. Persists an initial record so it appears in history."""
+    if not body.user_id or not body.user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id is required and cannot be empty.")
+
+    user_id = body.user_id.strip()
+    thread_id = str(uuid.uuid4())
+
+    # Seed the thread with an initial assistant message so it shows up in history
+    config_db.add(ChatHistory(
+        user_id=user_id,
+        thread_id=thread_id,
+        role="assistant",
+        content='{"message": "New conversation started. How can I help you?", "actions": []}',
+    ))
+    config_db.commit()
+
+    return {"thread_id": thread_id, "user_id": user_id}
 
 
 @router.post("/resume")
