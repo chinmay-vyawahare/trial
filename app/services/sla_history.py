@@ -2,18 +2,19 @@
 SLA History service — compute expected_days from historical actual dates.
 
 For each milestone, looks at completed sites (where actual dates are not null)
-within a user-specified date range. Computes the average duration between a
-milestone's predecessor actual finish and its own actual finish.
+within a user-specified date range. Computes the average/median duration between
+a milestone's predecessor actual finish and its own actual finish.
 
 For root milestones (no predecessor), expected_days stays 0.
 For text-type milestones (e.g. cpo, 4000), duration is not date-based so
 they keep their default expected_days.
 
-When a milestone's predecessor is a text milestone (no date column), the
-service walks UP the dependency chain to find the nearest date-based ancestor
-and uses that instead. This handles chains like:
-  quote (date) → cpo (text) → 1555 (date)
-  → 1555's history = AVG(1555_actual - quote_actual)
+Skipped milestones (is_skipped=True) are excluded entirely from computation.
+When a milestone's predecessor is skipped (or is a text milestone), the service
+walks UP the dependency chain to find the nearest non-skipped, date-based
+ancestor and uses that instead. This handles chains like:
+  A (date) → B (skipped) → C (date)  →  C's history = median(C_actual - A_actual)
+  quote (date) → cpo (text) → 1555 (date)  →  1555's history = median(1555_actual - quote_actual)
 """
 
 from datetime import date
@@ -21,6 +22,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text as sa_text
 
 from app.core.database import STAGING_TABLE
+from app.models.prerequisite import MilestoneDefinition
 from app.services.gantt.milestones import get_milestones
 
 
@@ -51,14 +53,26 @@ def _get_date_columns(ms: dict) -> list[str] | None:
     return columns if columns else None
 
 
+def _get_skipped_keys(config_db: Session) -> set[str]:
+    """Return globally skipped milestone keys."""
+    rows = (
+        config_db.query(MilestoneDefinition.key)
+        .filter(MilestoneDefinition.is_skipped == True)
+        .all()
+    )
+    return {r[0] for r in rows}
+
+
 def _find_date_ancestors(
     key: str,
     ms_lookup: dict,
     date_cols_lookup: dict[str, list[str]],
+    skipped_keys: set[str],
 ) -> list[str]:
     """
     Walk up the dependency chain from `key` to find the nearest ancestor(s)
-    that have date columns. Skips over text-only milestones.
+    that have date columns AND are not skipped. Skips over text-only milestones
+    and skipped milestones.
 
     Returns a list of milestone keys with date columns.
     """
@@ -74,12 +88,15 @@ def _find_date_ancestors(
     result = []
 
     for d in dep_list:
-        if d in date_cols_lookup:
-            # This predecessor has date columns — use it
+        if d in skipped_keys:
+            # Skipped milestone — walk up further
+            result.extend(_find_date_ancestors(d, ms_lookup, date_cols_lookup, skipped_keys))
+        elif d in date_cols_lookup:
+            # This predecessor has date columns and is not skipped — use it
             result.append(d)
         else:
-            # Text milestone — walk up further
-            result.extend(_find_date_ancestors(d, ms_lookup, date_cols_lookup))
+            # Text milestone (no date columns) — walk up further
+            result.extend(_find_date_ancestors(d, ms_lookup, date_cols_lookup, skipped_keys))
 
     return result
 
@@ -95,19 +112,21 @@ def compute_history_expected_days(
     Compute expected_days for each milestone based on historical actual dates.
 
     For each milestone with a predecessor:
-      expected_days = AVG(milestone_actual - predecessor_actual) in days
+      expected_days = AVG/MEDIAN(milestone_actual - predecessor_actual) in days
 
-    When a predecessor is a text milestone (no date column), walks up to
-    the nearest date-based ancestor.
+    Skipped milestones (is_skipped=True) are excluded and get None for
+    history_expected_days. When a predecessor is skipped or is a text milestone,
+    walks up to the nearest non-skipped, date-based ancestor.
 
     Only sites where BOTH actual dates fall within [date_from, date_to]
     are included.
 
     Returns a list of:
       {milestone_key, milestone_name, default_expected_days,
-       history_expected_days, sample_count}
+       history_expected_days, sample_count, is_skipped}
     """
     milestones_config = get_milestones(config_db)
+    skipped_keys = _get_skipped_keys(config_db)
 
     # Build key→milestone lookup and key→date_columns lookup
     ms_lookup = {ms["key"]: ms for ms in milestones_config}
@@ -129,7 +148,13 @@ def compute_history_expected_days(
             "default_expected_days": ms["expected_days"],
             "history_expected_days": None,
             "sample_count": 0,
+            "is_skipped": key in skipped_keys,
         }
+
+        # Skipped milestones — exclude from computation
+        if key in skipped_keys:
+            results.append(result_item)
+            continue
 
         # Root milestone (no predecessor) — stays 0
         if dep is None:
@@ -147,8 +172,8 @@ def compute_history_expected_days(
         # Get the milestone's own date column(s)
         ms_date_cols = date_cols_lookup[key]
 
-        # Get predecessor date column(s), walking past text milestones
-        ancestor_keys = _find_date_ancestors(key, ms_lookup, date_cols_lookup)
+        # Get predecessor date column(s), walking past text AND skipped milestones
+        ancestor_keys = _find_date_ancestors(key, ms_lookup, date_cols_lookup, skipped_keys)
         pred_date_cols = []
         for ak in ancestor_keys:
             pred_date_cols.extend(date_cols_lookup[ak])
@@ -157,17 +182,13 @@ def compute_history_expected_days(
             results.append(result_item)
             continue
 
-        # Build SQL to compute AVG duration
-        # For the milestone: use the first date column (or GREATEST for "max" type)
+        # Build SQL to compute AVG/MEDIAN duration
         cfg_type = (ms.get("column_config") or {}).get("type", "single")
-        # Cast each column to ::date individually to avoid type mismatches
-        # (some columns are text, others are timestamp)
         if cfg_type == "max" and len(ms_date_cols) > 1:
             ms_date_expr = "GREATEST(" + ", ".join(f"{c}::date" for c in ms_date_cols) + ")"
         else:
             ms_date_expr = f"{ms_date_cols[0]}::date"
 
-        # For predecessor: if multiple date columns, use GREATEST (latest finish)
         if len(pred_date_cols) == 1:
             pred_date_expr = f"{pred_date_cols[0]}::date"
         else:
