@@ -16,9 +16,8 @@ interface Props {
 
 const tabs = [
   { key: "gantt", label: "Gantt Chart" },
-  { key: "heatmap", label: "Pre-Req Heatmap" },
-  { key: "calendar", label: "Calendar" },
-  { key: "analytics", label: "Analytics" },
+  { key: "flowchart", label: "Flowchart" },
+  { key: "expected-days", label: "Expected Days" },
   { key: "admin", label: "Admin" },
 ];
 

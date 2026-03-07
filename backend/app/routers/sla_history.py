@@ -108,7 +108,7 @@ def history_gantt_charts(
 
     skipped_keys = _get_skipped_keys(config_db)
 
-    sites, total_count, count = get_history_gantt(
+    sites, total_count, count, sla_last_updated = get_history_gantt(
         db=db,
         config_db=config_db,
         date_from=df,
@@ -128,6 +128,7 @@ def history_gantt_charts(
         "sla_type": "history",
         "date_from": date_from,
         "date_to": date_to,
+        "sla_last_updated": sla_last_updated,
         "count": count,
         "sites": sites,
         "pagination": {

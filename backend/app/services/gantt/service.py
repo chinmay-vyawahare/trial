@@ -291,12 +291,14 @@ def get_history_gantt(
     # Compute history-based expected_days from actual dates
     history_results = compute_history_expected_days(db, config_db, date_from, date_to)
 
-    # Build overrides dict and save to DB
+    # Build overrides dict and save to DB.
+    # In history mode, ALL milestones use computed history values.
+    # If no historical data exists (None), use 0 — never fall back to defaults.
     history_overrides = {}
     for item in history_results:
-        if item["history_expected_days"] is None:
-            continue
-        history_overrides[item["milestone_key"]] = item["history_expected_days"]
+        computed = item["history_expected_days"]
+        effective = computed if computed is not None else 0
+        history_overrides[item["milestone_key"]] = effective
 
         # Save/update in milestone_definitions
         ms_def = (
@@ -305,12 +307,21 @@ def get_history_gantt(
             .first()
         )
         if ms_def:
-            ms_def.history_expected_days = item["history_expected_days"]
+            ms_def.history_expected_days = effective
 
     config_db.commit()
 
+    # Get the latest updated_at timestamp for history SLA
+    from sqlalchemy import func as sa_func
+    last_updated_row = (
+        config_db.query(sa_func.max(MilestoneDefinition.updated_at))
+        .filter(MilestoneDefinition.history_expected_days.isnot(None))
+        .scalar()
+    )
+    sla_last_updated = str(last_updated_row) if last_updated_row else None
+
     # Reuse the standard gantt function with history overrides
-    return get_all_sites_gantt(
+    sites, total_count, count = get_all_sites_gantt(
         db=db,
         config_db=config_db,
         region=region,
@@ -325,3 +336,5 @@ def get_history_gantt(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=history_overrides,
     )
+
+    return sites, total_count, count, sla_last_updated

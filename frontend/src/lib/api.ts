@@ -13,6 +13,9 @@ import type {
   UserExpectedDaysEntry,
   GateCheckConfig,
   ChatResponse,
+  ChatHistoryUser,
+  ChatThreadSummary,
+  ChatThread,
   UserFilter,
   SlaHistoryGanttResponse,
 } from "./types";
@@ -48,14 +51,16 @@ export async function getFilterVendors(): Promise<string[]> {
 }
 
 export async function getAllFilters(): Promise<FilterOptions> {
-  const [regions, markets, areas, site_ids, vendors] = await Promise.all([
+  const [regions, markets, areas, site_ids, vendors, plan_types, dev_initiatives] = await Promise.all([
     getFilterRegions(),
     getFilterMarkets(),
     getFilterAreas(),
     getFilterSites(),
     getFilterVendors(),
+    getGateCheckPlanTypes().catch(() => [] as string[]),
+    getGateCheckDevInitiatives().catch(() => [] as string[]),
   ]);
-  return { regions, markets, areas, site_ids, vendors };
+  return { regions, markets, areas, site_ids, vendors, plan_types, dev_initiatives };
 }
 
 /* ── Gantt Charts ─────────────────────────────────────────────────── */
@@ -266,6 +271,8 @@ export async function getSlaHistoryGantt(params: {
   region?: string;
   market?: string;
   area?: string;
+  site_id?: string;
+  vendor?: string;
   user_id?: string;
   limit?: number;
   offset?: number;
@@ -276,6 +283,8 @@ export async function getSlaHistoryGantt(params: {
   if (params.region) sp.set("region", params.region);
   if (params.market) sp.set("market", params.market);
   if (params.area) sp.set("area", params.area);
+  if (params.site_id) sp.set("site_id", params.site_id);
+  if (params.vendor) sp.set("vendor", params.vendor);
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.limit) sp.set("limit", String(params.limit));
   if (params.offset) sp.set("offset", String(params.offset));
@@ -355,6 +364,30 @@ export async function resumeSimulation(params: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
+  });
+}
+
+export async function getChatHistory(): Promise<ChatHistoryUser[]> {
+  return fetchAPI<ChatHistoryUser[]>("/api/v1/schedular/assistant/history");
+}
+
+export async function getUserThreads(userId: string): Promise<ChatThreadSummary[]> {
+  return fetchAPI<ChatThreadSummary[]>(`/api/v1/schedular/assistant/history/${userId}/threads`);
+}
+
+export async function getThreadMessages(userId: string, threadId: string): Promise<ChatThread> {
+  return fetchAPI<ChatThread>(`/api/v1/schedular/assistant/history/${userId}/threads/${threadId}`);
+}
+
+export async function deleteThread(userId: string, threadId: string): Promise<{ detail: string }> {
+  return fetchAPI<{ detail: string }>(`/api/v1/schedular/assistant/history/${userId}/threads/${threadId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function deleteUserHistory(userId: string): Promise<{ detail: string }> {
+  return fetchAPI<{ detail: string }>(`/api/v1/schedular/assistant/history/${userId}`, {
+    method: "DELETE",
   });
 }
 

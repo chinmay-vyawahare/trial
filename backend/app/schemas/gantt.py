@@ -1,7 +1,7 @@
 import json
 from pydantic import BaseModel, field_validator
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 
 
 class MilestoneData(BaseModel):
@@ -154,6 +154,7 @@ class MilestoneDefinitionOut(BaseModel):
     phase_type: Optional[str] = None
     preceding_milestones: Optional[list[str]] = None    # milestones this one depends on (before)
     following_milestones: Optional[list[str]] = None     # milestones that depend on this one (after)
+    updated_at: Optional[datetime] = None
 
     @field_validator("preceding_milestones", "following_milestones", mode="before")
     @classmethod
@@ -326,3 +327,37 @@ class SlaHistoryMilestoneResult(BaseModel):
     default_expected_days: int
     history_expected_days: Optional[int] = None   # None if no data
     sample_count: int = 0                         # sites used for calc
+
+
+# ----------------------------------------------------------------
+# Chat History schemas
+# ----------------------------------------------------------------
+
+class ChatMessageOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    role: str
+    content: str
+    created_at: Optional[datetime] = None
+
+
+class ChatThreadSummary(BaseModel):
+    """Thread summary without full messages — for listing threads."""
+    thread_id: str
+    message_count: int
+    first_user_message: Optional[str] = None
+    first_assistant_message: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+
+
+class ChatThreadOut(BaseModel):
+    """Full thread with all messages."""
+    thread_id: str
+    messages: list[ChatMessageOut]
+    last_message_at: Optional[datetime] = None
+
+
+class ChatHistoryOut(BaseModel):
+    user_id: str
+    threads: list[ChatThreadOut]

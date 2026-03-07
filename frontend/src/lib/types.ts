@@ -58,6 +58,8 @@ export interface FilterOptions {
   areas: string[];
   site_ids: string[];
   vendors: string[];
+  plan_types: string[];
+  dev_initiatives: string[];
 }
 
 /* ── Dashboard ────────────────────────────────────────────────────── */
@@ -116,6 +118,7 @@ export interface PrerequisiteDefinition {
   phase_type: string | null;
   preceding_milestones: string[];
   following_milestones: string[];
+  updated_at: string | null;
 }
 
 /* ── Admin — Prerequisite CRUD ────────────────────────────────────── */
@@ -216,12 +219,41 @@ export interface UserFilter {
   regional_dev_initiatives: string | null;
 }
 
+/* ── Chat History ─────────────────────────────────────────────────── */
+
+export interface ChatMessageEntry {
+  id: number;
+  role: string;
+  content: string;
+  created_at: string | null;
+}
+
+export interface ChatThreadSummary {
+  thread_id: string;
+  message_count: number;
+  first_user_message: string | null;
+  first_assistant_message: string | null;
+  last_message_at: string | null;
+}
+
+export interface ChatThread {
+  thread_id: string;
+  messages: ChatMessageEntry[];
+  last_message_at: string | null;
+}
+
+export interface ChatHistoryUser {
+  user_id: string;
+  threads: ChatThread[];
+}
+
 /* ── SLA History ──────────────────────────────────────────────────── */
 
 export interface SlaHistoryGanttResponse {
   sla_type: string;
   date_from: string;
   date_to: string;
+  sla_last_updated: string | null;
   count: number;
   sites: SiteGantt[];
   pagination: {

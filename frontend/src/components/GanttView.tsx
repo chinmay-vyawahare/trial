@@ -80,13 +80,16 @@ function getTimelineColumns(start: Date, end: Date, view: TimelineView): { date:
 }
 
 function getStatusBadge(status: string) {
-  if (status === "CRITICAL" || status === "HIGH RISK")
+  const s = status.toUpperCase();
+  if (s === "CRITICAL")
     return { label: "Critical", cls: "bg-red-100 text-red-700 border-red-300" };
-  if (status === "DELAYED")
-    return { label: "At Risk", cls: "bg-amber-100 text-amber-700 border-amber-300" };
-  if (status === "IN PROGRESS")
+  if (s === "BLOCKED")
+    return { label: "Blocked", cls: "bg-red-100 text-red-700 border-red-300" };
+  if (s === "IN PROGRESS")
+    return { label: "In Progress", cls: "bg-amber-100 text-amber-700 border-amber-300" };
+  if (s === "ON TRACK")
     return { label: "On Track", cls: "bg-emerald-100 text-emerald-700 border-emerald-300" };
-  return { label: "Pending", cls: "bg-gray-100 text-gray-500 border-gray-300" };
+  return { label: status || "Pending", cls: "bg-gray-100 text-gray-500 border-gray-300" };
 }
 
 function getBarColor(m: Milestone): string {
@@ -240,7 +243,10 @@ export default function GanttView({
   for (const vendorName of vendorNames) {
     const vendorSites = sitesByVendor.get(vendorName) || [];
     const delayedCount = vendorSites.filter(
-      (s) => s.overall_status === "DELAYED" || s.overall_status === "HIGH RISK" || s.overall_status === "CRITICAL"
+      (s) => {
+        const st = s.overall_status.toUpperCase();
+        return st === "CRITICAL" || st === "BLOCKED";
+      }
     ).length;
     rows.push({ type: "vendor", vendorName, siteCount: vendorSites.length, delayedCount });
     if (expandedVendors.has(vendorName)) {

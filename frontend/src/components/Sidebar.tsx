@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import React from "react";
+
+export type SlaMode = "default" | "history";
 
 interface Props {
   regions: string[];
@@ -8,16 +10,30 @@ interface Props {
   areas: string[];
   siteIds: string[];
   vendors: string[];
+  planTypes: string[];
+  devInitiatives: string[];
   selectedRegion: string;
   selectedMarket: string;
   selectedArea: string;
   selectedSiteId: string;
   selectedVendor: string;
+  selectedPlanType: string;
+  selectedDevInitiative: string;
+  slaMode: SlaMode;
+  slaDateFrom: string;
+  slaDateTo: string;
   onRegionChange: (r: string) => void;
   onMarketChange: (m: string) => void;
   onAreaChange: (a: string) => void;
   onSiteIdChange: (s: string) => void;
   onVendorChange: (v: string) => void;
+  onPlanTypeChange: (p: string) => void;
+  onDevInitiativeChange: (d: string) => void;
+  onSlaModeChange: (m: SlaMode) => void;
+  onSlaDateFromChange: (d: string) => void;
+  onSlaDateToChange: (d: string) => void;
+  onApply: () => void;
+  loading: boolean;
   totalSites: number;
 }
 
@@ -55,26 +71,32 @@ export default function Sidebar({
   areas,
   siteIds,
   vendors,
+  planTypes,
+  devInitiatives,
   selectedRegion,
   selectedMarket,
   selectedArea,
   selectedSiteId,
   selectedVendor,
+  selectedPlanType,
+  selectedDevInitiative,
+  slaMode,
+  slaDateFrom,
+  slaDateTo,
   onRegionChange,
   onMarketChange,
   onAreaChange,
   onSiteIdChange,
   onVendorChange,
+  onPlanTypeChange,
+  onDevInitiativeChange,
+  onSlaModeChange,
+  onSlaDateFromChange,
+  onSlaDateToChange,
+  onApply,
+  loading,
   totalSites,
 }: Props) {
-  const [siteSearch, setSiteSearch] = useState("");
-
-  const filteredSiteIds = useMemo(() => {
-    if (!siteSearch) return siteIds.slice(0, 50);
-    const q = siteSearch.toLowerCase();
-    return siteIds.filter((id) => id.toLowerCase().includes(q)).slice(0, 50);
-  }, [siteIds, siteSearch]);
-
   return (
     <aside className="w-56 flex-shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col overflow-hidden">
       <div className="p-3 space-y-3 flex-1 overflow-y-auto">
@@ -83,34 +105,20 @@ export default function Sidebar({
           Filters
         </div>
 
-        {/* Region list */}
+        {/* Region dropdown */}
         <div>
           <Label>Region</Label>
-          <div className="border border-gray-200 rounded-lg bg-white max-h-40 overflow-y-auto">
-            <button
-              onClick={() => onRegionChange("")}
-              className={`w-full text-left px-2.5 py-1.5 text-xs border-b border-gray-100 transition-colors ${
-                !selectedRegion
-                  ? "bg-blue-50 text-blue-700 font-semibold"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              All Regions
-            </button>
+          <Select
+            value={selectedRegion}
+            onChange={(e) => onRegionChange(e.target.value)}
+          >
+            <option value="">All Regions</option>
             {regions.map((r) => (
-              <button
-                key={r}
-                onClick={() => onRegionChange(r === selectedRegion ? "" : r)}
-                className={`w-full text-left px-2.5 py-1.5 text-xs border-b border-gray-50 transition-colors ${
-                  selectedRegion === r
-                    ? "bg-blue-50 text-blue-700 font-semibold"
-                    : "text-gray-700 hover:bg-gray-50"
-                }`}
-              >
+              <option key={r} value={r}>
                 {r}
-              </button>
+              </option>
             ))}
-          </div>
+          </Select>
         </div>
 
         {/* Area dropdown */}
@@ -145,47 +153,20 @@ export default function Sidebar({
           </Select>
         </div>
 
-        {/* Site ID search + select */}
+        {/* Site ID dropdown */}
         <div>
           <Label>Site ID</Label>
-          <input
-            type="text"
-            placeholder="Search site..."
-            value={siteSearch}
-            onChange={(e) => setSiteSearch(e.target.value)}
-            className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 mb-1"
-          />
-          <div className="border border-gray-200 rounded-lg bg-white max-h-32 overflow-y-auto">
-            <button
-              onClick={() => {
-                onSiteIdChange("");
-                setSiteSearch("");
-              }}
-              className={`w-full text-left px-2.5 py-1.5 text-xs border-b border-gray-100 transition-colors ${
-                !selectedSiteId
-                  ? "bg-blue-50 text-blue-700 font-semibold"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              All Sites
-            </button>
-            {filteredSiteIds.map((id) => (
-              <button
-                key={id}
-                onClick={() => {
-                  onSiteIdChange(id === selectedSiteId ? "" : id);
-                  setSiteSearch("");
-                }}
-                className={`w-full text-left px-2.5 py-1.5 text-xs border-b border-gray-50 transition-colors ${
-                  selectedSiteId === id
-                    ? "bg-blue-50 text-blue-700 font-semibold"
-                    : "text-gray-700 hover:bg-gray-50"
-                }`}
-              >
+          <Select
+            value={selectedSiteId}
+            onChange={(e) => onSiteIdChange(e.target.value)}
+          >
+            <option value="">All Sites</option>
+            {siteIds.map((id) => (
+              <option key={id} value={id}>
                 {id}
-              </button>
+              </option>
             ))}
-          </div>
+          </Select>
         </div>
 
         {/* Sites count */}
@@ -211,6 +192,110 @@ export default function Sidebar({
             ))}
           </Select>
         </div>
+
+        {/* POR Plan Type */}
+        <div>
+          <Label>POR Plan Type</Label>
+          <Select
+            value={selectedPlanType}
+            onChange={(e) => onPlanTypeChange(e.target.value)}
+          >
+            <option value="">All Plan Types</option>
+            {planTypes.map((pt) => (
+              <option key={pt} value={pt}>
+                {pt}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        {/* Regional Dev Initiatives */}
+        <div>
+          <Label>Regional Dev Initiatives</Label>
+          <Select
+            value={selectedDevInitiative}
+            onChange={(e) => onDevInitiativeChange(e.target.value)}
+          >
+            <option value="">All Initiatives</option>
+            {devInitiatives.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        {/* SLA Type */}
+        <div>
+          <Label>SLA Type</Label>
+          <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={() => onSlaModeChange("default")}
+              className={`flex-1 px-2 py-1.5 text-[10px] font-semibold rounded-md transition-all ${
+                slaMode === "default"
+                  ? "bg-white text-blue-700 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Default
+            </button>
+            <button
+              onClick={() => onSlaModeChange("history")}
+              className={`flex-1 px-2 py-1.5 text-[10px] font-semibold rounded-md transition-all ${
+                slaMode === "history"
+                  ? "bg-white text-blue-700 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              History Based
+            </button>
+          </div>
+
+          {slaMode === "history" && (
+            <div className="mt-2 space-y-2">
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={slaDateFrom}
+                  onChange={(e) => onSlaDateFromChange(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={slaDateTo}
+                  onChange={(e) => onSlaDateToChange(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Apply button */}
+      <div className="p-3 border-t border-gray-200 bg-gray-50">
+        <button
+          onClick={onApply}
+          disabled={loading}
+          className="w-full px-3 py-2.5 text-xs font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+        >
+          {loading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full" />
+              Loading...
+            </span>
+          ) : (
+            "Create Gantt Chart"
+          )}
+        </button>
       </div>
     </aside>
   );

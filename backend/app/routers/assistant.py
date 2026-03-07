@@ -12,12 +12,17 @@ POST /api/v1/schedular/resume
 """
 
 import asyncio
+import json
 import logging
+from typing import Optional
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func as sa_func, distinct
 
 from app.core.database import get_db, get_config_db
+from app.models.prerequisite import ChatHistory
+from app.schemas.gantt import ChatMessageOut, ChatThreadSummary, ChatThreadOut, ChatHistoryOut
 from app.services.assistant.service import run_assistant
 from app.services.assistant.nodes.simulation import resume_tool
 
@@ -96,3 +101,178 @@ async def resume_simulation(body: ResumeRequest):
             status_code=500,
             detail="Failed to resume simulation. Please try again.",
         )
+
+
+@router.get("/assistant/history", response_model=list[ChatHistoryOut])
+def get_all_chat_history(
+    config_db: Session = Depends(get_config_db),
+):
+    """Get all chat history grouped by user_id and thread_id (all users)."""
+    user_ids = [
+        r[0] for r in config_db.query(distinct(ChatHistory.user_id)).all()
+    ]
+
+    result = []
+    for uid in sorted(user_ids):
+        threads = _build_threads_for_user(config_db, uid)
+        if threads:
+            result.append(ChatHistoryOut(user_id=uid, threads=threads))
+
+    return result
+
+
+@router.get("/assistant/history/{user_id}/threads", response_model=list[ChatThreadSummary])
+def get_user_threads(
+    user_id: str,
+    config_db: Session = Depends(get_config_db),
+):
+    """Get all thread summaries for a specific user (lightweight, no full messages)."""
+    thread_ids = [
+        r[0]
+        for r in config_db.query(distinct(ChatHistory.thread_id))
+        .filter(ChatHistory.user_id == user_id)
+        .all()
+    ]
+
+    summaries = []
+    for tid in thread_ids:
+        messages = (
+            config_db.query(ChatHistory)
+            .filter(ChatHistory.user_id == user_id, ChatHistory.thread_id == tid)
+            .order_by(ChatHistory.id.asc())
+            .all()
+        )
+        if not messages:
+            continue
+
+        first_user = next((m for m in messages if m.role == "user"), None)
+        user_preview = None
+        if first_user:
+            user_preview = first_user.content[:100] + ("..." if len(first_user.content) > 100 else "")
+
+        first_assistant = next((m for m in messages if m.role == "assistant"), None)
+        assistant_preview = None
+        if first_assistant:
+            content = first_assistant.content
+            # Assistant messages are stored as JSON — extract the message field
+            try:
+                parsed = json.loads(content)
+                content = parsed.get("message", content)
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                pass
+            assistant_preview = content[:120] + ("..." if len(content) > 120 else "")
+
+        summaries.append(ChatThreadSummary(
+            thread_id=tid,
+            message_count=len(messages),
+            first_user_message=user_preview,
+            first_assistant_message=assistant_preview,
+            last_message_at=messages[-1].created_at,
+        ))
+
+    summaries.sort(key=lambda t: t.last_message_at or "", reverse=True)
+    return summaries
+
+
+@router.get("/assistant/history/{user_id}/threads/{thread_id}", response_model=ChatThreadOut)
+def get_thread_messages(
+    user_id: str,
+    thread_id: str,
+    config_db: Session = Depends(get_config_db),
+):
+    """Get full chat messages for a specific user + thread."""
+    messages = (
+        config_db.query(ChatHistory)
+        .filter(ChatHistory.user_id == user_id, ChatHistory.thread_id == thread_id)
+        .order_by(ChatHistory.id.asc())
+        .all()
+    )
+
+    if not messages:
+        raise HTTPException(status_code=404, detail=f"No messages found for user '{user_id}' thread '{thread_id}'")
+
+    return ChatThreadOut(
+        thread_id=thread_id,
+        messages=[
+            ChatMessageOut(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at,
+            )
+            for m in messages
+        ],
+        last_message_at=messages[-1].created_at,
+    )
+
+
+@router.delete("/assistant/history/{user_id}")
+def delete_user_history(
+    user_id: str,
+    config_db: Session = Depends(get_config_db),
+):
+    """Delete all chat history for a specific user (all threads)."""
+    deleted = (
+        config_db.query(ChatHistory)
+        .filter(ChatHistory.user_id == user_id)
+        .delete()
+    )
+    config_db.commit()
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail=f"No chat history found for user '{user_id}'")
+    return {"detail": f"Deleted {deleted} messages for user '{user_id}'"}
+
+
+@router.delete("/assistant/history/{user_id}/threads/{thread_id}")
+def delete_thread(
+    user_id: str,
+    thread_id: str,
+    config_db: Session = Depends(get_config_db),
+):
+    """Delete all messages for a specific user + thread."""
+    deleted = (
+        config_db.query(ChatHistory)
+        .filter(ChatHistory.user_id == user_id, ChatHistory.thread_id == thread_id)
+        .delete()
+    )
+    config_db.commit()
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail=f"No messages found for user '{user_id}' thread '{thread_id}'")
+    return {"detail": f"Deleted {deleted} messages from thread '{thread_id}'"}
+
+
+def _build_threads_for_user(config_db: Session, user_id: str) -> list[ChatThreadOut]:
+    """Helper: build full thread list for a user."""
+    thread_ids = [
+        r[0]
+        for r in config_db.query(distinct(ChatHistory.thread_id))
+        .filter(ChatHistory.user_id == user_id)
+        .all()
+    ]
+
+    threads = []
+    for tid in thread_ids:
+        messages = (
+            config_db.query(ChatHistory)
+            .filter(ChatHistory.user_id == user_id, ChatHistory.thread_id == tid)
+            .order_by(ChatHistory.id.asc())
+            .all()
+        )
+        if not messages:
+            continue
+        threads.append(ChatThreadOut(
+            thread_id=tid,
+            messages=[
+                ChatMessageOut(
+                    id=m.id,
+                    role=m.role,
+                    content=m.content,
+                    created_at=m.created_at,
+                )
+                for m in messages
+            ],
+            last_message_at=messages[-1].created_at,
+        ))
+
+    threads.sort(key=lambda t: t.last_message_at or "", reverse=True)
+    return threads
