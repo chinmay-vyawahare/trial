@@ -40,12 +40,6 @@ def list_pace_constraints(
 @router.post("", response_model=PaceConstraintOut)
 def create_pace_constraint(body: PaceConstraintCreate, db: Session = Depends(get_config_db)):
     """Create a new pace constraint for a user."""
-    if not body.market and not body.area and not body.region:
-        raise HTTPException(
-            status_code=400,
-            detail="At least one of market, area, or region must be provided",
-        )
-
     try:
         sd = datetime.fromisoformat(body.start_date)
         ed = datetime.fromisoformat(body.end_date)

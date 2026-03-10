@@ -98,15 +98,11 @@ def history_gantt_charts(
     if df > dt:
         raise HTTPException(status_code=400, detail="date_from must be before date_to.")
 
-    # Merge explicit filters with saved user filters
-    saved_region, saved_market, saved_site_id, saved_vendor, saved_area, plan_type_include, regional_dev_initiatives = (
+    # Load gate-check filters only (plan_type, dev_initiatives) from saved user filters.
+    # Do NOT merge saved geographic filters — the frontend sends explicit params.
+    _, _, _, _, _, plan_type_include, regional_dev_initiatives = (
         _resolve_user_filters(config_db, user_id)
     )
-    region = region or saved_region
-    market = market or saved_market
-    site_id = site_id or saved_site_id
-    vendor = vendor or saved_vendor
-    area = area or saved_area
 
     skipped_keys = _get_skipped_keys(config_db)
 

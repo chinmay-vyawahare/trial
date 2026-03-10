@@ -53,7 +53,6 @@ export default function UserPaceConstraints({ userId }: Props) {
 
   const handleCreate = async () => {
     if (!newStartDate || !newEndDate) return;
-    if (!newMarket.trim() && !newArea.trim() && !newRegion.trim()) return;
     setSaving(true);
     try {
       await createPaceConstraint({
@@ -223,7 +222,7 @@ export default function UserPaceConstraints({ userId }: Props) {
                 />
               </div>
             </div>
-            <p className="text-xs text-gray-400">Start/End dates required. At least one of Market, Area, or Region required.</p>
+            <p className="text-xs text-gray-400">Start/End dates required. Market, Area, and Region are optional scope filters.</p>
             <button
               onClick={handleCreate}
               disabled={saving || !newStartDate || !newEndDate}

@@ -83,11 +83,12 @@ def _resolve_filters(
     saved = _get_user_filters(config_db, user_id)
 
     if saved:
-        region = region if region is not None else saved.region
-        market = market if market is not None else saved.market
-        site_id = site_id if site_id is not None else saved.site_id
-        vendor = vendor if vendor is not None else saved.vendor
-        area = area if area is not None else saved.area
+        # NOTE: Do NOT merge saved geographic filters (region, market, etc.)
+        # into the query. The frontend already loads saved filters into the
+        # sidebar UI via handleUserIdApply → getUserFilters. Merging here
+        # causes stale saved filters to silently narrow results when the user
+        # has intentionally left a filter empty (e.g. when using pace constraints).
+        # Only gate-check filters (plan_type, dev_initiatives) are DB-only.
 
         # Gate checks always come from the DB
         if saved.plan_type_include:
