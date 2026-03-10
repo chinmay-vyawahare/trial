@@ -237,7 +237,7 @@ class GcCapacityMarketTrial(ConfigBase):
     NOTE: This table is NOT managed by this app — it is pre-populated externally.
     """
     __tablename__ = "gc_capacity_market_trial"
-    __table_args__ = {"schema": "public"}
+    __table_args__ = {"schema": "public", "extend_existing": True, "keep_existing": True}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     gc_company = Column(String(200), nullable=False)
