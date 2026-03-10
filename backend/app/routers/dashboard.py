@@ -189,7 +189,7 @@ def weekly_status_user_override(
         status=status,
     )
 
-    return {"sla_type": "user_override", "weeks": weeks}
+    return {"sla_type": "user_override" if user_id else "default", "weeks": weeks}
 
 
 @router.get("/weekly-status-sla-history")
