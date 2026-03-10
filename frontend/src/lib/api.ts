@@ -18,6 +18,10 @@ import type {
   ChatThread,
   UserFilter,
   SlaHistoryGanttResponse,
+  GcCapacityEntry,
+  PaceConstraintEntry,
+  PaceConstraintCreate,
+  PaceConstraintUpdate,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -74,6 +78,8 @@ export async function getGanttCharts(filters?: {
   user_id?: string;
   limit?: number;
   offset?: number;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_id?: number;
 }): Promise<GanttResponse> {
   const params = new URLSearchParams();
   if (filters?.region) params.set("region", filters.region);
@@ -84,6 +90,8 @@ export async function getGanttCharts(filters?: {
   if (filters?.user_id) params.set("user_id", filters.user_id);
   if (filters?.limit) params.set("limit", String(filters.limit));
   if (filters?.offset) params.set("offset", String(filters.offset));
+  if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
+  if (filters?.pace_constraint_id) params.set("pace_constraint_id", String(filters.pace_constraint_id));
   const qs = params.toString();
   return fetchAPI<GanttResponse>(`/api/v1/schedular/gantt-charts${qs ? `?${qs}` : ""}`);
 }
@@ -276,6 +284,8 @@ export async function getSlaHistoryGantt(params: {
   user_id?: string;
   limit?: number;
   offset?: number;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_id?: number;
 }): Promise<SlaHistoryGanttResponse> {
   const sp = new URLSearchParams();
   sp.set("date_from", params.date_from);
@@ -288,6 +298,8 @@ export async function getSlaHistoryGantt(params: {
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.limit) sp.set("limit", String(params.limit));
   if (params.offset) sp.set("offset", String(params.offset));
+  if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
+  if (params.pace_constraint_id) sp.set("pace_constraint_id", String(params.pace_constraint_id));
   return fetchAPI<SlaHistoryGanttResponse>(`/api/v1/schedular/sla-history/gantt-charts?${sp}`);
 }
 
@@ -414,6 +426,38 @@ export function getExportCsvUrl(filters?: {
   if (filters?.user_id) params.set("user_id", filters.user_id);
   const qs = params.toString();
   return `${API_BASE}/api/v1/schedular/export/gantt-csv${qs ? `?${qs}` : ""}`;
+}
+
+/* ── GC Capacity (read-only) ───────────────────────────────────────── */
+
+export async function getGcCapacities(): Promise<GcCapacityEntry[]> {
+  return fetchAPI<GcCapacityEntry[]>("/api/v1/schedular/gc-capacity");
+}
+
+/* ── Pace Constraints ─────────────────────────────────────────────── */
+
+export async function getPaceConstraints(userId: string): Promise<PaceConstraintEntry[]> {
+  return fetchAPI<PaceConstraintEntry[]>(`/api/v1/schedular/pace-constraints?user_id=${encodeURIComponent(userId)}`);
+}
+
+export async function createPaceConstraint(body: PaceConstraintCreate): Promise<PaceConstraintEntry> {
+  return fetchAPI<PaceConstraintEntry>("/api/v1/schedular/pace-constraints", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updatePaceConstraint(id: number, userId: string, body: PaceConstraintUpdate): Promise<PaceConstraintEntry> {
+  return fetchAPI<PaceConstraintEntry>(`/api/v1/schedular/pace-constraints/${id}?user_id=${encodeURIComponent(userId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deletePaceConstraint(id: number, userId: string): Promise<{ detail: string }> {
+  return fetchAPI<{ detail: string }>(`/api/v1/schedular/pace-constraints/${id}?user_id=${encodeURIComponent(userId)}`, { method: "DELETE" });
 }
 
 /* ── Health ────────────────────────────────────────────────────────── */

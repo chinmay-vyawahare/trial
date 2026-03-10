@@ -38,6 +38,8 @@ export interface SiteGantt {
   overall_status: string;
   on_track_pct: number;
   milestone_status_summary: MilestoneStatusSummary;
+  excluded_due_to_crew_shortage?: boolean;
+  excluded_due_to_pace_constraint?: boolean;
 }
 
 export interface GanttResponse {
@@ -248,6 +250,58 @@ export interface ChatHistoryUser {
 }
 
 /* ── SLA History ──────────────────────────────────────────────────── */
+
+/* ── GC Capacity ─────────────────────────────────────────────────── */
+
+export interface GcCapacityEntry {
+  id: number;
+  gc_company: string;
+  market: string;
+  day_wise_gc_capacity: number;
+}
+
+export interface GcCapacityCreate {
+  gc_company: string;
+  market: string;
+  day_wise_gc_capacity: number;
+}
+
+export interface GcCapacityUpdate {
+  gc_company?: string;
+  market?: string;
+  day_wise_gc_capacity?: number;
+}
+
+/* ── Pace Constraints ────────────────────────────────────────────── */
+
+export interface PaceConstraintEntry {
+  id: number;
+  start_date: string;
+  end_date: string;
+  market: string | null;
+  area: string | null;
+  region: string | null;
+  max_sites: number;
+}
+
+export interface PaceConstraintCreate {
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  market?: string | null;
+  area?: string | null;
+  region?: string | null;
+  max_sites: number;
+}
+
+export interface PaceConstraintUpdate {
+  start_date?: string;
+  end_date?: string;
+  market?: string | null;
+  area?: string | null;
+  region?: string | null;
+  max_sites?: number;
+}
 
 export interface SlaHistoryGanttResponse {
   sla_type: string;

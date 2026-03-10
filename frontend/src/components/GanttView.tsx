@@ -85,6 +85,10 @@ function getStatusBadge(status: string) {
     return { label: "Critical", cls: "bg-red-100 text-red-700 border-red-300" };
   if (s === "BLOCKED")
     return { label: "Blocked", cls: "bg-red-100 text-red-700 border-red-300" };
+  if (s === "EXCLUDED - CREW SHORTAGE")
+    return { label: "Excluded - Crew Shortage", cls: "bg-orange-100 text-orange-700 border-orange-300" };
+  if (s === "EXCLUDED - PACE CONSTRAINT")
+    return { label: "Excluded - Pace Constraint", cls: "bg-purple-100 text-purple-700 border-purple-300" };
   if (s === "IN PROGRESS")
     return { label: "In Progress", cls: "bg-amber-100 text-amber-700 border-amber-300" };
   if (s === "ON TRACK")
@@ -229,7 +233,7 @@ export default function GanttView({
     const delayedCount = vendorSites.filter(
       (s) => {
         const st = s.overall_status.toUpperCase();
-        return st === "CRITICAL" || st === "BLOCKED";
+        return st === "CRITICAL" || st === "BLOCKED" || st === "EXCLUDED - CREW SHORTAGE" || st === "EXCLUDED - PACE CONSTRAINT";
       }
     ).length;
     rows.push({ type: "vendor", vendorName, siteCount: vendorSites.length, delayedCount });

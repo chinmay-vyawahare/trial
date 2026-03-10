@@ -226,6 +226,49 @@ class UserExpectedDays(ConfigBase):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class GcCapacityMarketTrial(ConfigBase):
+    """
+    GC (vendor) capacity per market — predefined read-only table in public schema.
+
+    Records how many sites a vendor can work on in parallel per market.
+    Used to flag sites as excluded_due_to_crew_shortage when vendor has more
+    assigned sites than their parallel capacity allows.
+
+    NOTE: This table is NOT managed by this app — it is pre-populated externally.
+    """
+    __tablename__ = "gc_capacity_market_trial"
+    __table_args__ = {"schema": "public"}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    gc_company = Column(String(200), nullable=False)
+    market = Column(String(200), nullable=False)
+    day_wise_gc_capacity = Column(Integer, nullable=False, default=10)
+
+
+class PaceConstraint(ConfigBase):
+    """
+    Per-user pace constraints — how many sites can START within a date range
+    for a given market/area/region scope.
+
+    Each user manages their own pace constraints. When the gantt chart is
+    generated with consider_pace_constraints=True, only that user's
+    constraints are applied.
+    """
+    __tablename__ = "pace_constraints"
+    __table_args__ = {"schema": _S}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    market = Column(String(200), nullable=True)
+    area = Column(String(200), nullable=True)
+    region = Column(String(200), nullable=True)
+    max_sites = Column(Integer, nullable=False, default=5)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class ChatHistory(ConfigBase):
     """
     Per-user, per-thread chat history for the AI assistant.

@@ -1,9 +1,148 @@
+from collections import defaultdict
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from .queries import build_gantt_query, build_dashboard_query
 from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, is_site_blocked
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides
 from .utils import parse_date
+
+def _apply_pace_constraint(sites: list[dict], config_db: Session, pace_constraint_id: int) -> list[dict]:
+    """
+    Apply a single pace constraint by ID.
+
+    For the constraint (start_date, end_date, market/area/region, max_sites):
+      1. Find sites whose forecasted_cx_start_date falls in [start_date, end_date]
+         and match the constraint's market/area/region filters.
+      2. Sort those sites by proximity to start_date (nearest = highest priority).
+      3. Keep top max_sites, mark the rest as excluded.
+    """
+    from app.models.prerequisite import PaceConstraint
+
+    c = config_db.query(PaceConstraint).filter(PaceConstraint.id == pace_constraint_id).first()
+    if not c:
+        return sites
+
+    c_start = c.start_date.date() if hasattr(c.start_date, "date") else c.start_date
+    c_end = c.end_date.date() if hasattr(c.end_date, "date") else c.end_date
+    c_market = (c.market or "").strip().lower()
+    c_area = (c.area or "").strip().lower()
+    c_region = (c.region or "").strip().lower()
+
+    matching_indices: list[int] = []
+    for idx, site in enumerate(sites):
+        forecast = site.get("forecasted_cx_start_date")
+        if not forecast:
+            continue
+
+        try:
+            forecast_date = date.fromisoformat(str(forecast))
+        except (ValueError, TypeError):
+            continue
+
+        # Check if forecast falls within constraint date range
+        if not (c_start <= forecast_date <= c_end):
+            continue
+
+        # Check scope filters (case-insensitive, skip if constraint field is empty)
+        site_market = (site.get("market") or "").strip().lower()
+        site_area = (site.get("area") or "").strip().lower()
+        site_region = (site.get("region") or "").strip().lower()
+
+        if c_market and site_market != c_market:
+            continue
+        if c_area and site_area != c_area:
+            continue
+        if c_region and site_region != c_region:
+            continue
+
+        matching_indices.append(idx)
+
+    excluded_indices: set[int] = set()
+    if len(matching_indices) > c.max_sites:
+        # Sort by proximity to start_date (nearest first = highest priority)
+        def sort_key(i):
+            try:
+                fd = date.fromisoformat(str(sites[i].get("forecasted_cx_start_date")))
+                return abs((fd - c_start).days)
+            except (ValueError, TypeError):
+                return 999999
+
+        sorted_indices = sorted(matching_indices, key=sort_key)
+
+        # Keep first max_sites, exclude the rest
+        for i in sorted_indices[c.max_sites:]:
+            excluded_indices.add(i)
+
+    # Tag sites
+    for idx, site in enumerate(sites):
+        if idx in excluded_indices:
+            site["excluded_due_to_pace_constraint"] = True
+            site["overall_status"] = "Excluded - Pace Constraint"
+        else:
+            site["excluded_due_to_pace_constraint"] = False
+
+    return sites
+
+
+def _apply_vendor_capacity(sites: list[dict], db: Session) -> list[dict]:
+    """
+    Apply vendor capacity constraints from public.gc_capacity_market_trial table.
+
+    For each vendor+market combination, if the vendor has more sites than their
+    day_wise_gc_capacity, sort sites by forecasted_cx_start_date (earliest first)
+    and mark excess sites with excluded_due_to_crew_shortage=True.
+    Sites with earlier forecasted starts are prioritised (kept).
+    """
+    from app.models.prerequisite import GcCapacityMarketTrial
+
+    # Load all capacity rules from public schema (pre-populated, read-only)
+    capacity_rows = db.query(GcCapacityMarketTrial).all()
+    if not capacity_rows:
+        return sites
+
+    # Build lookup: (gc_company_lower, market_lower) -> capacity
+    cap_lookup = {}
+    for r in capacity_rows:
+        key = (r.gc_company.strip().lower(), r.market.strip().lower())
+        cap_lookup[key] = r.day_wise_gc_capacity
+
+    # Group sites by (vendor, market)
+    groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for idx, site in enumerate(sites):
+        vendor_name = (site.get("vendor_name") or "").strip().lower()
+        market_name = (site.get("market") or "").strip().lower()
+        if vendor_name and market_name:
+            groups[(vendor_name, market_name)].append(idx)
+
+    # For each group, check capacity and mark excess sites
+    excluded_indices = set()
+    for (vendor_key, market_key), indices in groups.items():
+        capacity = cap_lookup.get((vendor_key, market_key))
+        if capacity is None or len(indices) <= capacity:
+            continue
+
+        # Sort indices by forecasted_cx_start_date ascending (earliest first = keep)
+        # Sites without a forecast date go last (will be excluded first)
+        def sort_key(i):
+            d = sites[i].get("forecasted_cx_start_date")
+            return d if d else "9999-12-31"
+
+        sorted_indices = sorted(indices, key=sort_key)
+
+        # Keep first `capacity` sites, exclude the rest
+        for i in sorted_indices[capacity:]:
+            excluded_indices.add(i)
+
+    # Tag sites — excluded sites get a special overall_status
+    for idx, site in enumerate(sites):
+        if idx in excluded_indices:
+            site["excluded_due_to_crew_shortage"] = True
+            site["overall_status"] = "Excluded - Crew Shortage"
+        else:
+            site["excluded_due_to_crew_shortage"] = False
+
+    return sites
+
 
 def get_all_sites_gantt(
     db: Session,
@@ -19,6 +158,8 @@ def get_all_sites_gantt(
     offset: int = None,
     skipped_keys: set[str] | None = None,
     user_expected_days_overrides: dict[str, int] | None = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_id: int | None = None,
 ):
     # Load milestone config from config DB
     milestones_config = get_milestones(config_db)
@@ -102,6 +243,26 @@ def get_all_sites_gantt(
                 },
             }
         )
+
+    # Apply vendor capacity constraints if requested
+    if consider_vendor_capacity:
+        sites = _apply_vendor_capacity(sites, db)
+    else:
+        for site in sites:
+            site["excluded_due_to_crew_shortage"] = False
+
+    # Apply a single pace constraint if selected
+    if pace_constraint_id:
+        sites = _apply_pace_constraint(sites, config_db, pace_constraint_id)
+    else:
+        for site in sites:
+            site["excluded_due_to_pace_constraint"] = False
+
+    # Sort by forecasted_cx_start_date descending (latest first, nulls at bottom)
+    sites.sort(
+        key=lambda s: s.get("forecasted_cx_start_date") or "",
+        reverse=True,
+    )
 
     return sites, total_count, count
 
@@ -276,6 +437,8 @@ def get_history_gantt(
     limit: int = None,
     offset: int = None,
     skipped_keys: set[str] | None = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_id: int | None = None,
 ):
     """
     Gantt chart using history-based SLA.
@@ -335,6 +498,8 @@ def get_history_gantt(
         offset=offset,
         skipped_keys=skipped_keys,
         user_expected_days_overrides=history_overrides,
+        consider_vendor_capacity=consider_vendor_capacity,
+        pace_constraint_id=pace_constraint_id,
     )
 
     return sites, total_count, count, sla_last_updated

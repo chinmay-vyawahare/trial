@@ -8,6 +8,7 @@ import {
   ConstraintThresholdCreate,
   MilestoneDefinitionCreate,
   MilestoneColumnCreate,
+  GcCapacityEntry,
 } from "@/lib/types";
 import {
   getPrerequisites,
@@ -24,9 +25,10 @@ import {
   resetSlaHistory,
   getUserExpectedDays,
   setUserExpectedDays,
+  getGcCapacities,
 } from "@/lib/api";
 
-type Section = "prerequisites" | "constraints" | "staging" | "sla" | "expected-days";
+type Section = "prerequisites" | "constraints" | "staging" | "sla" | "expected-days" | "gc-capacity";
 
 export default function AdminPanel() {
   const [section, setSection] = useState<Section>("prerequisites");
@@ -35,6 +37,7 @@ export default function AdminPanel() {
     { key: "prerequisites", label: "Prerequisites" },
     { key: "constraints", label: "Constraints" },
     { key: "expected-days", label: "Expected Days" },
+    { key: "gc-capacity", label: "GC Capacity" },
     { key: "sla", label: "SLA History" },
     { key: "staging", label: "Staging Columns" },
   ];
@@ -62,6 +65,7 @@ export default function AdminPanel() {
         {section === "prerequisites" && <PrerequisitesAdmin />}
         {section === "constraints" && <ConstraintsAdmin />}
 {section === "expected-days" && <ExpectedDaysAdmin />}
+        {section === "gc-capacity" && <GcCapacityAdmin />}
         {section === "sla" && <SlaResetAdmin />}
         {section === "staging" && <StagingColumnsAdmin />}
       </div>
@@ -989,6 +993,60 @@ function MultiSelectDropdown({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── GC Capacity Admin (read-only) ────────────────────────────────── */
+
+function GcCapacityAdmin() {
+  const [entries, setEntries] = useState<GcCapacityEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        setEntries(await getGcCapacities());
+      } catch {
+        /* ignore */
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading) return <Spinner />;
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold text-gray-700">GC Vendor Capacity per Market</h3>
+
+      <p className="text-xs text-gray-500">
+        Predefined vendor capacity data (read-only). Shows how many sites each GC vendor can work on in parallel per market.
+        When &quot;Consider Vendor Capacity&quot; is enabled on the Gantt chart, sites exceeding capacity are marked as &quot;Excluded - Crew Shortage&quot;.
+      </p>
+
+      <table className="w-full text-sm border rounded-lg overflow-hidden">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="text-left px-3 py-2 text-xs text-gray-600">GC Company</th>
+            <th className="text-left px-3 py-2 text-xs text-gray-600">Market</th>
+            <th className="text-left px-3 py-2 text-xs text-gray-600">Parallel Capacity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e) => (
+            <tr key={e.id} className="border-t">
+              <td className="px-3 py-2">{e.gc_company}</td>
+              <td className="px-3 py-2">{e.market}</td>
+              <td className="px-3 py-2">{e.day_wise_gc_capacity}</td>
+            </tr>
+          ))}
+          {entries.length === 0 && (
+            <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400 text-xs">No GC capacity entries found.</td></tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

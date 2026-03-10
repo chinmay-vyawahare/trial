@@ -16,6 +16,8 @@ function statusBadge(status: string) {
     DELAYED: "bg-amber-100 text-amber-800 border-amber-300",
     "HIGH RISK": "bg-orange-100 text-orange-800 border-orange-300",
     CRITICAL: "bg-red-100 text-red-800 border-red-300",
+    "EXCLUDED - CREW SHORTAGE": "bg-orange-100 text-orange-800 border-orange-300",
+    "EXCLUDED - PACE CONSTRAINT": "bg-purple-100 text-purple-800 border-purple-300",
   };
   const cls = map[status] || "bg-gray-100 text-gray-700 border-gray-300";
   return (

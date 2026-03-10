@@ -18,6 +18,7 @@ const tabs = [
   { key: "gantt", label: "Gantt Chart" },
   { key: "flowchart", label: "Flowchart" },
   { key: "expected-days", label: "Expected Days" },
+  { key: "pace-constraints", label: "Pace Constraints" },
   { key: "admin", label: "Admin" },
 ];
 

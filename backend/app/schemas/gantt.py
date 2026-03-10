@@ -237,6 +237,62 @@ class MilestoneDefinitionCreateOut(BaseModel):
         return v
 
 
+# ----------------------------------------------------------------
+# GC Capacity Market Trial schemas
+# ----------------------------------------------------------------
+
+class GcCapacityOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    gc_company: str
+    market: str
+    day_wise_gc_capacity: int
+
+class GcCapacityCreate(BaseModel):
+    gc_company: str
+    market: str
+    day_wise_gc_capacity: int = 10
+
+class GcCapacityUpdate(BaseModel):
+    gc_company: Optional[str] = None
+    market: Optional[str] = None
+    day_wise_gc_capacity: Optional[int] = None
+
+
+# ----------------------------------------------------------------
+# Pace Constraint schemas
+# ----------------------------------------------------------------
+
+class PaceConstraintOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    start_date: datetime
+    end_date: datetime
+    market: Optional[str] = None
+    area: Optional[str] = None
+    region: Optional[str] = None
+    max_sites: int
+
+class PaceConstraintCreate(BaseModel):
+    user_id: str
+    start_date: str          # "YYYY-MM-DD"
+    end_date: str            # "YYYY-MM-DD"
+    market: Optional[str] = None
+    area: Optional[str] = None
+    region: Optional[str] = None
+    max_sites: int = 5
+
+class PaceConstraintUpdate(BaseModel):
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    market: Optional[str] = None
+    area: Optional[str] = None
+    region: Optional[str] = None
+    max_sites: Optional[int] = None
+
+
 class MilestoneReorderItem(BaseModel):
     key: str
     sort_order: int

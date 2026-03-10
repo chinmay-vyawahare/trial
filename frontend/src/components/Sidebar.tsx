@@ -1,6 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { PaceConstraintEntry } from "@/lib/types";
+import { getPaceConstraints } from "@/lib/api";
 
 export type SlaMode = "default" | "history";
 
@@ -22,6 +24,11 @@ interface Props {
   slaMode: SlaMode;
   slaDateFrom: string;
   slaDateTo: string;
+  considerVendorCapacity: boolean;
+  onConsiderVendorCapacityChange: (v: boolean) => void;
+  paceConstraintId: number | null;
+  onPaceConstraintIdChange: (id: number | null) => void;
+  userId: string;
   onRegionChange: (r: string) => void;
   onMarketChange: (m: string) => void;
   onAreaChange: (a: string) => void;
@@ -94,11 +101,32 @@ export default function Sidebar({
   onSlaModeChange,
   onSlaDateFromChange,
   onSlaDateToChange,
+  considerVendorCapacity,
+  onConsiderVendorCapacityChange,
+  paceConstraintId,
+  onPaceConstraintIdChange,
+  userId,
   onApply,
   onClear,
   loading,
   totalSites,
 }: Props) {
+  const [paceConstraints, setPaceConstraints] = useState<PaceConstraintEntry[]>([]);
+
+  useEffect(() => {
+    if (userId) {
+      getPaceConstraints(userId)
+        .then(setPaceConstraints)
+        .catch(() => setPaceConstraints([]));
+    } else {
+      setPaceConstraints([]);
+    }
+  }, [userId]);
+
+  const fmtDate = (d: string) => {
+    try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }); } catch { return d; }
+  };
+
   return (
     <aside className="w-56 flex-shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col overflow-hidden">
       <div className="p-3 space-y-3 flex-1 overflow-y-auto">
@@ -278,6 +306,52 @@ export default function Sidebar({
                 />
               </div>
             </div>
+          )}
+        </div>
+        {/* Vendor Capacity Toggle */}
+        <div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={considerVendorCapacity}
+              onChange={(e) => onConsiderVendorCapacityChange(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+            />
+            <span className="text-[10px] font-bold tracking-wider uppercase text-gray-400">
+              Consider Vendor Capacity
+            </span>
+          </label>
+          <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+            Marks sites exceeding GC parallel capacity as excluded.
+          </p>
+        </div>
+        {/* Pace Constraint Selector */}
+        <div>
+          <Label>Pace Constraint</Label>
+          <select
+            value={paceConstraintId ?? ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              onPaceConstraintIdChange(val ? Number(val) : null);
+            }}
+            className="w-full px-2.5 py-2 text-xs rounded-lg border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="">None</option>
+            {paceConstraints.map((c) => (
+              <option key={c.id} value={c.id}>
+                {fmtDate(c.start_date)} – {fmtDate(c.end_date)} · {[c.market, c.area, c.region].filter(Boolean).join("/") || "All"} · Max {c.max_sites}
+              </option>
+            ))}
+          </select>
+          {userId && paceConstraints.length === 0 && (
+            <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+              No constraints found. Add them in the Pace Constraints tab.
+            </p>
+          )}
+          {!userId && (
+            <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+              Enter a User ID to load pace constraints.
+            </p>
           )}
         </div>
       </div>

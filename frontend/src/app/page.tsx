@@ -11,6 +11,7 @@ import GanttView from "@/components/GanttView";
 import ChatPanel from "@/components/ChatPanel";
 import AdminPanel from "@/components/AdminPanel";
 import UserExpectedDays from "@/components/UserExpectedDays";
+import UserPaceConstraints from "@/components/UserPaceConstraints";
 import PrerequisiteFlowchart from "@/components/PrerequisiteFlowchart";
 import DashboardSummaryPanel from "@/components/DashboardSummaryPanel";
 
@@ -47,6 +48,8 @@ export default function Home() {
   );
   const [userId, setUserId] = useState("");
   const [slaLastUpdated, setSlaLastUpdated] = useState<string | null>(null);
+  const [considerVendorCapacity, setConsiderVendorCapacity] = useState(false);
+  const [paceConstraintId, setPaceConstraintId] = useState<number | null>(null);
   const initialLoad = useRef(true);
 
   // Load filter options once on mount
@@ -85,6 +88,8 @@ export default function Home() {
         site_id: siteIdFilter || undefined,
         vendor: vendor || undefined,
         user_id: userId || undefined,
+        consider_vendor_capacity: considerVendorCapacity || undefined,
+        pace_constraint_id: paceConstraintId || undefined,
       };
 
       let ganttRes;
@@ -100,6 +105,8 @@ export default function Home() {
             site_id: siteIdFilter || undefined,
             vendor: vendor || undefined,
             user_id: userId || undefined,
+            consider_vendor_capacity: considerVendorCapacity || undefined,
+            pace_constraint_id: paceConstraintId || undefined,
           }),
           getDashboardSummary(filters),
         ]);
@@ -131,7 +138,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [region, market, area, siteIdFilter, vendor, userId, slaMode, slaDateFrom, slaDateTo]);
+  }, [region, market, area, siteIdFilter, vendor, userId, slaMode, slaDateFrom, slaDateTo, considerVendorCapacity, paceConstraintId]);
 
   // Auto-load only on first mount
   useEffect(() => {
@@ -268,6 +275,11 @@ export default function Home() {
           onSlaModeChange={setSlaMode}
           onSlaDateFromChange={setSlaDateFrom}
           onSlaDateToChange={setSlaDateTo}
+          considerVendorCapacity={considerVendorCapacity}
+          onConsiderVendorCapacityChange={setConsiderVendorCapacity}
+          paceConstraintId={paceConstraintId}
+          onPaceConstraintIdChange={setPaceConstraintId}
+          userId={userId}
           onApply={loadData}
           onClear={clearFilters}
           loading={loading}
@@ -319,6 +331,7 @@ export default function Home() {
             )}
             {activeTab === "flowchart" && <PrerequisiteFlowchart />}
             {activeTab === "expected-days" && <UserExpectedDays userId={userId} />}
+            {activeTab === "pace-constraints" && <UserPaceConstraints userId={userId} />}
             {activeTab === "admin" && <AdminPanel />}
           </div>
 
@@ -345,6 +358,20 @@ export default function Home() {
                   style={{ background: "#ef4444" }}
                 />
                 <span className="text-gray-500">Delayed</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="w-4 h-2.5 rounded"
+                  style={{ background: "#f97316" }}
+                />
+                <span className="text-gray-500">Excluded - Crew Shortage</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="w-4 h-2.5 rounded"
+                  style={{ background: "#a855f7" }}
+                />
+                <span className="text-gray-500">Excluded - Pace Constraint</span>
               </div>
               <div className="flex items-center gap-1.5 ml-4">
                 <div className="w-0.5 h-3 bg-blue-600" />
