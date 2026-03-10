@@ -28,6 +28,8 @@ interface Props {
   onConsiderVendorCapacityChange: (v: boolean) => void;
   paceConstraintId: number | null;
   onPaceConstraintIdChange: (id: number | null) => void;
+  selectedStatus: string;
+  onStatusChange: (s: string) => void;
   userId: string;
   onRegionChange: (r: string) => void;
   onMarketChange: (m: string) => void;
@@ -105,6 +107,8 @@ export default function Sidebar({
   onConsiderVendorCapacityChange,
   paceConstraintId,
   onPaceConstraintIdChange,
+  selectedStatus,
+  onStatusChange,
   userId,
   onApply,
   onClear,
@@ -220,6 +224,23 @@ export default function Sidebar({
                 {v}
               </option>
             ))}
+          </Select>
+        </div>
+
+        {/* Status */}
+        <div>
+          <Label>Status</Label>
+          <Select
+            value={selectedStatus}
+            onChange={(e) => onStatusChange(e.target.value)}
+          >
+            <option value="">All Statuses</option>
+            <option value="ON TRACK">On Track</option>
+            <option value="IN PROGRESS">In Progress</option>
+            <option value="CRITICAL">Critical</option>
+            <option value="Blocked">Blocked</option>
+            <option value="Excluded - Crew Shortage">Excluded - Crew Shortage</option>
+            <option value="Excluded - Pace Constraint">Excluded - Pace Constraint</option>
           </Select>
         </div>
 

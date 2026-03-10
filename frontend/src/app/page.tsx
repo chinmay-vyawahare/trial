@@ -48,6 +48,7 @@ export default function Home() {
   );
   const [userId, setUserId] = useState("");
   const [slaLastUpdated, setSlaLastUpdated] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("");
   const [considerVendorCapacity, setConsiderVendorCapacity] = useState(false);
   const [paceConstraintId, setPaceConstraintId] = useState<number | null>(null);
   const initialLoad = useRef(true);
@@ -90,6 +91,7 @@ export default function Home() {
         user_id: userId || undefined,
         consider_vendor_capacity: considerVendorCapacity || undefined,
         pace_constraint_id: paceConstraintId || undefined,
+        status: statusFilter || undefined,
       };
 
       let ganttRes;
@@ -107,6 +109,7 @@ export default function Home() {
             user_id: userId || undefined,
             consider_vendor_capacity: considerVendorCapacity || undefined,
             pace_constraint_id: paceConstraintId || undefined,
+            status: statusFilter || undefined,
           }),
           getDashboardSummary(filters),
         ]);
@@ -138,7 +141,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [region, market, area, siteIdFilter, vendor, userId, slaMode, slaDateFrom, slaDateTo, considerVendorCapacity, paceConstraintId]);
+  }, [region, market, area, siteIdFilter, vendor, userId, slaMode, slaDateFrom, slaDateTo, considerVendorCapacity, paceConstraintId, statusFilter]);
 
   // Auto-load only on first mount
   useEffect(() => {
@@ -226,6 +229,7 @@ export default function Home() {
     setVendor("");
     setPlanType("");
     setDevInitiative("");
+    setStatusFilter("");
     // Also wipe saved filters on the backend so they don't get merged back
     if (userId) {
       deleteUserFilters(userId).catch(() => {});
@@ -279,6 +283,8 @@ export default function Home() {
           onConsiderVendorCapacityChange={setConsiderVendorCapacity}
           paceConstraintId={paceConstraintId}
           onPaceConstraintIdChange={setPaceConstraintId}
+          selectedStatus={statusFilter}
+          onStatusChange={setStatusFilter}
           userId={userId}
           onApply={loadData}
           onClear={clearFilters}
