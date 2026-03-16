@@ -316,6 +316,67 @@ def _build_milestone_row(key, ms, ps, pf, actual, status, delay, days_since, day
     }
 
 
+def compute_forecasted_cx_start_only(
+    row: Dict,
+    milestones_config: List[Dict],
+    prereq_tails: List[Dict],
+    cx_start_offset_days: int,
+    planned_start_col: str,
+    skipped_keys: set | None = None,
+) -> Optional[date]:
+    """
+    Lightweight version — computes only the forecasted_cx_start date for a row
+    without building full milestone response dicts or computing statuses.
+    Used for fast date-range filtering before the full computation.
+    """
+    origin_date = parse_date(row.get(planned_start_col))
+    if origin_date is None:
+        return None
+
+    dates = _compute_planned_dates(origin_date, milestones_config, skipped_keys=skipped_keys)
+
+    skipped = skipped_keys or set()
+
+    # Build child→parents map for walking up the dependency chain
+    child_to_parents: Dict[str, List[str]] = {}
+    for ms in milestones_config:
+        dep = ms["depends_on"]
+        if dep is None:
+            child_to_parents[ms["key"]] = []
+        elif isinstance(dep, list):
+            child_to_parents[ms["key"]] = dep
+        else:
+            child_to_parents[ms["key"]] = [dep]
+
+    tail_dates = []
+    for tail in prereq_tails:
+        key = tail["key"]
+        offset = tail["offset_days"]
+
+        if key not in skipped:
+            if key in dates:
+                tail_dates.append(dates[key]["pf"] + timedelta(days=offset))
+        else:
+            queue = list(child_to_parents.get(key, []))
+            visited = {key}
+            while queue:
+                ancestor = queue.pop(0)
+                if ancestor in visited:
+                    continue
+                visited.add(ancestor)
+                if ancestor in skipped:
+                    queue.extend(child_to_parents.get(ancestor, []))
+                else:
+                    if ancestor in dates:
+                        tail_dates.append(dates[ancestor]["pf"] + timedelta(days=offset))
+
+    if not tail_dates:
+        return None
+
+    all_prereq_complete = max(tail_dates)
+    return all_prereq_complete + timedelta(days=cx_start_offset_days)
+
+
 def compute_milestones_for_site(
     row: Dict,
     db: Session,

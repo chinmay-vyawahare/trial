@@ -87,13 +87,14 @@ def build_gantt_query(
     query = text(
         f"""
     WITH filtered_records AS (
-        SELECT
-            {columns_sql},
-            COUNT(*) OVER () AS total_count
+        SELECT DISTINCT ON (pj_project_id, s_site_id)
+            {columns_sql}
         FROM {STAGING_TABLE}
         WHERE {where_sql}
+        ORDER BY pj_project_id, s_site_id
     )
-    SELECT * FROM filtered_records
+    SELECT *, COUNT(*) OVER () AS total_count
+    FROM filtered_records
     ORDER BY s_site_id
     {pagination_sql}
     """

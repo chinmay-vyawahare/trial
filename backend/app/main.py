@@ -25,7 +25,7 @@ from app.routers import prerequisites, constraints, admin
 from app.routers import assistant, user_filters, sla_history
 from app.routers import user_expected_days
 from app.routers import export, dashboard
-from app.routers import gc_capacity, pace_constraints
+from app.routers import gc_capacity, pace_constraints, calendar
 from app.init_milestone_data import init_milestone_data
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,7 @@ app.add_middleware(
 
 app.include_router(sites.router)
 app.include_router(dashboard.router)
+app.include_router(calendar.router)
 app.include_router(sla_history.router)
 app.include_router(user_expected_days.router)
 app.include_router(filters.router)
