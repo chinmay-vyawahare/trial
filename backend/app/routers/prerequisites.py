@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_config_db
-from app.models.prerequisite import MilestoneDefinition, PrereqTail, GanttConfig
-from app.schemas.gantt import MilestoneDefinitionOut
+from app.models.prerequisite import MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig
+from app.schemas.gantt import MilestoneDefinitionOut, MilestoneColumnOut
 
 router = APIRouter(
     prefix="/api/v1/schedular/prerequisites",
@@ -35,9 +35,10 @@ def _parse_depends_on(raw: str):
     return raw
 
 
-def _enrich_with_dependencies(rows: list[MilestoneDefinition]) -> list[dict]:
+def _enrich_with_dependencies(rows: list[MilestoneDefinition], columns_by_key: dict[str, list] = None) -> list[dict]:
     """Build preceding/following milestone name maps from the dependency graph,
     resolving through skipped milestones (is_skipped=True)."""
+    columns_by_key = columns_by_key or {}
     name_lookup = {r.key: r.name for r in rows}
     skipped_keys = {r.key for r in rows if r.is_skipped}
 
@@ -87,6 +88,10 @@ def _enrich_with_dependencies(rows: list[MilestoneDefinition]) -> list[dict]:
         data = MilestoneDefinitionOut.model_validate(r).model_dump()
         data["preceding_milestones"] = preceding_map.get(r.key, [])
         data["following_milestones"] = following_map.get(r.key, [])
+        data["columns"] = [
+            MilestoneColumnOut.model_validate(c).model_dump()
+            for c in columns_by_key.get(r.key, [])
+        ]
         result.append(data)
     return result
 
@@ -99,7 +104,13 @@ def list_prerequisites(db: Session = Depends(get_config_db)):
         .order_by(MilestoneDefinition.sort_order)
         .all()
     )
-    return _enrich_with_dependencies(rows)
+    # Load all columns and group by milestone_key
+    all_columns = db.query(MilestoneColumn).order_by(MilestoneColumn.sort_order).all()
+    columns_by_key: dict[str, list[MilestoneColumn]] = {}
+    for col in all_columns:
+        columns_by_key.setdefault(col.milestone_key, []).append(col)
+
+    return _enrich_with_dependencies(rows, columns_by_key)
 
 
 @router.get("/flowchart", response_class=PlainTextResponse)
@@ -224,5 +235,10 @@ def get_prerequisite(prerequisite_id: int, db: Session = Depends(get_config_db))
         .order_by(MilestoneDefinition.sort_order)
         .all()
     )
-    enriched = _enrich_with_dependencies(all_rows)
+    all_columns = db.query(MilestoneColumn).order_by(MilestoneColumn.sort_order).all()
+    columns_by_key: dict[str, list[MilestoneColumn]] = {}
+    for col in all_columns:
+        columns_by_key.setdefault(col.milestone_key, []).append(col)
+
+    enriched = _enrich_with_dependencies(all_rows, columns_by_key)
     return next(m for m in enriched if m["key"] == row.key)

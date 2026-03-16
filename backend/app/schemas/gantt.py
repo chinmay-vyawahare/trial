@@ -139,6 +139,16 @@ class VendorCapacityUpdate(BaseModel):
 # Milestone Definition CRUD schemas
 # ----------------------------------------------------------------
 
+class MilestoneColumnOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    column_name: str
+    column_role: str
+    logic: Optional[str] = None
+    sort_order: int = 0
+
+
 class MilestoneDefinitionOut(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -154,6 +164,7 @@ class MilestoneDefinitionOut(BaseModel):
     phase_type: Optional[str] = None
     preceding_milestones: Optional[list[str]] = None    # milestones this one depends on (before)
     following_milestones: Optional[list[str]] = None     # milestones that depend on this one (after)
+    columns: list[MilestoneColumnOut] = []
     updated_at: Optional[datetime] = None
 
     @field_validator("preceding_milestones", "following_milestones", mode="before")
