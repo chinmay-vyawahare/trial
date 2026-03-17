@@ -430,14 +430,57 @@ def update_prerequisite(
 ):
     """
     Update a prerequisite. Auto-syncs prereq_tails after update.
+
+    If `columns` is provided, it does a full sync:
+      - Columns with an `id` are updated in place.
+      - Columns without an `id` are created as new.
+      - Existing columns whose `id` is NOT in the payload are deleted.
     """
     row = db.query(MilestoneDefinition).filter(MilestoneDefinition.id == prerequisite_id).first()
     if not row:
         raise HTTPException(status_code=404, detail=f"Prerequisite with id {prerequisite_id} not found")
 
     updates = body.model_dump(exclude_unset=True)
+    columns_payload = updates.pop("columns", None)
+
     for field, value in updates.items():
         setattr(row, field, value)
+
+    # --- Sync columns if provided ---
+    if columns_payload is not None:
+        existing_columns = (
+            db.query(MilestoneColumn)
+            .filter(MilestoneColumn.milestone_key == row.key)
+            .all()
+        )
+        existing_by_id = {c.id: c for c in existing_columns}
+        incoming_ids = set()
+
+        for idx, col_data in enumerate(columns_payload, start=1):
+            col_id = col_data.get("id")
+            if col_id and col_id in existing_by_id:
+                # Update existing column
+                mc = existing_by_id[col_id]
+                mc.column_name = col_data["column_name"]
+                mc.column_role = col_data["column_role"]
+                mc.logic = col_data.get("logic")
+                mc.sort_order = idx
+                incoming_ids.add(col_id)
+            else:
+                # Create new column
+                mc = MilestoneColumn(
+                    milestone_key=row.key,
+                    column_name=col_data["column_name"],
+                    column_role=col_data["column_role"],
+                    logic=col_data.get("logic"),
+                    sort_order=idx,
+                )
+                db.add(mc)
+
+        # Delete columns not present in payload
+        for cid, mc in existing_by_id.items():
+            if cid not in incoming_ids:
+                db.delete(mc)
 
     db.flush()
     _, enriched = _recompute_and_persist_dependencies(db)

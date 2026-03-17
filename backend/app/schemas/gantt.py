@@ -179,12 +179,22 @@ class MilestoneDefinitionOut(BaseModel):
         return v
 
 
+class MilestoneColumnUpdate(BaseModel):
+    """Column definition for updating a prerequisite's columns.
+    If id is provided, the existing column is updated; otherwise a new column is created."""
+    id: Optional[int] = None                     # existing column id (null = create new)
+    column_name: str                             # staging table column name
+    column_role: str = "date"                    # "date", "text", "status"
+    logic: Optional[str] = None                  # JSON string: {"pick":"max"}, {"skip":[...],"use_date":[...]}
+
+
 class MilestoneDefinitionUpdate(BaseModel):
     name: Optional[str] = None
     expected_days: Optional[int] = None
     start_gap_days: Optional[int] = None
     task_owner: Optional[str] = None
     phase_type: Optional[str] = None
+    columns: Optional[list[MilestoneColumnUpdate]] = None  # full replacement of columns
 
 
 class MilestoneColumnCreate(BaseModel):
