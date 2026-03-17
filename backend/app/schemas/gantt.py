@@ -162,6 +162,7 @@ class MilestoneDefinitionOut(BaseModel):
     sla_type: str = "default"
     task_owner: Optional[str] = None
     phase_type: Optional[str] = None
+    is_skipped: bool = False
     preceding_milestones: Optional[list[str]] = None    # milestones this one depends on (before)
     following_milestones: Optional[list[str]] = None     # milestones that depend on this one (after)
     columns: list[MilestoneColumnOut] = []
