@@ -180,6 +180,7 @@ def _compute_planned_dates(
     origin_date: date,
     milestones: List[Dict],
     skipped_keys: set | None = None,
+    row: Dict | None = None,
 ):
     """
     Compute planned start/finish for every milestone from the dependency chain.
@@ -194,10 +195,22 @@ def _compute_planned_dates(
     For multi-dependency milestones the duration is the max of the predecessors'
     expected_days (e.g. BOM in BAT depends on Entitlement & Scoping Validated,
     so its duration = max(expected_days of those two)).
+
+    When *row* is provided and a predecessor has an actual finish date (non-text),
+    actual_finish + 1 day is used as the planned start for the following milestone
+    instead of the computed planned_finish + gap.
     """
     skipped = skipped_keys or set()
     dates = {}
     expected_by_key = {m["key"]: m["expected_days"] for m in milestones}
+
+    # Pre-compute actual finish dates for all milestones (non-text only)
+    actual_dates_by_key: Dict[str, date] = {}
+    if row is not None:
+        for ms in milestones:
+            actual, is_text, text_val, skip = _get_actual_date(row, ms)
+            if actual is not None and not is_text:
+                actual_dates_by_key[ms["key"]] = actual
 
     for ms in milestones:
         key = ms["key"]
@@ -221,12 +234,19 @@ def _compute_planned_dates(
 
         # Normalise to list so single and multi-dependency paths share logic
         dep_list = dep if isinstance(dep, list) else [dep]
-        dep_finishes = [dates[d]["pf"] for d in dep_list if d in dates]
-        if not dep_finishes:
-            continue
-        latest_dep_finish = max(dep_finishes)
 
-        ps = latest_dep_finish + timedelta(days=gap)
+        # For each dependency, use actual_finish + 1 if available, else planned_finish + gap
+        dep_anchors = []
+        for d in dep_list:
+            if d in actual_dates_by_key:
+                # Predecessor has a real (non-text) actual finish date → use it + 1 day
+                dep_anchors.append(actual_dates_by_key[d] + timedelta(days=1))
+            elif d in dates:
+                dep_anchors.append(dates[d]["pf"] + timedelta(days=gap))
+
+        if not dep_anchors:
+            continue
+        ps = max(dep_anchors)
         pf = ps + timedelta(days=expected)
         dates[key] = {"ps": ps, "pf": pf}
 
@@ -333,7 +353,7 @@ def compute_forecasted_cx_start_only(
     if origin_date is None:
         return None
 
-    dates = _compute_planned_dates(origin_date, milestones_config, skipped_keys=skipped_keys)
+    dates = _compute_planned_dates(origin_date, milestones_config, skipped_keys=skipped_keys, row=row)
 
     skipped = skipped_keys or set()
 
@@ -394,7 +414,7 @@ def compute_milestones_for_site(
     if origin_date is None:
         return [], None
 
-    dates = _compute_planned_dates(origin_date, milestones_config, skipped_keys=skipped_keys)
+    dates = _compute_planned_dates(origin_date, milestones_config, skipped_keys=skipped_keys, row=row)
 
     skipped = skipped_keys or set()
     preceding_map, following_map = _build_dependency_maps(milestones_config, skipped_keys=skipped)
