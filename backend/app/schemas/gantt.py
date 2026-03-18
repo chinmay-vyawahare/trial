@@ -290,8 +290,8 @@ class PaceConstraintOut(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    start_date: datetime
-    end_date: datetime
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     market: Optional[str] = None
     area: Optional[str] = None
     region: Optional[str] = None
@@ -299,8 +299,8 @@ class PaceConstraintOut(BaseModel):
 
 class PaceConstraintCreate(BaseModel):
     user_id: str
-    start_date: str          # "YYYY-MM-DD"
-    end_date: str            # "YYYY-MM-DD"
+    start_date: Optional[str] = None   # "YYYY-MM-DD", optional — defaults to current week
+    end_date: Optional[str] = None     # "YYYY-MM-DD", optional — defaults to current week
     market: Optional[str] = None
     area: Optional[str] = None
     region: Optional[str] = None

@@ -259,8 +259,8 @@ class PaceConstraint(ConfigBase):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(100), nullable=False, index=True)
-    start_date = Column(DateTime, nullable=False)
-    end_date = Column(DateTime, nullable=False)
+    start_date = Column(DateTime, nullable=True)
+    end_date = Column(DateTime, nullable=True)
     market = Column(String(200), nullable=True)
     area = Column(String(200), nullable=True)
     region = Column(String(200), nullable=True)

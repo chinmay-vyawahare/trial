@@ -172,6 +172,24 @@ def build_dashboard_query(
     return query, params
 
 
+def get_geo_hierarchy(db: Session) -> list[dict]:
+    """Return distinct region → area → market mappings from the staging table."""
+    base_where, params = _build_base_where()
+    q = text(
+        f"""
+        SELECT DISTINCT region, m_area, m_market
+        FROM {STAGING_TABLE}
+        WHERE {base_where}
+          AND region IS NOT NULL
+          AND m_area IS NOT NULL
+          AND m_market IS NOT NULL
+        ORDER BY region, m_area, m_market
+        """
+    )
+    rows = db.execute(q, params)
+    return [{"region": r[0], "area": r[1], "market": r[2]} for r in rows]
+
+
 def _build_base_where():
     """Build the base WHERE clause for filter options (always empty/constant)."""
     clauses = [
