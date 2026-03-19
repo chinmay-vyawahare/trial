@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
-from .queries import build_gantt_query, build_dashboard_query
+from .queries import build_gantt_query
 from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, is_site_blocked
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides
 from .utils import parse_date
@@ -342,33 +342,33 @@ def get_dashboard_summary(
     config_db: Session,
     region: str = None,
     market: str = None,
+    site_id: str = None,
     vendor: str = None,
     area: str = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
     skipped_keys: set[str] | None = None,
     user_expected_days_overrides: dict[str, int] | None = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_id: int | None = None,
+    status: str | None = None,
 ):
-    # Load config once
-    milestones_config = get_milestones(config_db)
-    milestones_config = apply_user_expected_days(milestones_config, user_expected_days_overrides or {})
-    milestone_columns = get_all_actual_columns(milestones_config)
-    planned_start_col = get_planned_start_column(config_db)
-    ms_thresholds = get_milestone_thresholds(config_db)
-    overall_thresholds = get_overall_thresholds(config_db)
-
-    # Lightweight query — only date cols needed for status calc
-    query, params = build_dashboard_query(
-        milestone_columns=milestone_columns,
-        planned_start_column=planned_start_col,
+    """Dashboard summary using the same query and logic as the gantt chart."""
+    sites, total_count, _ = get_all_sites_gantt(
+        db=db,
+        config_db=config_db,
         region=region,
         market=market,
+        site_id=site_id,
         vendor=vendor,
         area=area,
         plan_type_include=plan_type_include,
         regional_dev_initiatives=regional_dev_initiatives,
+        skipped_keys=skipped_keys,
+        user_expected_days_overrides=user_expected_days_overrides,
+        consider_vendor_capacity=consider_vendor_capacity,
+        pace_constraint_id=pace_constraint_id,
     )
-    rows = [dict(r._mapping) for r in db.execute(query, params)]
 
     empty = {
         "dashboard_status": "ON TRACK",
@@ -378,30 +378,36 @@ def get_dashboard_summary(
         "critical_sites": 0,
         "on_track_sites": 0,
         "blocked_sites": 0,
+        "excluded_crew_shortage_sites": 0,
+        "excluded_pace_constraint_sites": 0,
     }
-    if not rows:
+    if not sites:
         return empty
 
-    # Compute per-site status
-    statuses = []
-    for row in rows:
-        status = _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipped_keys, user_expected_days_overrides)
-        if status is not None:
-            statuses.append(status)
+    # Apply status filter if provided
+    if status:
+        sites = [s for s in sites if s.get("overall_status") == status]
 
-    total = len(statuses)
+    total = len(sites)
     if total == 0:
         return empty
 
-    blocked = sum(1 for s in statuses if s == "BLOCKED")
-    # Exclude blocked sites from percentage calculations
-    non_blocked_statuses = [s for s in statuses if s != "BLOCKED"]
-    on_track = sum(1 for s in non_blocked_statuses if s == "ON TRACK")
-    in_progress = sum(1 for s in non_blocked_statuses if s == "IN PROGRESS")
-    critical = sum(1 for s in non_blocked_statuses if s == "CRITICAL")
+    blocked = sum(1 for s in sites if s["overall_status"] == "Blocked")
+    excluded_crew = sum(1 for s in sites if s["overall_status"] == "Excluded - Crew Shortage")
+    excluded_pace = sum(1 for s in sites if s["overall_status"] == "Excluded - Pace Constraint")
 
-    non_blocked_total = len(non_blocked_statuses)
+    # Count statuses excluding blocked/excluded sites
+    countable = [s for s in sites if s["overall_status"] not in (
+        "Blocked", "Excluded - Crew Shortage", "Excluded - Pace Constraint"
+    )]
+    on_track = sum(1 for s in countable if s["overall_status"] == "ON TRACK")
+    in_progress = sum(1 for s in countable if s["overall_status"] == "IN PROGRESS")
+    critical = sum(1 for s in countable if s["overall_status"] == "CRITICAL")
+
+    non_blocked_total = len(countable)
     on_track_pct = (on_track / non_blocked_total * 100) if non_blocked_total > 0 else 0
+
+    overall_thresholds = get_overall_thresholds(config_db)
     if overall_thresholds:
         dashboard_status, _ = _match_pct_threshold(on_track_pct, overall_thresholds)
     elif on_track_pct >= 60:
@@ -419,6 +425,8 @@ def get_dashboard_summary(
         "critical_sites": critical,
         "on_track_sites": on_track,
         "blocked_sites": blocked,
+        "excluded_crew_shortage_sites": excluded_crew,
+        "excluded_pace_constraint_sites": excluded_pace,
     }
 
 

@@ -112,7 +112,7 @@ export async function getDashboardSummary(filters?: {
   if (filters?.area) params.set("area", filters.area);
   if (filters?.user_id) params.set("user_id", filters.user_id);
   const qs = params.toString();
-  return fetchAPI<DashboardSummary>(`/api/v1/schedular/dashboard/summary${qs ? `?${qs}` : ""}`);
+  return fetchAPI<DashboardSummary>(`/api/v1/schedular/dashboard/sla-default-summary${qs ? `?${qs}` : ""}`);
 }
 
 export async function getDashboardSlaSummary(params: {
@@ -128,7 +128,7 @@ export async function getDashboardSlaSummary(params: {
   if (params.region) sp.set("region", params.region);
   if (params.market) sp.set("market", params.market);
   if (params.area) sp.set("area", params.area);
-  return fetchAPI<DashboardSlaSummary>(`/api/v1/schedular/dashboard/sla-summary?${sp}`);
+  return fetchAPI<DashboardSlaSummary>(`/api/v1/schedular/dashboard/sla-history-summary?${sp}`);
 }
 
 /* ── Gantt Charts — Dashboard (with user_id) ──────────────────────── */
