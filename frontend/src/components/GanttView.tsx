@@ -328,6 +328,15 @@ export default function GanttView({
                   <span className="text-[10px] text-gray-400 ml-auto whitespace-nowrap">
                     Forecast: {s.forecasted_cx_start_date || "TBD"}
                   </span>
+                  {s.note && (
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap ${
+                      s.note === "Ready for schedule"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-amber-50 text-amber-700 border-amber-300"
+                    }`}>
+                      {s.note}
+                    </span>
+                  )}
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap ${badge.cls}`}>
                     {badge.label}
                   </span>

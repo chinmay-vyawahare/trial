@@ -34,6 +34,7 @@ export interface SiteGantt {
   delay_comments: string | null;
   delay_code: string | null;
   forecasted_cx_start_date: string | null;
+  note: string | null;
   milestones: Milestone[];
   overall_status: string;
   on_track_pct: number;
@@ -74,6 +75,9 @@ export interface DashboardSummary {
   in_progress_sites: number;
   critical_sites: number;
   blocked_sites: number;
+  excluded_crew_shortage_sites: number;
+  excluded_pace_constraint_sites: number;
+  pace_constraint_max_sites: number;
 }
 
 export interface DashboardSlaSummary extends DashboardSummary {

@@ -215,6 +215,28 @@ def get_all_sites_gantt(
             overall = compute_overall_status(on_track_count, total, ms_thresholds)
             on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
 
+        # ── Reschedule logic when forecasted_cx_start is in the past ──
+        note = None
+        today = date.today()
+        if forecasted_cx_start and forecasted_cx_start < today:
+            # Check non-virtual milestones for missing actual_finish
+            missing = [
+                m for m in countable
+                if not m.get("actual_finish")
+            ]
+            if not missing:
+                # All milestones have actual_finish → ready for schedule
+                forecasted_cx_start = today + timedelta(days=7)
+                note = "Ready for schedule"
+            else:
+                # At least one milestone missing actual_finish
+                # Pick the earliest (min sort_order) milestone without actual_finish
+                missing_sorted = sorted(missing, key=lambda m: m.get("sort_order", 999))
+                blocker = missing_sorted[0]
+                delay_days = (today - forecasted_cx_start).days
+                forecasted_cx_start = today + timedelta(days=7)
+                note = f"Delayed due to {blocker['name']} by {delay_days} days"
+
         sites.append(
             {
                 "vendor_name": row.get("construction_gc") or "",
@@ -229,6 +251,7 @@ def get_all_sites_gantt(
                 "forecasted_cx_start_date": (
                     str(forecasted_cx_start) if forecasted_cx_start else None
                 ),
+                "note": note,
                 "milestones": [
                     {k: v for k, v in m.items() if k != "is_virtual"}
                     for m in milestones

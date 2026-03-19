@@ -172,6 +172,26 @@ export default function DashboardSummaryPanel({ regions, markets, areas }: Props
           <CircleProgress value={data.in_progress_sites} total={data.total_sites} color="#eab308" label="In Progress" />
           <CircleProgress value={data.critical_sites} total={data.total_sites} color="#ef4444" label="Critical" />
           <CircleProgress value={data.blocked_sites} total={data.total_sites} color="#6b7280" label="Blocked" />
+          <CircleProgress value={data.excluded_crew_shortage_sites} total={data.total_sites} color="#f97316" label="Crew Shortage" />
+          <CircleProgress value={data.excluded_pace_constraint_sites} total={data.total_sites} color="#a855f7" label="Pace Constraint" />
+
+          {data.pace_constraint_max_sites > 0 && (
+            <>
+              <div className="w-px h-12 bg-gray-200" />
+              <div className="flex flex-col items-center gap-0.5">
+                <div
+                  className="relative flex items-center justify-center rounded-full border-[5px] border-purple-400"
+                  style={{ width: 72, height: 72 }}
+                >
+                  <div className="flex flex-col items-center">
+                    <span className="text-xl font-extrabold text-gray-900">{data.pace_constraint_max_sites}</span>
+                    <span className="text-[8px] text-gray-400">Max</span>
+                  </div>
+                </div>
+                <span className="text-[9px] font-bold tracking-wider uppercase text-gray-500">Pace Max</span>
+              </div>
+            </>
+          )}
 
           {data.dashboard_status && (
             <div className="ml-auto flex flex-col items-center gap-0.5">
