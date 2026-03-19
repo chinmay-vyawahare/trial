@@ -337,6 +337,55 @@ def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipp
     return compute_overall_status(on_track, total, ms_thresholds)
 
 
+def _get_pace_constraint_max_sites(config_db: Session, user_id: str | None, region: str = None, area: str = None, market: str = None) -> int:
+    """
+    Sum max_sites from pace constraints that have NO start/end date and match the geo filters.
+
+    Only considers constraints where start_date AND end_date are both NULL.
+    """
+    if not user_id:
+        return 0
+
+    from app.models.prerequisite import PaceConstraint
+
+    constraints = (
+        config_db.query(PaceConstraint)
+        .filter(
+            PaceConstraint.user_id == user_id,
+            PaceConstraint.start_date.is_(None),
+            PaceConstraint.end_date.is_(None),
+        )
+        .all()
+    )
+    if not constraints:
+        return 0
+
+    f_region = (region or "").strip().lower()
+    f_area = (area or "").strip().lower()
+    f_market = (market or "").strip().lower()
+
+    total_max = 0
+    for c in constraints:
+        c_region = (c.region or "").strip().lower()
+        c_area = (c.area or "").strip().lower()
+        c_market = (c.market or "").strip().lower()
+
+        # Match: constraint geo must align with the filter geo
+        if c_region:
+            if f_region and c_region != f_region:
+                continue
+        if c_area:
+            if f_area and c_area != f_area:
+                continue
+        if c_market:
+            if f_market and c_market != f_market:
+                continue
+
+        total_max += c.max_sites
+
+    return total_max
+
+
 def get_dashboard_summary(
     db: Session,
     config_db: Session,
@@ -352,6 +401,7 @@ def get_dashboard_summary(
     consider_vendor_capacity: bool = False,
     pace_constraint_id: int | None = None,
     status: str | None = None,
+    user_id: str | None = None,
 ):
     """Dashboard summary using the same query and logic as the gantt chart."""
     sites, total_count, _ = get_all_sites_gantt(
@@ -370,6 +420,8 @@ def get_dashboard_summary(
         pace_constraint_id=pace_constraint_id,
     )
 
+    pace_max = _get_pace_constraint_max_sites(config_db, user_id, region=region, area=area, market=market)
+
     empty = {
         "dashboard_status": "ON TRACK",
         "on_track_pct": 0,
@@ -380,6 +432,7 @@ def get_dashboard_summary(
         "blocked_sites": 0,
         "excluded_crew_shortage_sites": 0,
         "excluded_pace_constraint_sites": 0,
+        "pace_constraint_max_sites": pace_max,
     }
     if not sites:
         return empty
@@ -427,6 +480,7 @@ def get_dashboard_summary(
         "blocked_sites": blocked,
         "excluded_crew_shortage_sites": excluded_crew,
         "excluded_pace_constraint_sites": excluded_pace,
+        "pace_constraint_max_sites": pace_max,
     }
 
 

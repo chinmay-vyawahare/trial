@@ -92,6 +92,7 @@ def dashboard_summary(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_id=pace_constraint_id,
         status=status,
+        user_id=user_id,
     )
 
 
@@ -162,6 +163,7 @@ def sla_dashboard_summary(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_id=pace_constraint_id,
         status=status,
+        user_id=user_id,
     )
 
     return {
