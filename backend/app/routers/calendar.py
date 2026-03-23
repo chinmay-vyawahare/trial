@@ -73,7 +73,7 @@ def get_calendar(
     area: str = Query(None, description="Filter by area (m_area column)"),
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
-    pace_constraint_id: int = Query(None, description="Apply a specific pace constraint by ID"),
+    pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status (ON TRACK, IN PROGRESS, CRITICAL, Blocked, etc.)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -110,7 +110,8 @@ def get_calendar(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=user_ed_overrides,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
         status=status,
     )
 
@@ -136,7 +137,7 @@ def get_calendar_history(
     area: str = Query(None, description="Filter by area (m_area column)"),
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
-    pace_constraint_id: int = Query(None, description="Apply a specific pace constraint by ID"),
+    pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status (ON TRACK, IN PROGRESS, CRITICAL, Blocked, etc.)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -179,7 +180,8 @@ def get_calendar_history(
         regional_dev_initiatives=regional_dev_initiatives,
         skipped_keys=skipped_keys,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
         status=status,
     )
 

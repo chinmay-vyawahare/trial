@@ -119,7 +119,7 @@ def _build_sites(rows, config_db, ms_thresholds, skipped_keys, user_expected_day
     return sites
 
 
-def _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_constraint_id, status):
+def _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_constraint_flag, user_id, status):
     """Apply vendor capacity, pace constraint, and status filters."""
     if consider_vendor_capacity:
         sites = _apply_vendor_capacity(sites, db)
@@ -127,8 +127,8 @@ def _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_con
         for site in sites:
             site["excluded_due_to_crew_shortage"] = False
 
-    if pace_constraint_id:
-        sites = _apply_pace_constraint(sites, config_db, pace_constraint_id)
+    if pace_constraint_flag and user_id:
+        sites = _apply_pace_constraint(sites, config_db, pace_constraint_flag, user_id)
     else:
         for site in sites:
             site["excluded_due_to_pace_constraint"] = False
@@ -157,7 +157,8 @@ def get_calendar_sites(
     skipped_keys: set[str] | None = None,
     user_expected_days_overrides: dict[str, int] | None = None,
     consider_vendor_capacity: bool = False,
-    pace_constraint_id: int | None = None,
+    pace_constraint_flag: bool = False,
+    user_id: str | None = None,
     status: str | None = None,
 ):
     """
@@ -181,7 +182,7 @@ def get_calendar_sites(
     # Pass 2: full computation only for rows in range
     sites = _build_sites(filtered_rows, config_db, ms_thresholds, skipped_keys, user_expected_days_overrides)
 
-    sites = _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_constraint_id, status)
+    sites = _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_constraint_flag, user_id, status)
 
     return sites
 
@@ -202,7 +203,8 @@ def get_calendar_history_sites(
     regional_dev_initiatives: str | None = None,
     skipped_keys: set[str] | None = None,
     consider_vendor_capacity: bool = False,
-    pace_constraint_id: int | None = None,
+    pace_constraint_flag: bool = False,
+    user_id: str | None = None,
     status: str | None = None,
 ):
     """
@@ -257,6 +259,6 @@ def get_calendar_history_sites(
     # Pass 2: full computation only for rows in range
     sites = _build_sites(filtered_rows, config_db, ms_thresholds, skipped_keys, history_overrides)
 
-    sites = _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_constraint_id, status)
+    sites = _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_constraint_flag, user_id, status)
 
     return sites, sla_last_updated

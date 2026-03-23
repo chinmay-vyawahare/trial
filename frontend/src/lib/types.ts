@@ -280,8 +280,8 @@ export interface GcCapacityUpdate {
 
 export interface PaceConstraintEntry {
   id: number;
-  start_date: string;
-  end_date: string;
+  start_date: string | null;
+  end_date: string | null;
   market: string | null;
   area: string | null;
   region: string | null;
@@ -290,8 +290,8 @@ export interface PaceConstraintEntry {
 
 export interface PaceConstraintCreate {
   user_id: string;
-  start_date: string;
-  end_date: string;
+  start_date: string | null;
+  end_date: string | null;
   market?: string | null;
   area?: string | null;
   region?: string | null;

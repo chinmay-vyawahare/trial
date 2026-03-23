@@ -59,7 +59,7 @@ def dashboard_summary(
     area: str = Query(None, description="Filter by area"),
     user_id: str = Query(None, description="User ID for SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
-    pace_constraint_id: int = Query(None, description="Apply a specific pace constraint by ID"),
+    pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -90,7 +90,7 @@ def dashboard_summary(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=user_ed_overrides,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
         status=status,
         user_id=user_id,
     )
@@ -107,7 +107,7 @@ def sla_dashboard_summary(
     area: str = Query(None, description="Filter by area"),
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
-    pace_constraint_id: int = Query(None, description="Apply a specific pace constraint by ID"),
+    pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -161,7 +161,7 @@ def sla_dashboard_summary(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=history_overrides,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
         status=status,
         user_id=user_id,
     )
@@ -184,7 +184,7 @@ def weekly_status_user_override(
     area: str = Query(None, description="Filter by area"),
     user_id: str = Query(None, description="User ID — uses user's SLA overrides if available"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
-    pace_constraint_id: int = Query(None, description="Apply a specific pace constraint by ID"),
+    pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -213,7 +213,8 @@ def weekly_status_user_override(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=user_ed_overrides,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
         status=status,
     )
 
@@ -231,7 +232,7 @@ def weekly_status_history(
     area: str = Query(None, description="Filter by area"),
     user_id: str = Query(None, description="User ID — uses history-based SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
-    pace_constraint_id: int = Query(None, description="Apply a specific pace constraint by ID"),
+    pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -277,7 +278,8 @@ def weekly_status_history(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=history_overrides,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
         status=status,
     )
 

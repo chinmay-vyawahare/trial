@@ -24,7 +24,8 @@ def get_weekly_status_counts(
     skipped_keys: set[str] | None = None,
     user_expected_days_overrides: dict[str, int] | None = None,
     consider_vendor_capacity: bool = False,
-    pace_constraint_id: int | None = None,
+    pace_constraint_flag: bool = False,
+    user_id: str | None = None,
     status: str | None = None,
 ) -> list[dict]:
     """
@@ -60,7 +61,8 @@ def get_weekly_status_counts(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=user_expected_days_overrides,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
     )
 
     # Post-filter by status if requested

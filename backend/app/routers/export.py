@@ -27,7 +27,15 @@ router = APIRouter(
 
 @router.get("/gantt-csv")
 def export_gantt_to_csv(
+    region: str = Query(None, description="Filter by region"),
+    market: str = Query(None, description="Filter by market"),
+    site_id: str = Query(None, description="Filter by site ID"),
+    vendor: str = Query(None, description="Filter by vendor"),
+    area: str = Query(None, description="Filter by area"),
     user_id: str = Query(None, description="User ID — if provided, applies user's saved filters. If not, exports all sites."),
+    consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
+    pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    status: str = Query(None, description="Filter by overall_status"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -36,12 +44,21 @@ def export_gantt_to_csv(
 
     - With user_id: applies that user's saved filters
     - Without user_id: exports all sites (no filters)
+    - Supports all gantt chart filters (region, market, vendor, etc.)
     """
     try:
         csv_content = export_gantt_csv(
             db=db,
             config_db=config_db,
             user_id=user_id.strip() if user_id else None,
+            region=region,
+            market=market,
+            site_id=site_id,
+            vendor=vendor,
+            area=area,
+            consider_vendor_capacity=consider_vendor_capacity,
+            pace_constraint_flag=pace_constraint_flag,
+            status=status,
         )
     except Exception as e:
         logger.exception(f"Failed to export gantt CSV: {e}")

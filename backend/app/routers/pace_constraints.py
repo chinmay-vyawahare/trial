@@ -7,7 +7,7 @@ Validation rules:
     (e.g. region=CENTRAL exists → cannot add area=Heartland under CENTRAL).
   - Cannot add a higher-level geo when a lower-level already exists
     (e.g. market=CHICAGO exists → cannot add region=CENTRAL which contains CHICAGO).
-  - start_date / end_date are optional — when omitted, the current ISO week
+  - start_date / end_date are optional — when omitted, the next ISO week
     (Monday–Sunday) is used at query time.
 
 - GET    /pace-constraints?user_id=...        — list user's entries
@@ -35,12 +35,12 @@ router = APIRouter(
 # Helpers
 # ----------------------------------------------------------------
 
-def _current_week_range() -> tuple[date, date]:
-    """Return (Monday, Sunday) of the current ISO week."""
+def _next_week_range() -> tuple[date, date]:
+    """Return (Monday, Sunday) of the next ISO week."""
     today = date.today()
-    monday = today - timedelta(days=today.weekday())
-    sunday = monday + timedelta(days=6)
-    return monday, sunday
+    next_monday = today - timedelta(days=today.weekday()) + timedelta(weeks=1)
+    next_sunday = next_monday + timedelta(days=6)
+    return next_monday, next_sunday
 
 
 def _validate_single_geo_level(region, area, market):
@@ -168,7 +168,7 @@ def list_pace_constraints(
     List all pace constraints for a user.
 
     If a constraint has no start_date/end_date, the response fills in
-    the current ISO week (Monday–Sunday) so the frontend always sees dates.
+    the next ISO week (Monday–Sunday) so the frontend always sees dates.
     """
     rows = (
         db.query(PaceConstraint)
@@ -177,7 +177,7 @@ def list_pace_constraints(
         .all()
     )
 
-    monday, sunday = _current_week_range()
+    monday, sunday = _next_week_range()
     result = []
     for r in rows:
         data = PaceConstraintOut.model_validate(r).model_dump()

@@ -6,80 +6,142 @@ from .logic import compute_milestones_for_site, compute_overall_status, compute_
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides
 from .utils import parse_date
 
-def _apply_pace_constraint(sites: list[dict], config_db: Session, pace_constraint_id: int) -> list[dict]:
+def _apply_pace_constraint(
+    sites: list[dict],
+    config_db: Session,
+    pace_constraint_flag: bool,
+    user_id: str
+) -> list[dict]:
     """
-    Apply a single pace constraint by ID.
-
-    For the constraint (start_date, end_date, market/area/region, max_sites):
-      1. Find sites whose forecasted_cx_start_date falls in [start_date, end_date]
-         and match the constraint's market/area/region filters.
-      2. Sort those sites by proximity to start_date (nearest = highest priority).
-      3. Keep top max_sites, mark the rest as excluded.
+    Apply pace constraints to sites for a specific user_id:
+        1. Only consider sites matching constraint geo (market/area/region).
+        2. Use constraint start/end dates, or fallback to week_start/week_end.
+        3. Exclude extra sites if more than max_sites.
+        4. Pull from future weeks if fewer than max_sites.
     """
     from app.models.prerequisite import PaceConstraint
 
-    c = config_db.query(PaceConstraint).filter(PaceConstraint.id == pace_constraint_id).first()
-    if not c:
+    if not pace_constraint_flag:
         return sites
 
-    c_start = c.start_date.date() if hasattr(c.start_date, "date") else c.start_date
-    c_end = c.end_date.date() if hasattr(c.end_date, "date") else c.end_date
-    c_market = (c.market or "").strip().lower()
-    c_area = (c.area or "").strip().lower()
-    c_region = (c.region or "").strip().lower()
+    # --------------------------------
+    # Fetch constraints only for this user
+    # --------------------------------
+    constraints = config_db.query(PaceConstraint).filter(
+        PaceConstraint.user_id == user_id
+    ).all()
 
-    matching_indices: list[int] = []
-    for idx, site in enumerate(sites):
+    if not constraints:
+        return sites
+
+    # --------------------------------
+    # Preprocess sites: parse forecast date & normalize geo
+    # --------------------------------
+    for site in sites:
         forecast = site.get("forecasted_cx_start_date")
-        if not forecast:
-            continue
-
         try:
-            forecast_date = date.fromisoformat(str(forecast))
-        except (ValueError, TypeError):
-            continue
+            site["_forecast_date"] = date.fromisoformat(str(forecast)) if forecast else None
+        except Exception:
+            site["_forecast_date"] = None
 
-        # Check if forecast falls within constraint date range
-        if not (c_start <= forecast_date <= c_end):
-            continue
+        site["excluded_due_to_pace_constraint"] = False
+        site.setdefault("note", "")
 
-        # Check scope filters (case-insensitive, skip if constraint field is empty)
-        site_market = (site.get("market") or "").strip().lower()
-        site_area = (site.get("area") or "").strip().lower()
-        site_region = (site.get("region") or "").strip().lower()
-
-        if c_market and site_market != c_market:
-            continue
-        if c_area and site_area != c_area:
-            continue
-        if c_region and site_region != c_region:
-            continue
-
-        matching_indices.append(idx)
+        site["_market"] = (site.get("market") or "").strip().lower()
+        site["_area"] = (site.get("area") or "").strip().lower()
+        site["_region"] = (site.get("region") or "").strip().lower()
 
     excluded_indices: set[int] = set()
-    if len(matching_indices) > c.max_sites:
-        # Sort by proximity to start_date (nearest first = highest priority)
-        def sort_key(i):
-            try:
-                fd = date.fromisoformat(str(sites[i].get("forecasted_cx_start_date")))
-                return abs((fd - c_start).days)
-            except (ValueError, TypeError):
-                return 999999
 
-        sorted_indices = sorted(matching_indices, key=sort_key)
+    # --------------------------------
+    # Helper: week boundaries
+    # --------------------------------
+    def next_week_start():
+        today = date.today()
+        return today - timedelta(days=today.weekday()) + timedelta(weeks=1)
 
-        # Keep first max_sites, exclude the rest
-        for i in sorted_indices[c.max_sites:]:
-            excluded_indices.add(i)
+    def next_week_end():
+        return next_week_start() + timedelta(days=6)
 
-    # Tag sites
+    for c in constraints:
+        # Use constraint dates if available, else fallback to week
+        ws = c.start_date.date() if getattr(c, "start_date", None) else next_week_start()
+        we = c.end_date.date() if getattr(c, "end_date", None) else next_week_end()
+
+        c_market = (c.market or "").strip().lower()
+        c_area = (c.area or "").strip().lower()
+        c_region = (c.region or "").strip().lower()
+
+        matching_indices: list[int] = []
+        future_indices: list[int] = []
+
+        # --------------------------------
+        # Collect matching + future sites
+        # --------------------------------
+        for idx, site in enumerate(sites):
+            fd = site.get("_forecast_date")
+            if not fd:
+                continue
+
+            # Skip if geo doesn't match constraint
+            if c_market and site["_market"] != c_market:
+                continue
+            if c_area and site["_area"] != c_area:
+                continue
+            if c_region and site["_region"] != c_region:
+                continue
+
+            # Within constraint window
+            if ws <= fd <= we:
+                matching_indices.append(idx)
+            elif fd > we:
+                future_indices.append(idx)
+
+        # --------------------------------
+        # CASE 1: Too many → exclude extra
+        # --------------------------------
+        if len(matching_indices) > c.max_sites:
+
+            sorted_indices = sorted(
+                matching_indices,
+                key=lambda i: abs((sites[i]["_forecast_date"] - ws).days)
+            )
+
+            keep = set(sorted_indices[:c.max_sites])
+
+            for i in matching_indices:
+                if i not in keep:
+                    excluded_indices.add(i)
+
+        # --------------------------------
+        # CASE 2: Too few → pull from future
+        # --------------------------------
+        elif len(matching_indices) < c.max_sites:
+            needed = c.max_sites - len(matching_indices)
+
+            sorted_future = sorted(
+                future_indices,
+                key=lambda i: (sites[i]["_forecast_date"] - we).days
+            )
+
+            for i in sorted_future[:needed]:
+                sites[i]["note"] = "considered future weeks sites to fulfill the pace"
+
+    # --------------------------------
+    # Final tagging
+    # --------------------------------
     for idx, site in enumerate(sites):
         if idx in excluded_indices:
             site["excluded_due_to_pace_constraint"] = True
             site["overall_status"] = "Excluded - Pace Constraint"
         else:
             site["excluded_due_to_pace_constraint"] = False
+
+        # Cleanup temporary fields
+        site.pop("_forecast_date", None)
+        site.pop("_market", None)
+        site.pop("_area", None)
+        site.pop("_region", None)
 
     return sites
 
@@ -159,7 +221,8 @@ def get_all_sites_gantt(
     skipped_keys: set[str] | None = None,
     user_expected_days_overrides: dict[str, int] | None = None,
     consider_vendor_capacity: bool = False,
-    pace_constraint_id: int | None = None,
+    pace_constraint_flag: bool = False,
+    user_id: str | None = None,
 ):
     # Load milestone config from config DB
     milestones_config = get_milestones(config_db)
@@ -274,9 +337,9 @@ def get_all_sites_gantt(
         for site in sites:
             site["excluded_due_to_crew_shortage"] = False
 
-    # Apply a single pace constraint if selected
-    if pace_constraint_id:
-        sites = _apply_pace_constraint(sites, config_db, pace_constraint_id)
+    # Apply pace constraints for user if enabled
+    if pace_constraint_flag and user_id:
+        sites = _apply_pace_constraint(sites, config_db, pace_constraint_flag, user_id)
     else:
         for site in sites:
             site["excluded_due_to_pace_constraint"] = False
@@ -360,34 +423,30 @@ def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipp
     return compute_overall_status(on_track, total, ms_thresholds)
 
 
-def _get_pace_constraint_max_sites(config_db: Session, user_id: str | None, region: str = None, area: str = None, market: str = None) -> int:
+def _get_pace_constraint(config_db: Session, user_id: str | None, region: str = None, area: str = None, market: str = None) -> list[dict]:
     """
-    Sum max_sites from pace constraints that have NO start/end date and match the geo filters.
+    Fetch pace constraints for a user that match the geo filters.
 
-    Only considers constraints where start_date AND end_date are both NULL.
+    Returns a list of constraint dicts with region, area, market, max_sites.
     """
     if not user_id:
-        return 0
+        return []
 
     from app.models.prerequisite import PaceConstraint
 
     constraints = (
         config_db.query(PaceConstraint)
-        .filter(
-            PaceConstraint.user_id == user_id,
-            PaceConstraint.start_date.is_(None),
-            PaceConstraint.end_date.is_(None),
-        )
+        .filter(PaceConstraint.user_id == user_id)
         .all()
     )
     if not constraints:
-        return 0
+        return []
 
     f_region = (region or "").strip().lower()
     f_area = (area or "").strip().lower()
     f_market = (market or "").strip().lower()
 
-    total_max = 0
+    result = []
     for c in constraints:
         c_region = (c.region or "").strip().lower()
         c_area = (c.area or "").strip().lower()
@@ -404,9 +463,14 @@ def _get_pace_constraint_max_sites(config_db: Session, user_id: str | None, regi
             if f_market and c_market != f_market:
                 continue
 
-        total_max += c.max_sites
+        result.append({
+            "region": c.region,
+            "area": c.area,
+            "market": c.market,
+            "max_sites": c.max_sites,
+        })
 
-    return total_max
+    return result
 
 
 def get_dashboard_summary(
@@ -422,7 +486,7 @@ def get_dashboard_summary(
     skipped_keys: set[str] | None = None,
     user_expected_days_overrides: dict[str, int] | None = None,
     consider_vendor_capacity: bool = False,
-    pace_constraint_id: int | None = None,
+    pace_constraint_flag: bool = False,
     status: str | None = None,
     user_id: str | None = None,
 ):
@@ -440,10 +504,12 @@ def get_dashboard_summary(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=user_expected_days_overrides,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
     )
 
-    pace_max = _get_pace_constraint_max_sites(config_db, user_id, region=region, area=area, market=market)
+    result = _get_pace_constraint(config_db, user_id, region=region, area=area, market=market)
+    pace_max = sum(item.get("max_sites", 0) for item in (result or []))
 
     empty = {
         "dashboard_status": "ON TRACK",
@@ -459,6 +525,33 @@ def get_dashboard_summary(
     }
     if not sites:
         return empty
+
+    # Applying the pace constraint
+    if pace_constraint_flag:
+        sites = _apply_pace_constraint(sites, config_db, pace_constraint_flag, user_id)
+    else:
+        for site in sites:
+            site["excluded_due_to_pace_constraint"] = False
+
+    def site_matches_constraint(site, constraints):
+        def norm(val):
+            return (val or "").strip().lower()
+
+        s_region = norm(site.get("region"))
+        s_area = norm(site.get("area"))
+        s_market = norm(site.get("market"))
+
+        for c in constraints:
+            if (
+                (not c.get("region") or norm(c.get("region")) == s_region) and
+                (not c.get("area") or norm(c.get("area")) == s_area) and
+                (not c.get("market") or norm(c.get("market")) == s_market)
+            ):
+                return True
+        return False
+
+    if result:
+        sites = [s for s in sites if site_matches_constraint(s, result)]
 
     # Apply status filter if provided
     if status:
@@ -523,7 +616,8 @@ def get_history_gantt(
     offset: int = None,
     skipped_keys: set[str] | None = None,
     consider_vendor_capacity: bool = False,
-    pace_constraint_id: int | None = None,
+    pace_constraint_flag: bool = False,
+    user_id: str | None = None,
 ):
     """
     Gantt chart using history-based SLA.
@@ -584,7 +678,8 @@ def get_history_gantt(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=history_overrides,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
     )
 
     return sites, total_count, count, sla_last_updated

@@ -79,7 +79,7 @@ export async function getGanttCharts(filters?: {
   limit?: number;
   offset?: number;
   consider_vendor_capacity?: boolean;
-  pace_constraint_id?: number;
+  pace_constraint_flag?: boolean;
   status?: string;
 }): Promise<GanttResponse> {
   const params = new URLSearchParams();
@@ -92,7 +92,7 @@ export async function getGanttCharts(filters?: {
   if (filters?.limit) params.set("limit", String(filters.limit));
   if (filters?.offset) params.set("offset", String(filters.offset));
   if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
-  if (filters?.pace_constraint_id) params.set("pace_constraint_id", String(filters.pace_constraint_id));
+  if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
   if (filters?.status) params.set("status", filters.status);
   const qs = params.toString();
   return fetchAPI<GanttResponse>(`/api/v1/schedular/gantt-charts${qs ? `?${qs}` : ""}`);
@@ -104,13 +104,23 @@ export async function getDashboardSummary(filters?: {
   region?: string;
   market?: string;
   area?: string;
+  site_id?: string;
+  vendor?: string;
   user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+  status?: string;
 }): Promise<DashboardSummary> {
   const params = new URLSearchParams();
   if (filters?.region) params.set("region", filters.region);
   if (filters?.market) params.set("market", filters.market);
   if (filters?.area) params.set("area", filters.area);
+  if (filters?.site_id) params.set("site_id", filters.site_id);
+  if (filters?.vendor) params.set("vendor", filters.vendor);
   if (filters?.user_id) params.set("user_id", filters.user_id);
+  if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
+  if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
+  if (filters?.status) params.set("status", filters.status);
   const qs = params.toString();
   return fetchAPI<DashboardSummary>(`/api/v1/schedular/dashboard/sla-default-summary${qs ? `?${qs}` : ""}`);
 }
@@ -287,7 +297,7 @@ export async function getSlaHistoryGantt(params: {
   limit?: number;
   offset?: number;
   consider_vendor_capacity?: boolean;
-  pace_constraint_id?: number;
+  pace_constraint_flag?: boolean;
   status?: string;
 }): Promise<SlaHistoryGanttResponse> {
   const sp = new URLSearchParams();
@@ -302,7 +312,7 @@ export async function getSlaHistoryGantt(params: {
   if (params.limit) sp.set("limit", String(params.limit));
   if (params.offset) sp.set("offset", String(params.offset));
   if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
-  if (params.pace_constraint_id) sp.set("pace_constraint_id", String(params.pace_constraint_id));
+  if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
   if (params.status) sp.set("status", params.status);
   return fetchAPI<SlaHistoryGanttResponse>(`/api/v1/schedular/sla-history/gantt-charts?${sp}`);
 }

@@ -132,7 +132,7 @@ def list_sites(
     limit: int = Query(None, description="Limit the number of results"),
     offset: int = Query(None, description="Offset the results"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints — marks excess sites as excluded"),
-    pace_constraint_id: int = Query(None, description="Apply a specific pace constraint by ID — marks excess sites as excluded"),
+    pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user — marks excess sites as excluded"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -163,7 +163,8 @@ def list_sites(
         skipped_keys=skipped_keys,
         user_expected_days_overrides=user_ed_overrides,
         consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_id=pace_constraint_id,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
     )
 
     # Post-filter by overall_status if requested

@@ -50,7 +50,7 @@ export default function Home() {
   const [slaLastUpdated, setSlaLastUpdated] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [considerVendorCapacity, setConsiderVendorCapacity] = useState(false);
-  const [paceConstraintId, setPaceConstraintId] = useState<number | null>(null);
+  const [paceConstraintFlag, setPaceConstraintFlag] = useState<boolean>(false);
   const initialLoad = useRef(true);
 
   // Load filter options once on mount
@@ -90,7 +90,7 @@ export default function Home() {
         vendor: vendor || undefined,
         user_id: userId || undefined,
         consider_vendor_capacity: considerVendorCapacity || undefined,
-        pace_constraint_id: paceConstraintId || undefined,
+        pace_constraint_flag: paceConstraintFlag || undefined,
         status: statusFilter || undefined,
       };
 
@@ -108,7 +108,7 @@ export default function Home() {
             vendor: vendor || undefined,
             user_id: userId || undefined,
             consider_vendor_capacity: considerVendorCapacity || undefined,
-            pace_constraint_id: paceConstraintId || undefined,
+            pace_constraint_flag: paceConstraintFlag || undefined,
             status: statusFilter || undefined,
           }),
           getDashboardSummary(filters),
@@ -141,7 +141,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [region, market, area, siteIdFilter, vendor, userId, slaMode, slaDateFrom, slaDateTo, considerVendorCapacity, paceConstraintId, statusFilter]);
+  }, [region, market, area, siteIdFilter, vendor, userId, slaMode, slaDateFrom, slaDateTo, considerVendorCapacity, paceConstraintFlag, statusFilter]);
 
   // Auto-load only on first mount
   useEffect(() => {
@@ -281,8 +281,8 @@ export default function Home() {
           onSlaDateToChange={setSlaDateTo}
           considerVendorCapacity={considerVendorCapacity}
           onConsiderVendorCapacityChange={setConsiderVendorCapacity}
-          paceConstraintId={paceConstraintId}
-          onPaceConstraintIdChange={setPaceConstraintId}
+          paceConstraintFlag={paceConstraintFlag}
+          onPaceConstraintFlagChange={setPaceConstraintFlag}
           selectedStatus={statusFilter}
           onStatusChange={setStatusFilter}
           userId={userId}

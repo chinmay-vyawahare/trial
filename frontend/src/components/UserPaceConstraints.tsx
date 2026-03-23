@@ -52,13 +52,12 @@ export default function UserPaceConstraints({ userId }: Props) {
   }, [userId]);
 
   const handleCreate = async () => {
-    if (!newStartDate || !newEndDate) return;
     setSaving(true);
     try {
       await createPaceConstraint({
         user_id: userId,
-        start_date: newStartDate,
-        end_date: newEndDate,
+        start_date: newStartDate || null,
+        end_date: newEndDate || null,
         market: newMarket.trim() || null,
         area: newArea.trim() || null,
         region: newRegion.trim() || null,
@@ -80,8 +79,8 @@ export default function UserPaceConstraints({ userId }: Props) {
 
   const startEdit = (e: PaceConstraintEntry) => {
     setEditId(e.id);
-    setEditStartDate(e.start_date.slice(0, 10));
-    setEditEndDate(e.end_date.slice(0, 10));
+    setEditStartDate(e.start_date ? e.start_date.slice(0, 10) : "");
+    setEditEndDate(e.end_date ? e.end_date.slice(0, 10) : "");
     setEditMarket(e.market || "");
     setEditArea(e.area || "");
     setEditRegion(e.region || "");
@@ -165,7 +164,7 @@ export default function UserPaceConstraints({ userId }: Props) {
           <div className="bg-blue-50 rounded-xl border border-blue-200 p-4 space-y-3">
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Start Date *</label>
+                <label className="text-xs text-gray-500 block mb-1">Start Date</label>
                 <input
                   type="date"
                   value={newStartDate}
@@ -174,7 +173,7 @@ export default function UserPaceConstraints({ userId }: Props) {
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">End Date *</label>
+                <label className="text-xs text-gray-500 block mb-1">End Date</label>
                 <input
                   type="date"
                   value={newEndDate}
@@ -222,10 +221,10 @@ export default function UserPaceConstraints({ userId }: Props) {
                 />
               </div>
             </div>
-            <p className="text-xs text-gray-400">Start/End dates required. Market, Area, and Region are optional scope filters.</p>
+            <p className="text-xs text-gray-400">All fields are optional. If no dates are set, the constraint applies to the current week.</p>
             <button
               onClick={handleCreate}
-              disabled={saving || !newStartDate || !newEndDate}
+              disabled={saving}
               className="px-4 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
             >
               {saving ? "Saving..." : "Create"}
@@ -261,14 +260,14 @@ export default function UserPaceConstraints({ userId }: Props) {
                         {isEditing ? (
                           <input type="date" value={editStartDate} onChange={(ev) => setEditStartDate(ev.target.value)} className="border rounded px-2 py-1 text-xs w-32 focus:outline-none focus:ring-2 focus:ring-blue-400" />
                         ) : (
-                          <span className="text-xs font-medium text-gray-700">{new Date(e.start_date).toLocaleDateString()}</span>
+                          <span className="text-xs font-medium text-gray-700">{e.start_date ? new Date(e.start_date).toLocaleDateString() : "—"}</span>
                         )}
                       </td>
                       <td className="px-3 py-2">
                         {isEditing ? (
                           <input type="date" value={editEndDate} onChange={(ev) => setEditEndDate(ev.target.value)} className="border rounded px-2 py-1 text-xs w-32 focus:outline-none focus:ring-2 focus:ring-blue-400" />
                         ) : (
-                          <span className="text-xs font-medium text-gray-700">{new Date(e.end_date).toLocaleDateString()}</span>
+                          <span className="text-xs font-medium text-gray-700">{e.end_date ? new Date(e.end_date).toLocaleDateString() : "—"}</span>
                         )}
                       </td>
                       <td className="px-3 py-2">

@@ -56,16 +56,24 @@ def export_gantt_csv(
     db: Session,
     config_db: Session,
     user_id: str | None = None,
+    region: str | None = None,
+    market: str | None = None,
+    site_id: str | None = None,
+    vendor: str | None = None,
+    area: str | None = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_flag: bool = False,
+    status: str | None = None,
 ) -> str:
     """
     Build a CSV string of the full gantt chart.
 
-    If user_id is provided, applies that user's saved filters.
+    If user_id is provided, applies that user's saved filters (merged with explicit params).
     Otherwise exports all sites with no filters.
 
     Returns the CSV content as a string.
     """
-    # Resolve filters
+    # Resolve saved filters (gate-checks like plan_type, dev_initiatives)
     filters = {}
     user_ed_overrides = {}
     if user_id:
@@ -74,22 +82,36 @@ def export_gantt_csv(
 
     skipped_keys = _get_skipped_keys(config_db)
 
+    # Explicit params override saved filters
+    final_region = region or filters.get("region")
+    final_market = market or filters.get("market")
+    final_site_id = site_id or filters.get("site_id")
+    final_vendor = vendor or filters.get("vendor")
+    final_area = area or filters.get("area")
+
     # Fetch all gantt data (no pagination — full export)
     sites, total_count, count = get_all_sites_gantt(
         db,
         config_db,
-        region=filters.get("region"),
-        market=filters.get("market"),
-        site_id=filters.get("site_id"),
-        vendor=filters.get("vendor"),
-        area=filters.get("area"),
+        region=final_region,
+        market=final_market,
+        site_id=final_site_id,
+        vendor=final_vendor,
+        area=final_area,
         plan_type_include=filters.get("plan_type_include"),
         regional_dev_initiatives=filters.get("regional_dev_initiatives"),
         limit=None,
         offset=None,
         skipped_keys=skipped_keys,
         user_expected_days_overrides=user_ed_overrides,
+        consider_vendor_capacity=consider_vendor_capacity,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
     )
+
+    # Post-filter by status if requested
+    if status:
+        sites = [s for s in sites if (s.get("overall_status") or "").upper() == status.upper()]
 
     if not sites:
         # Return CSV with just headers
