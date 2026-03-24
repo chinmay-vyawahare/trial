@@ -8,6 +8,12 @@ Two tools:
 The external simulation agent base URL is configured via SIMULATION_BASE_URL.
 When HITL is required, the node returns a response with status="hitl_required"
 and the frontend calls POST /schedular/resume to continue.
+
+IMPORTANT: The background SSE task must live on FastAPI's main event loop so that
+it survives between the initial /chat call and the later /resume call.  The sync
+`handle_simulation()` (called from the synchronous LangGraph graph) schedules work
+onto that loop via `asyncio.run_coroutine_threadsafe`, keeping the background task
+alive while the sync thread blocks on a `threading.Event`.
 """
 
 import asyncio
@@ -23,8 +29,35 @@ logger = logging.getLogger(__name__)
 SIMULATION_BASE_URL = "http://localhost:9000"
 
 # ── In-memory HITL state ──────────────────────────────────────────────
+# These live on FastAPI's event loop and are shared between simulate_tool
+# (background task) and resume_tool (async /resume endpoint).
 _result_queues: dict[str, asyncio.Queue] = {}
 _resume_events: dict[str, asyncio.Event] = {}
+
+# ── Reference to FastAPI's running event loop ─────────────────────────
+_main_loop: asyncio.AbstractEventLoop | None = None
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Called once at startup to capture FastAPI's event loop."""
+    global _main_loop
+    _main_loop = loop
+
+
+def _get_main_loop() -> asyncio.AbstractEventLoop:
+    """Return the main event loop, auto-detecting if not set explicitly."""
+    global _main_loop
+    if _main_loop is not None:
+        return _main_loop
+    try:
+        loop = asyncio.get_running_loop()
+        _main_loop = loop
+        return loop
+    except RuntimeError:
+        raise RuntimeError(
+            "No running event loop found. Ensure set_main_loop() is called "
+            "at application startup or that this code runs within an async context."
+        )
 
 
 async def simulate_tool(
@@ -155,18 +188,38 @@ def handle_simulation(user_message: str, chat_summary: str) -> dict:
     """
     Synchronous entry point for the simulation node in the LangGraph flow.
 
-    Starts the simulation via the async simulate_tool. If HITL is required,
-    returns the clarification questions so the frontend can call /resume.
+    Schedules the async simulate_tool onto FastAPI's main event loop using
+    run_coroutine_threadsafe, so the background SSE task stays alive on that
+    loop even after this function returns.  The sync thread blocks on a
+    threading.Event until the first result (complete or hitl_required) arrives.
     """
     logger.info("  [SIMULATION] Starting simulation for query: %s", user_message[:100])
 
     try:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            result = pool.submit(
-                asyncio.run,
-                simulate_tool(query=user_message, user_id="system", thread_id=None),
-            ).result()
+        loop = _get_main_loop()
+    except RuntimeError as e:
+        logger.exception(f"Cannot access main event loop: {e}")
+        return {
+            "message": "Simulation service is not ready. Please try again.",
+            "actions": [],
+        }
+
+    try:
+        # Schedule simulate_tool on the main event loop (not a throwaway one).
+        # This keeps the background _stream_task alive after we return.
+        future = asyncio.run_coroutine_threadsafe(
+            simulate_tool(query=user_message, user_id="system", thread_id=None),
+            loop,
+        )
+        # Block the current (sync) thread until the coroutine completes.
+        # The background SSE task continues running on the main loop.
+        result = future.result(timeout=120)
+    except TimeoutError:
+        logger.error("Simulation timed out after 120s")
+        return {
+            "message": "Simulation timed out. Please try again.",
+            "actions": [],
+        }
     except Exception as e:
         logger.exception(f"Simulation failed: {e}")
         return {

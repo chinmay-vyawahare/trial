@@ -13,7 +13,6 @@ import AdminPanel from "@/components/AdminPanel";
 import UserExpectedDays from "@/components/UserExpectedDays";
 import UserPaceConstraints from "@/components/UserPaceConstraints";
 import PrerequisiteFlowchart from "@/components/PrerequisiteFlowchart";
-import DashboardSummaryPanel from "@/components/DashboardSummaryPanel";
 import PendingMilestonesChart from "@/components/PendingMilestonesChart";
 
 export default function Home() {
@@ -297,12 +296,6 @@ export default function Home() {
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {dashboard && <SummaryCards data={dashboard} />}
-
-          <DashboardSummaryPanel
-            regions={filterOptions.regions}
-            markets={filterOptions.markets}
-            areas={filterOptions.areas}
-          />
 
           <TabBar
             activeTab={activeTab}

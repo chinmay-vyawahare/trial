@@ -248,7 +248,7 @@ function ConstraintTable({ title, items }: { title: string; items: ConstraintThr
               <div className="text-sm font-semibold text-gray-800">{c.status_label}</div>
               <div className="text-xs text-gray-500">{c.name}</div>
               <div className="text-xs text-gray-400 mt-1">
-                {c.constraint_type} | {c.min_value}{c.max_value !== null ? ` - ${c.max_value}` : "+"}
+                {c.constraint_type} | {c.min_pct}{c.max_pct !== null ? ` - ${c.max_pct}` : "+"}
               </div>
             </div>
           </div>

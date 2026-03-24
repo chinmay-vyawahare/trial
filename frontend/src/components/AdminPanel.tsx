@@ -570,8 +570,8 @@ function ConstraintsAdmin() {
     name: "",
     status_label: "",
     color: "#22c55e",
-    min_value: 0,
-    max_value: null,
+    min_pct: 0,
+    max_pct: null,
     sort_order: 0,
   });
 
@@ -589,7 +589,7 @@ function ConstraintsAdmin() {
     try {
       await createConstraint(form);
       setShowCreate(false);
-      setForm({ constraint_type: "milestone", name: "", status_label: "", color: "#22c55e", min_value: 0, max_value: null, sort_order: 0 });
+      setForm({ constraint_type: "milestone", name: "", status_label: "", color: "#22c55e", min_pct: 0, max_pct: null, sort_order: 0 });
       loadData();
     } catch (e) {
       console.error("Failed to create:", e);
@@ -598,7 +598,7 @@ function ConstraintsAdmin() {
 
   function startEdit(c: ConstraintThreshold) {
     setEditId(c.id);
-    setEditForm({ name: c.name, status_label: c.status_label, color: c.color, min_value: c.min_value, max_value: c.max_value, sort_order: c.sort_order });
+    setEditForm({ name: c.name, status_label: c.status_label, color: c.color, min_pct: c.min_pct, max_pct: c.max_pct, sort_order: c.sort_order });
     setEditError(null);
   }
 
@@ -671,12 +671,12 @@ function ConstraintsAdmin() {
             </div>
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Min Count</label>
-              <input type="number" value={form.min_value} onChange={(e) => setForm({ ...form, min_value: Number(e.target.value) })}
+              <input type="number" value={form.min_pct} onChange={(e) => setForm({ ...form, min_pct: Number(e.target.value) })}
                 className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg" />
             </div>
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Max Count</label>
-              <input type="number" value={form.max_value ?? ""} onChange={(e) => setForm({ ...form, max_value: e.target.value ? Number(e.target.value) : null })}
+              <input type="number" value={form.max_pct ?? ""} onChange={(e) => setForm({ ...form, max_pct: e.target.value ? Number(e.target.value) : null })}
                 placeholder="null = unbounded"
                 className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg" />
             </div>
@@ -737,13 +737,13 @@ function ConstraintsAdmin() {
                         className="w-full px-2 py-1 text-xs border border-gray-200 rounded" />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="number" value={editForm.min_value ?? c.min_value}
-                        onChange={(e) => setEditForm({ ...editForm, min_value: Number(e.target.value) })}
+                      <input type="number" value={editForm.min_pct ?? c.min_pct}
+                        onChange={(e) => setEditForm({ ...editForm, min_pct: Number(e.target.value) })}
                         className="w-20 px-2 py-1 text-xs border border-gray-200 rounded" />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="number" value={editForm.max_value ?? c.max_value ?? ""}
-                        onChange={(e) => setEditForm({ ...editForm, max_value: e.target.value ? Number(e.target.value) : null })}
+                      <input type="number" value={editForm.max_pct ?? c.max_pct ?? ""}
+                        onChange={(e) => setEditForm({ ...editForm, max_pct: e.target.value ? Number(e.target.value) : null })}
                         placeholder="unbounded"
                         className="w-20 px-2 py-1 text-xs border border-gray-200 rounded" />
                     </td>
@@ -773,8 +773,8 @@ function ConstraintsAdmin() {
                     <td className="px-3 py-2 text-xs text-gray-600">{c.constraint_type}</td>
                     <td className="px-3 py-2 font-medium text-gray-800">{c.name}</td>
                     <td className="px-3 py-2 text-gray-600">{c.status_label}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{c.min_value}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{c.max_value !== null ? c.max_value : "∞"}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{c.min_pct}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{c.max_pct !== null ? c.max_pct : "∞"}</td>
                     <td className="px-3 py-2 text-xs text-gray-500">{c.sort_order}</td>
                     <td className="px-3 py-2">
                       <div className="flex gap-1">

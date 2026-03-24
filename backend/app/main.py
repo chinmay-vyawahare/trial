@@ -28,6 +28,7 @@ from app.routers import export, dashboard
 from app.routers import gc_capacity, pace_constraints, calendar
 from app.routers import analytics
 from app.init_milestone_data import init_milestone_data
+from app.services.assistant.nodes.simulation import set_main_loop
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,13 @@ app.include_router(export.router)
 app.include_router(gc_capacity.router)
 app.include_router(pace_constraints.router)
 app.include_router(analytics.router)
+
+@app.on_event("startup")
+async def _capture_event_loop():
+    """Capture FastAPI's event loop so simulation background tasks survive."""
+    import asyncio
+    set_main_loop(asyncio.get_running_loop())
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

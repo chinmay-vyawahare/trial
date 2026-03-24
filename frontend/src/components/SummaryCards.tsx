@@ -36,19 +36,40 @@ export default function SummaryCards({ data }: Props) {
         </div>
       ))}
 
-      {/* Overall status badge */}
+      {/* Overall status + on-track percentage */}
       {data.dashboard_status && (
-        <div className="ml-auto text-center">
-          <div className="text-[9px] font-bold tracking-wider uppercase text-gray-400 mb-1">STATUS</div>
-          <span className={`px-3 py-1.5 text-xs font-bold rounded-full border ${
-            data.dashboard_status === "ON TRACK"
-              ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-              : data.dashboard_status === "IN PROGRESS"
-              ? "bg-amber-50 text-amber-700 border-amber-300"
-              : "bg-red-50 text-red-700 border-red-300"
-          }`}>
-            {data.dashboard_status}
-          </span>
+        <div className={`ml-auto flex items-center gap-3 px-4 py-2 rounded-xl border ${
+          data.dashboard_status === "ON TRACK"
+            ? "bg-emerald-50 border-emerald-200"
+            : data.dashboard_status === "IN PROGRESS"
+            ? "bg-amber-50 border-amber-200"
+            : "bg-red-50 border-red-200"
+        }`}>
+          <div className="text-center">
+            <div className="text-[9px] font-bold tracking-wider uppercase text-gray-400">OVERALL STATUS</div>
+            <span className={`text-sm font-extrabold ${
+              data.dashboard_status === "ON TRACK"
+                ? "text-emerald-700"
+                : data.dashboard_status === "IN PROGRESS"
+                ? "text-amber-700"
+                : "text-red-700"
+            }`}>
+              {data.dashboard_status}
+            </span>
+          </div>
+          <div className="w-px h-8 bg-gray-200" />
+          <div className="text-center">
+            <div className="text-[9px] font-bold tracking-wider uppercase text-gray-400">ON TRACK %</div>
+            <span className={`text-2xl font-extrabold ${
+              data.on_track_pct >= 70
+                ? "text-emerald-600"
+                : data.on_track_pct >= 40
+                ? "text-amber-600"
+                : "text-red-600"
+            }`}>
+              {Math.round(data.on_track_pct)}%
+            </span>
+          </div>
         </div>
       )}
     </div>

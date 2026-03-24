@@ -194,19 +194,38 @@ export default function DashboardSummaryPanel({ regions, markets, areas }: Props
           )}
 
           {data.dashboard_status && (
-            <div className="ml-auto flex flex-col items-center gap-0.5">
-              <span className="text-[8px] font-bold tracking-wider uppercase text-gray-400">Status</span>
-              <span
-                className={`px-3 py-1.5 text-xs font-bold rounded-full border ${
+            <div className={`ml-auto flex items-center gap-3 px-4 py-2 rounded-xl border ${
+              data.dashboard_status === "ON TRACK"
+                ? "bg-emerald-50 border-emerald-200"
+                : data.dashboard_status === "IN PROGRESS"
+                ? "bg-amber-50 border-amber-200"
+                : "bg-red-50 border-red-200"
+            }`}>
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[8px] font-bold tracking-wider uppercase text-gray-400">Overall Status</span>
+                <span className={`text-sm font-extrabold ${
                   data.dashboard_status === "ON TRACK"
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                    ? "text-emerald-700"
                     : data.dashboard_status === "IN PROGRESS"
-                    ? "bg-amber-50 text-amber-700 border-amber-300"
-                    : "bg-red-50 text-red-700 border-red-300"
-                }`}
-              >
-                {data.dashboard_status}
-              </span>
+                    ? "text-amber-700"
+                    : "text-red-700"
+                }`}>
+                  {data.dashboard_status}
+                </span>
+              </div>
+              <div className="w-px h-10 bg-gray-200" />
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[8px] font-bold tracking-wider uppercase text-gray-400">On Track %</span>
+                <span className={`text-2xl font-extrabold ${
+                  data.on_track_pct >= 70
+                    ? "text-emerald-600"
+                    : data.on_track_pct >= 40
+                    ? "text-amber-600"
+                    : "text-red-600"
+                }`}>
+                  {Math.round(data.on_track_pct)}%
+                </span>
+              </div>
             </div>
           )}
         </div>
