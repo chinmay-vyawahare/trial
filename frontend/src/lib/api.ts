@@ -22,6 +22,9 @@ import type {
   PaceConstraintEntry,
   PaceConstraintCreate,
   PaceConstraintUpdate,
+  PendingMilestonesResponse,
+  PendingByMilestoneResponse,
+  DrilldownResponse,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -472,6 +475,166 @@ export async function updatePaceConstraint(id: number, userId: string, body: Pac
 
 export async function deletePaceConstraint(id: number, userId: string): Promise<{ detail: string }> {
   return fetchAPI<{ detail: string }>(`/api/v1/schedular/pace-constraints/${id}?user_id=${encodeURIComponent(userId)}`, { method: "DELETE" });
+}
+
+/* ── Analytics ────────────────────────────────────────────────────── */
+
+export async function getPendingMilestonesAuto(filters?: {
+  region?: string;
+  market?: string;
+  site_id?: string;
+  vendor?: string;
+  area?: string;
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+}): Promise<PendingMilestonesResponse> {
+  const params = new URLSearchParams();
+  if (filters?.region) params.set("region", filters.region);
+  if (filters?.market) params.set("market", filters.market);
+  if (filters?.site_id) params.set("site_id", filters.site_id);
+  if (filters?.vendor) params.set("vendor", filters.vendor);
+  if (filters?.area) params.set("area", filters.area);
+  if (filters?.user_id) params.set("user_id", filters.user_id);
+  if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
+  if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
+  const qs = params.toString();
+  return fetchAPI<PendingMilestonesResponse>(`/api/v1/schedular/analytics/pending-milestones/auto${qs ? `?${qs}` : ""}`);
+}
+
+export async function getPendingMilestonesSlaHistory(params: {
+  date_from: string;
+  date_to: string;
+  region?: string;
+  market?: string;
+  site_id?: string;
+  vendor?: string;
+  area?: string;
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+}): Promise<PendingMilestonesResponse> {
+  const sp = new URLSearchParams();
+  sp.set("date_from", params.date_from);
+  sp.set("date_to", params.date_to);
+  if (params.region) sp.set("region", params.region);
+  if (params.market) sp.set("market", params.market);
+  if (params.site_id) sp.set("site_id", params.site_id);
+  if (params.vendor) sp.set("vendor", params.vendor);
+  if (params.area) sp.set("area", params.area);
+  if (params.user_id) sp.set("user_id", params.user_id);
+  if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
+  if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  return fetchAPI<PendingMilestonesResponse>(`/api/v1/schedular/analytics/pending-milestones/sla-history?${sp}`);
+}
+
+export async function getPendingByMilestoneAuto(filters?: {
+  region?: string;
+  market?: string;
+  site_id?: string;
+  vendor?: string;
+  area?: string;
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+}): Promise<PendingByMilestoneResponse> {
+  const params = new URLSearchParams();
+  if (filters?.region) params.set("region", filters.region);
+  if (filters?.market) params.set("market", filters.market);
+  if (filters?.site_id) params.set("site_id", filters.site_id);
+  if (filters?.vendor) params.set("vendor", filters.vendor);
+  if (filters?.area) params.set("area", filters.area);
+  if (filters?.user_id) params.set("user_id", filters.user_id);
+  if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
+  if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
+  const qs = params.toString();
+  return fetchAPI<PendingByMilestoneResponse>(`/api/v1/schedular/analytics/pending-by-milestone/auto${qs ? `?${qs}` : ""}`);
+}
+
+export async function getPendingByMilestoneSlaHistory(params: {
+  date_from: string;
+  date_to: string;
+  region?: string;
+  market?: string;
+  site_id?: string;
+  vendor?: string;
+  area?: string;
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+}): Promise<PendingByMilestoneResponse> {
+  const sp = new URLSearchParams();
+  sp.set("date_from", params.date_from);
+  sp.set("date_to", params.date_to);
+  if (params.region) sp.set("region", params.region);
+  if (params.market) sp.set("market", params.market);
+  if (params.site_id) sp.set("site_id", params.site_id);
+  if (params.vendor) sp.set("vendor", params.vendor);
+  if (params.area) sp.set("area", params.area);
+  if (params.user_id) sp.set("user_id", params.user_id);
+  if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
+  if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  return fetchAPI<PendingByMilestoneResponse>(`/api/v1/schedular/analytics/pending-by-milestone/sla-history?${sp}`);
+}
+
+export async function getDrilldownAuto(params: {
+  drilldown_type: string;
+  pending_count?: number;
+  milestone_key?: string;
+  region?: string;
+  market?: string;
+  site_id?: string;
+  vendor?: string;
+  area?: string;
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+}): Promise<DrilldownResponse> {
+  const sp = new URLSearchParams();
+  sp.set("drilldown_type", params.drilldown_type);
+  if (params.pending_count !== undefined && params.pending_count !== null) sp.set("pending_count", String(params.pending_count));
+  if (params.milestone_key) sp.set("milestone_key", params.milestone_key);
+  if (params.region) sp.set("region", params.region);
+  if (params.market) sp.set("market", params.market);
+  if (params.site_id) sp.set("site_id", params.site_id);
+  if (params.vendor) sp.set("vendor", params.vendor);
+  if (params.area) sp.set("area", params.area);
+  if (params.user_id) sp.set("user_id", params.user_id);
+  if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
+  if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  return fetchAPI<DrilldownResponse>(`/api/v1/schedular/analytics/drilldown/auto?${sp}`);
+}
+
+export async function getDrilldownSlaHistory(params: {
+  date_from: string;
+  date_to: string;
+  drilldown_type: string;
+  pending_count?: number;
+  milestone_key?: string;
+  region?: string;
+  market?: string;
+  site_id?: string;
+  vendor?: string;
+  area?: string;
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+}): Promise<DrilldownResponse> {
+  const sp = new URLSearchParams();
+  sp.set("date_from", params.date_from);
+  sp.set("date_to", params.date_to);
+  sp.set("drilldown_type", params.drilldown_type);
+  if (params.pending_count !== undefined && params.pending_count !== null) sp.set("pending_count", String(params.pending_count));
+  if (params.milestone_key) sp.set("milestone_key", params.milestone_key);
+  if (params.region) sp.set("region", params.region);
+  if (params.market) sp.set("market", params.market);
+  if (params.site_id) sp.set("site_id", params.site_id);
+  if (params.vendor) sp.set("vendor", params.vendor);
+  if (params.area) sp.set("area", params.area);
+  if (params.user_id) sp.set("user_id", params.user_id);
+  if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
+  if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  return fetchAPI<DrilldownResponse>(`/api/v1/schedular/analytics/drilldown/sla-history?${sp}`);
 }
 
 /* ── Health ────────────────────────────────────────────────────────── */

@@ -307,6 +307,46 @@ export interface PaceConstraintUpdate {
   max_sites?: number;
 }
 
+/* ── Analytics ────────────────────────────────────────────────────── */
+
+export interface PendingMilestoneBucket {
+  pending_milestone_count: number;
+  site_count: number;
+}
+
+export interface PendingMilestonesResponse {
+  sla_type: string;
+  total_sites: number;
+  pending_milestones: PendingMilestoneBucket[];
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface MilestonePendingSites {
+  milestone_key: string;
+  milestone_name: string;
+  pending_site_count: number;
+  sort_order: number;
+}
+
+export interface PendingByMilestoneResponse {
+  sla_type: string;
+  total_sites: number;
+  milestones: MilestonePendingSites[];
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface DrilldownResponse {
+  drilldown_type: string;
+  pending_count: number | null;
+  milestone_key: string | null;
+  count: number;
+  sites: SiteGantt[];
+  date_from?: string;
+  date_to?: string;
+}
+
 export interface SlaHistoryGanttResponse {
   sla_type: string;
   date_from: string;

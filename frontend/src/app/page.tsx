@@ -14,6 +14,7 @@ import UserExpectedDays from "@/components/UserExpectedDays";
 import UserPaceConstraints from "@/components/UserPaceConstraints";
 import PrerequisiteFlowchart from "@/components/PrerequisiteFlowchart";
 import DashboardSummaryPanel from "@/components/DashboardSummaryPanel";
+import PendingMilestonesChart from "@/components/PendingMilestonesChart";
 
 export default function Home() {
   const [sites, setSites] = useState<SiteGantt[]>([]);
@@ -52,6 +53,7 @@ export default function Home() {
   const [considerVendorCapacity, setConsiderVendorCapacity] = useState(false);
   const [paceConstraintFlag, setPaceConstraintFlag] = useState<boolean>(false);
   const initialLoad = useRef(true);
+  const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
 
   // Load filter options once on mount
   useEffect(() => {
@@ -140,6 +142,7 @@ export default function Home() {
       console.error("Failed to load data:", e);
     } finally {
       setLoading(false);
+      setAnalyticsRefreshKey((k) => k + 1);
     }
   }, [region, market, area, siteIdFilter, vendor, userId, slaMode, slaDateFrom, slaDateTo, considerVendorCapacity, paceConstraintFlag, statusFilter]);
 
@@ -338,6 +341,22 @@ export default function Home() {
             {activeTab === "flowchart" && <PrerequisiteFlowchart />}
             {activeTab === "expected-days" && <UserExpectedDays userId={userId} />}
             {activeTab === "pace-constraints" && <UserPaceConstraints userId={userId} />}
+            {activeTab === "analytics" && (
+              <PendingMilestonesChart
+                region={region}
+                market={market}
+                area={area}
+                siteId={siteIdFilter}
+                vendor={vendor}
+                userId={userId}
+                considerVendorCapacity={considerVendorCapacity}
+                paceConstraintFlag={paceConstraintFlag}
+                slaMode={slaMode}
+                slaDateFrom={slaDateFrom}
+                slaDateTo={slaDateTo}
+                refreshKey={analyticsRefreshKey}
+              />
+            )}
             {activeTab === "admin" && <AdminPanel />}
           </div>
 

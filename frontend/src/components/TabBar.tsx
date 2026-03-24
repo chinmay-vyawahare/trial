@@ -19,6 +19,7 @@ const tabs = [
   { key: "flowchart", label: "Flowchart" },
   { key: "expected-days", label: "Expected Days" },
   { key: "pace-constraints", label: "Pace Constraints" },
+  { key: "analytics", label: "Analytics" },
   { key: "admin", label: "Admin" },
 ];
 

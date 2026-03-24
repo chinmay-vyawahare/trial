@@ -26,6 +26,7 @@ from app.routers import assistant, user_filters, sla_history
 from app.routers import user_expected_days
 from app.routers import export, dashboard
 from app.routers import gc_capacity, pace_constraints, calendar
+from app.routers import analytics
 from app.init_milestone_data import init_milestone_data
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ app.include_router(admin.router)
 app.include_router(export.router)
 app.include_router(gc_capacity.router)
 app.include_router(pace_constraints.router)
+app.include_router(analytics.router)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
