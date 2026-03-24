@@ -133,7 +133,7 @@ def _apply_pace_constraint(
     for idx, site in enumerate(sites):
         if idx in excluded_indices:
             site["excluded_due_to_pace_constraint"] = True
-            site["overall_status"] = "Excluded - Pace Constraint"
+            site["exclude_reason"] = "Excluded - Pace Constraint"
         else:
             site["excluded_due_to_pace_constraint"] = False
 
@@ -199,7 +199,7 @@ def _apply_vendor_capacity(sites: list[dict], db: Session) -> list[dict]:
     for idx, site in enumerate(sites):
         if idx in excluded_indices:
             site["excluded_due_to_crew_shortage"] = True
-            site["overall_status"] = "Excluded - Crew Shortage"
+            site["exclude_reason"] = "Excluded - Crew Shortage"
         else:
             site["excluded_due_to_crew_shortage"] = False
 

@@ -448,15 +448,53 @@ export function getExportCsvUrl(filters?: {
   region?: string;
   market?: string;
   area?: string;
+  site_id?: string;
+  vendor?: string;
   user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+  status?: string;
 }): string {
   const params = new URLSearchParams();
   if (filters?.region) params.set("region", filters.region);
   if (filters?.market) params.set("market", filters.market);
   if (filters?.area) params.set("area", filters.area);
+  if (filters?.site_id) params.set("site_id", filters.site_id);
+  if (filters?.vendor) params.set("vendor", filters.vendor);
   if (filters?.user_id) params.set("user_id", filters.user_id);
+  if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
+  if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
+  if (filters?.status) params.set("status", filters.status);
   const qs = params.toString();
   return `${API_BASE}/api/v1/schedular/export/gantt-csv${qs ? `?${qs}` : ""}`;
+}
+
+export function getExportCsvHistoryUrl(filters: {
+  date_from: string;
+  date_to: string;
+  region?: string;
+  market?: string;
+  area?: string;
+  site_id?: string;
+  vendor?: string;
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+  status?: string;
+}): string {
+  const params = new URLSearchParams();
+  params.set("date_from", filters.date_from);
+  params.set("date_to", filters.date_to);
+  if (filters.region) params.set("region", filters.region);
+  if (filters.market) params.set("market", filters.market);
+  if (filters.area) params.set("area", filters.area);
+  if (filters.site_id) params.set("site_id", filters.site_id);
+  if (filters.vendor) params.set("vendor", filters.vendor);
+  if (filters.user_id) params.set("user_id", filters.user_id);
+  if (filters.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
+  if (filters.pace_constraint_flag) params.set("pace_constraint_flag", "true");
+  if (filters.status) params.set("status", filters.status);
+  return `${API_BASE}/api/v1/schedular/export/gantt-csv-history?${params}`;
 }
 
 /* ── GC Capacity (read-only) ───────────────────────────────────────── */
@@ -502,6 +540,8 @@ export async function getPendingMilestonesAuto(filters?: {
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
+  filter_date_from?: string;
+  filter_date_to?: string;
 }): Promise<PendingMilestonesResponse> {
   const params = new URLSearchParams();
   if (filters?.region) params.set("region", filters.region);
@@ -512,6 +552,8 @@ export async function getPendingMilestonesAuto(filters?: {
   if (filters?.user_id) params.set("user_id", filters.user_id);
   if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
   if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
+  if (filters?.filter_date_from) params.set("filter_date_from", filters.filter_date_from);
+  if (filters?.filter_date_to) params.set("filter_date_to", filters.filter_date_to);
   const qs = params.toString();
   return fetchAPI<PendingMilestonesResponse>(`/api/v1/schedular/analytics/pending-milestones/auto${qs ? `?${qs}` : ""}`);
 }
@@ -527,6 +569,8 @@ export async function getPendingMilestonesSlaHistory(params: {
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
+  filter_date_from?: string;
+  filter_date_to?: string;
 }): Promise<PendingMilestonesResponse> {
   const sp = new URLSearchParams();
   sp.set("date_from", params.date_from);
@@ -539,6 +583,8 @@ export async function getPendingMilestonesSlaHistory(params: {
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
   if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  if (params.filter_date_from) sp.set("filter_date_from", params.filter_date_from);
+  if (params.filter_date_to) sp.set("filter_date_to", params.filter_date_to);
   return fetchAPI<PendingMilestonesResponse>(`/api/v1/schedular/analytics/pending-milestones/sla-history?${sp}`);
 }
 
@@ -551,6 +597,8 @@ export async function getPendingByMilestoneAuto(filters?: {
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
+  filter_date_from?: string;
+  filter_date_to?: string;
 }): Promise<PendingByMilestoneResponse> {
   const params = new URLSearchParams();
   if (filters?.region) params.set("region", filters.region);
@@ -561,6 +609,8 @@ export async function getPendingByMilestoneAuto(filters?: {
   if (filters?.user_id) params.set("user_id", filters.user_id);
   if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
   if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
+  if (filters?.filter_date_from) params.set("filter_date_from", filters.filter_date_from);
+  if (filters?.filter_date_to) params.set("filter_date_to", filters.filter_date_to);
   const qs = params.toString();
   return fetchAPI<PendingByMilestoneResponse>(`/api/v1/schedular/analytics/pending-by-milestone/auto${qs ? `?${qs}` : ""}`);
 }
@@ -576,6 +626,8 @@ export async function getPendingByMilestoneSlaHistory(params: {
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
+  filter_date_from?: string;
+  filter_date_to?: string;
 }): Promise<PendingByMilestoneResponse> {
   const sp = new URLSearchParams();
   sp.set("date_from", params.date_from);
@@ -588,6 +640,8 @@ export async function getPendingByMilestoneSlaHistory(params: {
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
   if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  if (params.filter_date_from) sp.set("filter_date_from", params.filter_date_from);
+  if (params.filter_date_to) sp.set("filter_date_to", params.filter_date_to);
   return fetchAPI<PendingByMilestoneResponse>(`/api/v1/schedular/analytics/pending-by-milestone/sla-history?${sp}`);
 }
 
@@ -603,6 +657,8 @@ export async function getDrilldownAuto(params: {
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
+  filter_date_from?: string;
+  filter_date_to?: string;
 }): Promise<DrilldownResponse> {
   const sp = new URLSearchParams();
   sp.set("drilldown_type", params.drilldown_type);
@@ -616,6 +672,8 @@ export async function getDrilldownAuto(params: {
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
   if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  if (params.filter_date_from) sp.set("filter_date_from", params.filter_date_from);
+  if (params.filter_date_to) sp.set("filter_date_to", params.filter_date_to);
   return fetchAPI<DrilldownResponse>(`/api/v1/schedular/analytics/drilldown/auto?${sp}`);
 }
 
@@ -633,6 +691,8 @@ export async function getDrilldownSlaHistory(params: {
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
+  filter_date_from?: string;
+  filter_date_to?: string;
 }): Promise<DrilldownResponse> {
   const sp = new URLSearchParams();
   sp.set("date_from", params.date_from);
@@ -648,6 +708,8 @@ export async function getDrilldownSlaHistory(params: {
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
   if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  if (params.filter_date_from) sp.set("filter_date_from", params.filter_date_from);
+  if (params.filter_date_to) sp.set("filter_date_to", params.filter_date_to);
   return fetchAPI<DrilldownResponse>(`/api/v1/schedular/analytics/drilldown/sla-history?${sp}`);
 }
 

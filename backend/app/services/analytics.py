@@ -4,9 +4,16 @@ Analytics service — pending milestone counts with site counts.
 Two modes:
 1. Auto/User Override SLA  — uses get_all_sites_gantt with default or user-override expected_days
 2. SLA History             — uses get_all_sites_gantt with history-based expected_days
+
+All functions accept optional date_from / date_to parameters to restrict results
+to sites whose forecasted_cx_start_date falls within the given range.
+
+Blocked sites (overall_status == "Blocked") are excluded from all analytics
+counts and returned separately as a blocked_sites count.
 """
 
 from collections import defaultdict
+from datetime import date
 from sqlalchemy.orm import Session
 
 # Virtual milestones are computed, not real prerequisites — exclude from analytics
@@ -18,10 +25,22 @@ def _is_countable(m: dict) -> bool:
     return m.get("key", "") not in VIRTUAL_MILESTONE_KEYS
 
 
-def _count_pending_milestones(sites: list[dict]) -> list[dict]:
+def _separate_blocked(sites: list[dict]) -> tuple[list[dict], int]:
+    """Split sites into (active_sites, blocked_count). Blocked = overall_status is 'Blocked'."""
+    active = []
+    blocked = 0
+    for site in sites:
+        if (site.get("overall_status") or "").upper() == "BLOCKED":
+            blocked += 1
+        else:
+            active.append(site)
+    return active, blocked
+
+
+def _count_pending_milestones(sites: list[dict], blocked_sites: int = 0) -> dict:
     """
     For each site, count pending milestones (those without actual_finish).
-    Return a list of {pending_milestone_count, site_count} sorted by pending count.
+    Return a dict with total_sites, blocked_sites, and buckets.
     """
     pending_count_per_site: dict[str, int] = {}
 
@@ -48,13 +67,13 @@ def _count_pending_milestones(sites: list[dict]) -> list[dict]:
         {"pending_milestone_count": i, "site_count": bucket.get(i, 0)}
         for i in range(0, total_milestones + 1)
     ]
-    return {"total_sites": len(sites), "buckets": buckets}
+    return {"total_sites": len(sites), "blocked_sites": blocked_sites, "buckets": buckets}
 
 
-def _count_pending_by_milestone_name(sites: list[dict]) -> dict:
+def _count_pending_by_milestone_name(sites: list[dict], blocked_sites: int = 0) -> dict:
     """
     For each milestone name, count how many sites have it pending (no actual_finish).
-    Return dict with total_sites and milestones list sorted by sort_order.
+    Return dict with total_sites, blocked_sites, and milestones list sorted by sort_order.
     """
     # Track pending count and sort_order per milestone key
     pending: dict[str, int] = defaultdict(int)
@@ -82,7 +101,32 @@ def _count_pending_by_milestone_name(sites: list[dict]) -> dict:
         for k in names
     ]
     milestones.sort(key=lambda x: x["sort_order"])
-    return {"total_sites": len(sites), "milestones": milestones}
+    return {"total_sites": len(sites), "blocked_sites": blocked_sites, "milestones": milestones}
+
+
+def _filter_sites_by_date_range(
+    sites: list[dict],
+    date_from: date | None,
+    date_to: date | None,
+) -> list[dict]:
+    """Keep only sites whose forecasted_cx_start_date falls within [date_from, date_to]."""
+    if not date_from and not date_to:
+        return sites
+    filtered = []
+    for site in sites:
+        raw = site.get("forecasted_cx_start_date")
+        if not raw:
+            continue
+        try:
+            forecast = date.fromisoformat(str(raw))
+        except (ValueError, TypeError):
+            continue
+        if date_from and forecast < date_from:
+            continue
+        if date_to and forecast > date_to:
+            continue
+        filtered.append(site)
+    return filtered
 
 
 def _get_sites(
@@ -91,7 +135,10 @@ def _get_sites(
     plan_type_include=None, regional_dev_initiatives=None,
     skipped_keys=None, user_expected_days_overrides=None,
     consider_vendor_capacity=False, pace_constraint_flag=False, user_id=None,
-):
+    filter_date_from: date | None = None,
+    filter_date_to: date | None = None,
+) -> tuple[list[dict], int]:
+    """Return (active_sites, blocked_count) with blocked sites removed."""
     from app.services.gantt import get_all_sites_gantt
     sites, _, _ = get_all_sites_gantt(
         db, config_db,
@@ -104,7 +151,8 @@ def _get_sites(
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
     )
-    return sites
+    sites = _filter_sites_by_date_range(sites, filter_date_from, filter_date_to)
+    return _separate_blocked(sites)
 
 
 def _get_sites_history(
@@ -113,7 +161,10 @@ def _get_sites_history(
     plan_type_include=None, regional_dev_initiatives=None,
     skipped_keys=None, consider_vendor_capacity=False,
     pace_constraint_flag=False, user_id=None,
-):
+    filter_date_from: date | None = None,
+    filter_date_to: date | None = None,
+) -> tuple[list[dict], int]:
+    """Return (active_sites, blocked_count) with blocked sites removed."""
     from app.services.sla_history import compute_history_expected_days
     history_results = compute_history_expected_days(db, config_db, date_from, date_to, use_median=True)
     history_overrides = {}
@@ -130,6 +181,8 @@ def _get_sites_history(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=filter_date_from,
+        filter_date_to=filter_date_to,
     )
 
 
@@ -148,9 +201,11 @@ def get_pending_milestones_auto(
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
-) -> list[dict]:
+    filter_date_from: date | None = None,
+    filter_date_to: date | None = None,
+) -> dict:
     """Pending milestone distribution using auto/user-override SLA."""
-    sites = _get_sites(
+    sites, blocked = _get_sites(
         db, config_db,
         region=region, market=market, site_id=site_id, vendor=vendor, area=area,
         plan_type_include=plan_type_include,
@@ -160,8 +215,10 @@ def get_pending_milestones_auto(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=filter_date_from,
+        filter_date_to=filter_date_to,
     )
-    return _count_pending_milestones(sites)
+    return _count_pending_milestones(sites, blocked)
 
 
 def get_pending_milestones_history(
@@ -180,9 +237,11 @@ def get_pending_milestones_history(
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
-) -> list[dict]:
+    filter_date_from: date | None = None,
+    filter_date_to: date | None = None,
+) -> dict:
     """Pending milestone distribution using SLA history-based expected_days."""
-    sites = _get_sites_history(
+    sites, blocked = _get_sites_history(
         db, config_db, date_from, date_to,
         region=region, market=market, site_id=site_id, vendor=vendor, area=area,
         plan_type_include=plan_type_include,
@@ -191,8 +250,10 @@ def get_pending_milestones_history(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=filter_date_from,
+        filter_date_to=filter_date_to,
     )
-    return _count_pending_milestones(sites)
+    return _count_pending_milestones(sites, blocked)
 
 
 def get_pending_by_milestone_auto(
@@ -210,9 +271,11 @@ def get_pending_by_milestone_auto(
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
-) -> list[dict]:
+    filter_date_from: date | None = None,
+    filter_date_to: date | None = None,
+) -> dict:
     """Per-milestone pending site count using auto/user-override SLA."""
-    sites = _get_sites(
+    sites, blocked = _get_sites(
         db, config_db,
         region=region, market=market, site_id=site_id, vendor=vendor, area=area,
         plan_type_include=plan_type_include,
@@ -222,8 +285,10 @@ def get_pending_by_milestone_auto(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=filter_date_from,
+        filter_date_to=filter_date_to,
     )
-    return _count_pending_by_milestone_name(sites)
+    return _count_pending_by_milestone_name(sites, blocked)
 
 
 def get_pending_by_milestone_history(
@@ -242,9 +307,11 @@ def get_pending_by_milestone_history(
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
-) -> list[dict]:
+    filter_date_from: date | None = None,
+    filter_date_to: date | None = None,
+) -> dict:
     """Per-milestone pending site count using SLA history-based expected_days."""
-    sites = _get_sites_history(
+    sites, blocked = _get_sites_history(
         db, config_db, date_from, date_to,
         region=region, market=market, site_id=site_id, vendor=vendor, area=area,
         plan_type_include=plan_type_include,
@@ -253,8 +320,10 @@ def get_pending_by_milestone_history(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=filter_date_from,
+        filter_date_to=filter_date_to,
     )
-    return _count_pending_by_milestone_name(sites)
+    return _count_pending_by_milestone_name(sites, blocked)
 
 
 def _filter_drilldown(
@@ -306,9 +375,11 @@ def drilldown_sites_auto(
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
-) -> list[dict]:
-    """Drilldown: return full gantt site data filtered by click target."""
-    sites = _get_sites(
+    filter_date_from: date | None = None,
+    filter_date_to: date | None = None,
+) -> tuple[list[dict], int]:
+    """Drilldown: return (filtered_sites, blocked_count)."""
+    sites, blocked = _get_sites(
         db, config_db,
         region=region, market=market, site_id=site_id, vendor=vendor, area=area,
         plan_type_include=plan_type_include,
@@ -318,8 +389,10 @@ def drilldown_sites_auto(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=filter_date_from,
+        filter_date_to=filter_date_to,
     )
-    return _filter_drilldown(sites, drilldown_type, pending_count, milestone_key)
+    return _filter_drilldown(sites, drilldown_type, pending_count, milestone_key), blocked
 
 
 def drilldown_sites_history(
@@ -341,9 +414,11 @@ def drilldown_sites_history(
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
-) -> list[dict]:
-    """Drilldown: return full gantt site data filtered by click target (history SLA)."""
-    sites = _get_sites_history(
+    filter_date_from: date | None = None,
+    filter_date_to: date | None = None,
+) -> tuple[list[dict], int]:
+    """Drilldown: return (filtered_sites, blocked_count)."""
+    sites, blocked = _get_sites_history(
         db, config_db, date_from, date_to,
         region=region, market=market, site_id=site_id, vendor=vendor, area=area,
         plan_type_include=plan_type_include,
@@ -352,5 +427,7 @@ def drilldown_sites_history(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=filter_date_from,
+        filter_date_to=filter_date_to,
     )
-    return _filter_drilldown(sites, drilldown_type, pending_count, milestone_key)
+    return _filter_drilldown(sites, drilldown_type, pending_count, milestone_key), blocked

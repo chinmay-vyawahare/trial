@@ -38,14 +38,21 @@ export default function PendingMilestonesChart({
   slaMode, slaDateFrom, slaDateTo,
   refreshKey,
 }: Props) {
+  // Date range filter for forecasted CX start date
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
   const [autoData, setAutoData] = useState<PendingMilestoneBucket[]>([]);
   const [autoTotalSites, setAutoTotalSites] = useState(0);
+  const [autoBlockedSites, setAutoBlockedSites] = useState(0);
   const [historyData, setHistoryData] = useState<PendingMilestoneBucket[]>([]);
   const [historyTotalSites, setHistoryTotalSites] = useState(0);
+  const [historyBlockedSites, setHistoryBlockedSites] = useState(0);
   const [autoByMs, setAutoByMs] = useState<MilestonePendingSites[]>([]);
   const [autoByMsTotalSites, setAutoByMsTotalSites] = useState(0);
+  const [autoByMsBlockedSites, setAutoByMsBlockedSites] = useState(0);
   const [historyByMs, setHistoryByMs] = useState<MilestonePendingSites[]>([]);
   const [historyByMsTotalSites, setHistoryByMsTotalSites] = useState(0);
+  const [historyByMsBlockedSites, setHistoryByMsBlockedSites] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +70,9 @@ export default function PendingMilestonesChart({
     user_id: userId || undefined,
     consider_vendor_capacity: considerVendorCapacity || undefined,
     pace_constraint_flag: paceConstraintFlag || undefined,
-  }), [region, market, area, siteId, vendor, userId, considerVendorCapacity, paceConstraintFlag]);
+    filter_date_from: filterDateFrom || undefined,
+    filter_date_to: filterDateTo || undefined,
+  }), [region, market, area, siteId, vendor, userId, considerVendorCapacity, paceConstraintFlag, filterDateFrom, filterDateTo]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -75,8 +84,10 @@ export default function PendingMilestonesChart({
       ]);
       setAutoData(autoRes.pending_milestones);
       setAutoTotalSites(autoRes.total_sites);
+      setAutoBlockedSites(autoRes.blocked_sites ?? 0);
       setAutoByMs(autoMsRes.milestones);
       setAutoByMsTotalSites(autoMsRes.total_sites);
+      setAutoByMsBlockedSites(autoMsRes.blocked_sites ?? 0);
 
       if (slaMode === "history" && slaDateFrom && slaDateTo) {
         const historyFilters = { date_from: slaDateFrom, date_to: slaDateTo, ...filters };
@@ -86,13 +97,17 @@ export default function PendingMilestonesChart({
         ]);
         setHistoryData(histRes.pending_milestones);
         setHistoryTotalSites(histRes.total_sites);
+        setHistoryBlockedSites(histRes.blocked_sites ?? 0);
         setHistoryByMs(histMsRes.milestones);
         setHistoryByMsTotalSites(histMsRes.total_sites);
+        setHistoryByMsBlockedSites(histMsRes.blocked_sites ?? 0);
       } else {
         setHistoryData([]);
         setHistoryTotalSites(0);
+        setHistoryBlockedSites(0);
         setHistoryByMs([]);
         setHistoryByMsTotalSites(0);
+        setHistoryByMsBlockedSites(0);
       }
     } catch (e) {
       setError("Failed to load analytics data");
@@ -102,11 +117,11 @@ export default function PendingMilestonesChart({
     }
   }, [filters, slaMode, slaDateFrom, slaDateTo]);
 
-  // Reload when parent signals (user clicks "Create Gantt Chart") or on first mount
+  // Reload when parent signals (user clicks "Create Gantt Chart"), on first mount, or when date filters change
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [refreshKey, filterDateFrom, filterDateTo]);
 
   // Drilldown handlers
   const handleBucketClick = useCallback(async (pendingCount: number, isHistory: boolean) => {
@@ -186,11 +201,41 @@ export default function PendingMilestonesChart({
   return (
     <>
       <div className="h-full overflow-y-auto p-5 space-y-6">
+        {/* Date range filter */}
+        <div className="flex items-center gap-3 bg-white rounded-xl shadow border border-gray-200 px-5 py-3">
+          <span className="text-xs font-semibold text-gray-600">Forecast CX Start Date Range</span>
+          <div className="flex items-center gap-2 ml-auto">
+            <label className="text-xs text-gray-400">From</label>
+            <input
+              type="date"
+              value={filterDateFrom}
+              onChange={(e) => setFilterDateFrom(e.target.value)}
+              className="px-2 py-1 text-xs rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            <label className="text-xs text-gray-400">To</label>
+            <input
+              type="date"
+              value={filterDateTo}
+              onChange={(e) => setFilterDateTo(e.target.value)}
+              className="px-2 py-1 text-xs rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            {(filterDateFrom || filterDateTo) && (
+              <button
+                onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
+                className="px-2 py-1 text-xs rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Pending count distribution */}
         <BucketBarChart
           title="Pending Milestones — Auto / User Override SLA"
           data={autoData}
           totalSites={autoTotalSites}
+          blockedSites={autoBlockedSites}
           subtitle="Based on default or user-override expected days"
           onBarClick={(count) => handleBucketClick(count, false)}
         />
@@ -199,6 +244,7 @@ export default function PendingMilestonesChart({
             title="Pending Milestones — SLA History (Median)"
             data={historyData}
             totalSites={historyTotalSites}
+            blockedSites={historyBlockedSites}
             subtitle={`Based on historical median (${slaDateFrom} to ${slaDateTo})`}
             onBarClick={(count) => handleBucketClick(count, true)}
           />
@@ -209,6 +255,7 @@ export default function PendingMilestonesChart({
           title="Pending Sites by Milestone — Auto / User Override SLA"
           data={autoByMs}
           totalSites={autoByMsTotalSites}
+          blockedSites={autoByMsBlockedSites}
           subtitle="Number of sites pending per milestone"
           onBarClick={(key, name) => handleMilestoneClick(key, name, false)}
         />
@@ -217,6 +264,7 @@ export default function PendingMilestonesChart({
             title="Pending Sites by Milestone — SLA History (Median)"
             data={historyByMs}
             totalSites={historyByMsTotalSites}
+            blockedSites={historyByMsBlockedSites}
             subtitle={`Number of sites pending per milestone (${slaDateFrom} to ${slaDateTo})`}
             onBarClick={(key, name) => handleMilestoneClick(key, name, true)}
           />
@@ -256,6 +304,7 @@ export default function PendingMilestonesChart({
                       <th className="text-left px-3 py-2.5 font-semibold text-gray-500 whitespace-nowrap">Market</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-gray-500 whitespace-nowrap">Vendor</th>
                       <th className="text-center px-3 py-2.5 font-semibold text-gray-500 whitespace-nowrap">Overall Status</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-gray-500 whitespace-nowrap">Note</th>
                       {milestoneNames.map((ms) => (
                         <th key={ms.key} className="text-center px-2 py-2.5 font-semibold text-gray-500 whitespace-nowrap min-w-[80px]">
                           {ms.name}
@@ -274,6 +323,23 @@ export default function PendingMilestonesChart({
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{site.vendor_name || "—"}</td>
                           <td className="px-3 py-2 text-center">
                             <StatusBadge status={site.overall_status} />
+                          </td>
+                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                            {site.note && (
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border mr-1 ${
+                                site.note === "Ready for schedule"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                  : "bg-amber-50 text-amber-700 border-amber-300"
+                              }`}>
+                                {site.note}
+                              </span>
+                            )}
+                            {site.exclude_reason && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-orange-50 text-orange-700 border-orange-300">
+                                {site.exclude_reason}
+                              </span>
+                            )}
+                            {!site.note && !site.exclude_reason && "—"}
                           </td>
                           {milestoneNames.map((ms) => {
                             const m = msMap.get(ms.key);
@@ -345,12 +411,14 @@ function BucketBarChart({
   title,
   data,
   totalSites,
+  blockedSites,
   subtitle,
   onBarClick,
 }: {
   title: string;
   data: PendingMilestoneBucket[];
   totalSites: number;
+  blockedSites: number;
   subtitle: string;
   onBarClick: (pendingCount: number) => void;
 }) {
@@ -373,9 +441,16 @@ function BucketBarChart({
     <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-1">
         <h3 className="font-bold text-gray-800 text-sm">{title}</h3>
-        <span className="text-xs text-gray-500 font-medium">
-          Total Sites: {totalSites}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500 font-medium">
+            Total Sites: {totalSites}
+          </span>
+          {blockedSites > 0 && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-300">
+              Blocked: {blockedSites}
+            </span>
+          )}
+        </div>
       </div>
       <p className="text-xs text-gray-400 mb-5">{subtitle}</p>
 
@@ -446,12 +521,14 @@ function MilestoneBarChart({
   title,
   data,
   totalSites,
+  blockedSites,
   subtitle,
   onBarClick,
 }: {
   title: string;
   data: MilestonePendingSites[];
   totalSites: number;
+  blockedSites: number;
   subtitle: string;
   onBarClick: (milestoneKey: string, milestoneName: string) => void;
 }) {
@@ -473,9 +550,16 @@ function MilestoneBarChart({
     <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-1">
         <h3 className="font-bold text-gray-800 text-sm">{title}</h3>
-        <span className="text-xs text-gray-500 font-medium">
-          Total Sites: {totalSites}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500 font-medium">
+            Total Sites: {totalSites}
+          </span>
+          {blockedSites > 0 && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-300">
+              Blocked: {blockedSites}
+            </span>
+          )}
+        </div>
       </div>
       <p className="text-xs text-gray-400 mb-5">{subtitle}</p>
 

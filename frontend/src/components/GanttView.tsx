@@ -337,6 +337,11 @@ export default function GanttView({
                       {s.note}
                     </span>
                   )}
+                  {s.exclude_reason && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap bg-orange-50 text-orange-700 border-orange-300">
+                      {s.exclude_reason}
+                    </span>
+                  )}
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap ${badge.cls}`}>
                     {badge.label}
                   </span>

@@ -121,11 +121,12 @@ function SlaSection({ summary }: { summary: DashboardSlaSummary | null }) {
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard label="Total Sites" value={summary.total_sites} color="bg-blue-600" />
         <StatCard label="On Track" value={summary.on_track_sites} color="bg-emerald-600" />
         <StatCard label="In Progress" value={summary.in_progress_sites} color="bg-amber-500" />
         <StatCard label="Critical" value={summary.critical_sites} color="bg-red-600" />
+        <StatCard label="Blocked" value={summary.blocked_sites} color="bg-gray-500" />
       </div>
 
       <div className="bg-white rounded-xl shadow border border-gray-200 p-4">

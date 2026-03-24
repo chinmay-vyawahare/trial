@@ -3,6 +3,9 @@ Analytics endpoints — pending milestone distribution.
 
 GET /analytics/pending-milestones/auto        — using default/user-override SLA
 GET /analytics/pending-milestones/sla-history — using SLA history (median)
+
+All endpoints accept optional filter_date_from / filter_date_to to restrict
+results to sites whose forecasted_cx_start_date falls within the given range.
 """
 
 import json
@@ -56,6 +59,15 @@ def _get_gate_checks(config_db: Session, user_id: str | None):
     return plan_type_include, saved.regional_dev_initiatives
 
 
+def _parse_optional_date(raw: str | None, label: str) -> date | None:
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid {label} format. Use YYYY-MM-DD.")
+
+
 # ----------------------------------------------------------------
 # Endpoints
 # ----------------------------------------------------------------
@@ -70,6 +82,8 @@ def pending_milestones_auto(
     user_id: str = Query(None, description="User ID for SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
+    filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -78,14 +92,10 @@ def pending_milestones_auto(
 
     Returns a list of {pending_milestone_count, site_count} showing
     how many sites have N pending milestones (milestones without actual_finish).
-
-    Example response:
-        [
-            {"pending_milestone_count": 0, "site_count": 5},
-            {"pending_milestone_count": 1, "site_count": 12},
-            {"pending_milestone_count": 3, "site_count": 8},
-        ]
     """
+    fd_from = _parse_optional_date(filter_date_from, "filter_date_from")
+    fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
+
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
@@ -104,11 +114,14 @@ def pending_milestones_auto(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=fd_from,
+        filter_date_to=fd_to,
     )
 
     return {
         "sla_type": "user_override" if user_id else "default",
         "total_sites": data["total_sites"],
+        "blocked_sites": data["blocked_sites"],
         "pending_milestones": data["buckets"],
     }
 
@@ -125,25 +138,13 @@ def pending_milestones_sla_history(
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
+    filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
     """
     Pending milestone distribution using SLA history (median completion days).
-
-    Returns a list of {pending_milestone_count, site_count} showing
-    how many sites have N pending milestones (milestones without actual_finish).
-
-    Example response:
-        {
-            "sla_type": "history_median",
-            "date_from": "2025-01-01",
-            "date_to": "2025-06-01",
-            "pending_milestones": [
-                {"pending_milestone_count": 0, "site_count": 5},
-                {"pending_milestone_count": 1, "site_count": 12},
-            ]
-        }
     """
     try:
         df = date.fromisoformat(date_from)
@@ -153,6 +154,9 @@ def pending_milestones_sla_history(
 
     if df > dt:
         raise HTTPException(status_code=400, detail="date_from must be before date_to.")
+
+    fd_from = _parse_optional_date(filter_date_from, "filter_date_from")
+    fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
 
     skipped_keys = _get_skipped_keys(config_db)
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
@@ -172,6 +176,8 @@ def pending_milestones_sla_history(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=fd_from,
+        filter_date_to=fd_to,
     )
 
     return {
@@ -179,6 +185,7 @@ def pending_milestones_sla_history(
         "date_from": date_from,
         "date_to": date_to,
         "total_sites": data["total_sites"],
+        "blocked_sites": data["blocked_sites"],
         "pending_milestones": data["buckets"],
     }
 
@@ -193,23 +200,17 @@ def pending_by_milestone_auto(
     user_id: str = Query(None, description="User ID for SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
+    filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
     """
     Per-milestone pending site count using default/user-override SLA.
-
-    Returns a list showing how many sites are pending for each milestone name.
-
-    Example response:
-        {
-            "sla_type": "default",
-            "milestones": [
-                {"milestone_key": "leasing", "milestone_name": "Leasing", "pending_site_count": 12, "sort_order": 1},
-                {"milestone_key": "permitting", "milestone_name": "Permitting", "pending_site_count": 8, "sort_order": 2},
-            ]
-        }
     """
+    fd_from = _parse_optional_date(filter_date_from, "filter_date_from")
+    fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
+
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
@@ -228,11 +229,14 @@ def pending_by_milestone_auto(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=fd_from,
+        filter_date_to=fd_to,
     )
 
     return {
         "sla_type": "user_override" if user_id else "default",
         "total_sites": data["total_sites"],
+        "blocked_sites": data["blocked_sites"],
         "milestones": data["milestones"],
     }
 
@@ -249,13 +253,13 @@ def pending_by_milestone_sla_history(
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
+    filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
     """
     Per-milestone pending site count using SLA history (median completion days).
-
-    Returns a list showing how many sites are pending for each milestone name.
     """
     try:
         df = date.fromisoformat(date_from)
@@ -265,6 +269,9 @@ def pending_by_milestone_sla_history(
 
     if df > dt:
         raise HTTPException(status_code=400, detail="date_from must be before date_to.")
+
+    fd_from = _parse_optional_date(filter_date_from, "filter_date_from")
+    fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
 
     skipped_keys = _get_skipped_keys(config_db)
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
@@ -284,6 +291,8 @@ def pending_by_milestone_sla_history(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=fd_from,
+        filter_date_to=fd_to,
     )
 
     return {
@@ -291,6 +300,7 @@ def pending_by_milestone_sla_history(
         "date_from": date_from,
         "date_to": date_to,
         "total_sites": data["total_sites"],
+        "blocked_sites": data["blocked_sites"],
         "milestones": data["milestones"],
     }
 
@@ -308,14 +318,13 @@ def drilldown_auto(
     user_id: str = Query(None, description="User ID for SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
+    filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
     """
     Drilldown into analytics charts — returns full gantt site data for the clicked bar.
-
-    - drilldown_type=pending_count&pending_count=3  → sites with exactly 3 pending milestones
-    - drilldown_type=milestone_key&milestone_key=leasing → sites where 'leasing' is pending
     """
     if drilldown_type not in ("pending_count", "milestone_key"):
         raise HTTPException(status_code=400, detail="drilldown_type must be 'pending_count' or 'milestone_key'")
@@ -324,11 +333,14 @@ def drilldown_auto(
     if drilldown_type == "milestone_key" and not milestone_key:
         raise HTTPException(status_code=400, detail="milestone_key is required for milestone_key drilldown")
 
+    fd_from = _parse_optional_date(filter_date_from, "filter_date_from")
+    fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
+
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
 
-    sites = drilldown_sites_auto(
+    sites, blocked = drilldown_sites_auto(
         db, config_db,
         drilldown_type=drilldown_type,
         pending_count=pending_count,
@@ -345,6 +357,8 @@ def drilldown_auto(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=fd_from,
+        filter_date_to=fd_to,
     )
 
     return {
@@ -352,6 +366,7 @@ def drilldown_auto(
         "pending_count": pending_count,
         "milestone_key": milestone_key,
         "count": len(sites),
+        "blocked_sites": blocked,
         "sites": sites,
     }
 
@@ -371,6 +386,8 @@ def drilldown_sla_history(
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
+    filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -393,10 +410,13 @@ def drilldown_sla_history(
     if df > dt:
         raise HTTPException(status_code=400, detail="date_from must be before date_to.")
 
+    fd_from = _parse_optional_date(filter_date_from, "filter_date_from")
+    fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
+
     skipped_keys = _get_skipped_keys(config_db)
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
 
-    sites = drilldown_sites_history(
+    sites, blocked = drilldown_sites_history(
         db, config_db,
         date_from=df,
         date_to=dt,
@@ -414,6 +434,8 @@ def drilldown_sla_history(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        filter_date_from=fd_from,
+        filter_date_to=fd_to,
     )
 
     return {
@@ -423,5 +445,6 @@ def drilldown_sla_history(
         "date_from": date_from,
         "date_to": date_to,
         "count": len(sites),
+        "blocked_sites": blocked,
         "sites": sites,
     }

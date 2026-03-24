@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { SiteGantt, DashboardSummary, FilterOptions, ChatAction } from "@/lib/types";
-import { getGanttCharts, getDashboardSummary, getAllFilters, getExportCsvUrl, getSlaHistoryGantt, getUserFilters, deleteUserFilters } from "@/lib/api";
+import { getGanttCharts, getDashboardSummary, getAllFilters, getExportCsvUrl, getExportCsvHistoryUrl, getSlaHistoryGantt, getUserFilters, deleteUserFilters } from "@/lib/api";
 import Sidebar, { SlaMode } from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import SummaryCards from "@/components/SummaryCards";
@@ -239,11 +239,35 @@ export default function Home() {
   }
 
   function handleExport() {
-    const url = getExportCsvUrl({
+    const commonFilters = {
       region: region || undefined,
       market: market || undefined,
       area: area || undefined,
+      site_id: siteIdFilter || undefined,
+      vendor: vendor || undefined,
       user_id: userId || undefined,
+      consider_vendor_capacity: considerVendorCapacity || undefined,
+      pace_constraint_flag: paceConstraintFlag || undefined,
+      status: statusFilter || undefined,
+    };
+    const url = getExportCsvUrl(commonFilters);
+    window.open(url, "_blank");
+  }
+
+  function handleExportHistory() {
+    if (!slaDateFrom || !slaDateTo) return;
+    const url = getExportCsvHistoryUrl({
+      date_from: slaDateFrom,
+      date_to: slaDateTo,
+      region: region || undefined,
+      market: market || undefined,
+      area: area || undefined,
+      site_id: siteIdFilter || undefined,
+      vendor: vendor || undefined,
+      user_id: userId || undefined,
+      consider_vendor_capacity: considerVendorCapacity || undefined,
+      pace_constraint_flag: paceConstraintFlag || undefined,
+      status: statusFilter || undefined,
     });
     window.open(url, "_blank");
   }
@@ -305,6 +329,8 @@ export default function Home() {
             onExpandAll={expandAll}
             onCollapseAll={collapseAll}
             onExport={handleExport}
+            onExportHistory={handleExportHistory}
+            showHistoryExport={slaMode === "history" && !!slaDateFrom && !!slaDateTo}
             timelineView={timelineView}
             onTimelineViewChange={setTimelineView}
           />

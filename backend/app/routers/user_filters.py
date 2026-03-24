@@ -25,10 +25,10 @@ router = APIRouter(
 
 @router.get("/{user_id}", response_model=UserFilterOut)
 def get_user_filters(user_id: str, db: Session = Depends(get_config_db)):
-    """Return saved filters for a user, or 404 if none exist."""
+    """Return saved filters for a user, or empty defaults if none exist."""
     row = db.query(UserFilter).filter(UserFilter.user_id == user_id).first()
     if not row:
-        raise HTTPException(status_code=404, detail=f"No filters found for user '{user_id}'")
+        return UserFilterOut(id=0, user_id=user_id)
     return row
 
 @router.delete("/{user_id}")

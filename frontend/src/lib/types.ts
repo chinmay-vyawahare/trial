@@ -41,6 +41,7 @@ export interface SiteGantt {
   milestone_status_summary: MilestoneStatusSummary;
   excluded_due_to_crew_shortage?: boolean;
   excluded_due_to_pace_constraint?: boolean;
+  exclude_reason?: string | null;
 }
 
 export interface GanttResponse {
@@ -317,6 +318,7 @@ export interface PendingMilestoneBucket {
 export interface PendingMilestonesResponse {
   sla_type: string;
   total_sites: number;
+  blocked_sites: number;
   pending_milestones: PendingMilestoneBucket[];
   date_from?: string;
   date_to?: string;
@@ -332,6 +334,7 @@ export interface MilestonePendingSites {
 export interface PendingByMilestoneResponse {
   sla_type: string;
   total_sites: number;
+  blocked_sites: number;
   milestones: MilestonePendingSites[];
   date_from?: string;
   date_to?: string;
@@ -342,6 +345,7 @@ export interface DrilldownResponse {
   pending_count: number | null;
   milestone_key: string | null;
   count: number;
+  blocked_sites: number;
   sites: SiteGantt[];
   date_from?: string;
   date_to?: string;

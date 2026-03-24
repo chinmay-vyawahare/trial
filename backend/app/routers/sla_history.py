@@ -127,9 +127,14 @@ def history_gantt_charts(
         user_id=user_id,
     )
 
-    # Post-filter by overall_status if requested
+    # Post-filter by overall_status or exclude_reason if requested
     if status:
-        sites = [s for s in sites if s.get("overall_status", "").upper() == status.upper()]
+        status_upper = status.upper()
+        sites = [
+            s for s in sites
+            if s.get("overall_status", "").upper() == status_upper
+            or (s.get("exclude_reason") or "").upper() == status_upper
+        ]
         count = len(sites)
 
     return {

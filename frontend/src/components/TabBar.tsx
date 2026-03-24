@@ -10,6 +10,8 @@ interface Props {
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onExport: () => void;
+  onExportHistory?: () => void;
+  showHistoryExport?: boolean;
   timelineView: TimelineView;
   onTimelineViewChange: (v: TimelineView) => void;
 }
@@ -39,6 +41,8 @@ export default function TabBar({
   onExpandAll,
   onCollapseAll,
   onExport,
+  onExportHistory,
+  showHistoryExport,
   timelineView,
   onTimelineViewChange,
 }: Props) {
@@ -106,6 +110,14 @@ export default function TabBar({
         >
           Export CSV
         </button>
+        {showHistoryExport && onExportHistory && (
+          <button
+            onClick={onExportHistory}
+            className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-purple-200 text-purple-600 bg-purple-50 hover:bg-purple-100"
+          >
+            Export SLA History CSV
+          </button>
+        )}
       </div>
     </div>
   );

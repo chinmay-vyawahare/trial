@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.prerequisite import UserFilter, MilestoneDefinition
 from app.services.gantt import get_all_sites_gantt
+from app.services.gantt.service import get_history_gantt
 from app.services.gantt.milestones import get_user_expected_days_overrides
 
 
@@ -111,7 +112,12 @@ def export_gantt_csv(
 
     # Post-filter by status if requested
     if status:
-        sites = [s for s in sites if (s.get("overall_status") or "").upper() == status.upper()]
+        status_upper = status.upper()
+        sites = [
+            s for s in sites
+            if (s.get("overall_status") or "").upper() == status_upper
+            or (s.get("exclude_reason") or "").upper() == status_upper
+        ]
 
     if not sites:
         # Return CSV with just headers
@@ -166,6 +172,10 @@ def _build_csv(sites: list[dict], milestone_names: list[str]) -> str:
         "On Track",
         "In Progress",
         "Delayed",
+        "Note",
+        "Exclude Reason",
+        "Delay Comments",
+        "Delay Code",
     ]
 
     # Per-milestone columns (8 columns per milestone)
@@ -208,6 +218,10 @@ def _build_csv(sites: list[dict], milestone_names: list[str]) -> str:
             summary.get("on_track", ""),
             summary.get("in_progress", ""),
             summary.get("delayed", ""),
+            site.get("note", "") or "",
+            site.get("exclude_reason", "") or "",
+            site.get("delay_comments", "") or "",
+            site.get("delay_code", "") or "",
         ]
 
         # Add all milestone fields
@@ -225,3 +239,81 @@ def _build_csv(sites: list[dict], milestone_names: list[str]) -> str:
         writer.writerow(row)
 
     return output.getvalue()
+
+
+def export_gantt_csv_history(
+    db: Session,
+    config_db: Session,
+    date_from,
+    date_to,
+    user_id: str | None = None,
+    region: str | None = None,
+    market: str | None = None,
+    site_id: str | None = None,
+    vendor: str | None = None,
+    area: str | None = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_flag: bool = False,
+    status: str | None = None,
+) -> str:
+    """
+    Build a CSV string of the gantt chart using SLA history-based expected_days.
+
+    Uses history-based expected_days computed from [date_from, date_to].
+    """
+    filters = {}
+    if user_id:
+        filters = _get_user_filters(config_db, user_id)
+
+    skipped_keys = _get_skipped_keys(config_db)
+
+    final_region = region or filters.get("region")
+    final_market = market or filters.get("market")
+    final_site_id = site_id or filters.get("site_id")
+    final_vendor = vendor or filters.get("vendor")
+    final_area = area or filters.get("area")
+
+    sites, total_count, count, _sla_last_updated = get_history_gantt(
+        db=db,
+        config_db=config_db,
+        date_from=date_from,
+        date_to=date_to,
+        region=final_region,
+        market=final_market,
+        site_id=final_site_id,
+        vendor=final_vendor,
+        area=final_area,
+        plan_type_include=filters.get("plan_type_include"),
+        regional_dev_initiatives=filters.get("regional_dev_initiatives"),
+        limit=None,
+        offset=None,
+        skipped_keys=skipped_keys,
+        consider_vendor_capacity=consider_vendor_capacity,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
+    )
+
+    # Post-filter by status if requested
+    if status:
+        status_upper = status.upper()
+        sites = [
+            s for s in sites
+            if (s.get("overall_status") or "").upper() == status_upper
+            or (s.get("exclude_reason") or "").upper() == status_upper
+        ]
+
+    if not sites:
+        return _build_csv([], [])
+
+    _VIRTUAL_KEYS = {"all_prereq", "cx_start_forecast"}
+    milestone_names = []
+    seen = set()
+    for site in sites:
+        for ms in site.get("milestones", []):
+            key = ms.get("key", "")
+            name = ms.get("name", "")
+            if name and name not in seen and key not in _VIRTUAL_KEYS:
+                milestone_names.append(name)
+                seen.add(name)
+
+    return _build_csv(sites, milestone_names)
