@@ -1,12 +1,12 @@
 """
-Constraint threshold CRUD APIs (count-based).
+Constraint threshold CRUD APIs (percentage-based).
 
 Two constraint_type values:
 
   "milestone" — site overall status from pending milestone count
-  "overall"   — dashboard status from on-track site count
+  "overall"   — dashboard status from on-track site percentage
 
-min_value / max_value define count ranges (integers).
+min_pct / max_pct define percentage ranges (floats).
 
 - GET    /constraints                          — list all thresholds
 - GET    /constraints/milestone                — list milestone-level thresholds only
@@ -82,12 +82,12 @@ def create_constraint(
     """
     if body.constraint_type not in ("milestone", "overall"):
         raise HTTPException(status_code=400, detail="constraint_type must be 'milestone' or 'overall'.")
-    if body.min_value < 0:
-        raise HTTPException(status_code=400, detail="min_value must be >= 0.")
-    if body.max_value is not None and body.max_value < 0:
-        raise HTTPException(status_code=400, detail="max_value must be >= 0.")
-    if body.max_value is not None and body.min_value > body.max_value:
-        raise HTTPException(status_code=400, detail="min_value cannot be greater than max_value.")
+    if body.min_pct < 0:
+        raise HTTPException(status_code=400, detail="min_pct must be >= 0.")
+    if body.max_pct is not None and body.max_pct < 0:
+        raise HTTPException(status_code=400, detail="max_pct must be >= 0.")
+    if body.max_pct is not None and body.min_pct > body.max_pct:
+        raise HTTPException(status_code=400, detail="min_pct cannot be greater than max_pct.")
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="name is required and cannot be empty.")
     if not body.color or not body.color.strip():
@@ -100,10 +100,10 @@ def create_constraint(
         .all()
     )
     for existing_row in same_type:
-        ex_min = existing_row.min_value
-        ex_max = existing_row.max_value
-        new_min = body.min_value
-        new_max = body.max_value
+        ex_min = existing_row.min_pct
+        ex_max = existing_row.max_pct
+        new_min = body.min_pct
+        new_max = body.max_pct
         # Check overlap: ranges overlap if new_min <= ex_max and new_max >= ex_min
         ex_upper = ex_max if ex_max is not None else float("inf")
         new_upper = new_max if new_max is not None else float("inf")
@@ -133,8 +133,8 @@ def create_constraint(
         name=body.name,
         status_label=body.status_label,
         color=body.color,
-        min_value=body.min_value,
-        max_value=body.max_value,
+        min_pct=body.min_pct,
+        max_pct=body.max_pct,
         sort_order=body.sort_order,
     )
     db.add(row)
@@ -157,14 +157,14 @@ def update_constraint(
     updates = body.model_dump(exclude_unset=True)
 
     # Validate fields
-    new_min = updates.get("min_value", row.min_value)
-    new_max = updates.get("max_value", row.max_value)
+    new_min = updates.get("min_pct", row.min_pct)
+    new_max = updates.get("max_pct", row.max_pct)
     if new_min is not None and new_min < 0:
-        raise HTTPException(status_code=400, detail="min_value must be >= 0.")
+        raise HTTPException(status_code=400, detail="min_pct must be >= 0.")
     if new_max is not None and new_max < 0:
-        raise HTTPException(status_code=400, detail="max_value must be >= 0.")
+        raise HTTPException(status_code=400, detail="max_pct must be >= 0.")
     if new_min is not None and new_max is not None and new_min > new_max:
-        raise HTTPException(status_code=400, detail="min_value cannot be greater than max_value.")
+        raise HTTPException(status_code=400, detail="min_pct cannot be greater than max_pct.")
 
     # Check for overlapping ranges (exclude self)
     same_type = (
@@ -176,8 +176,8 @@ def update_constraint(
         .all()
     )
     for existing_row in same_type:
-        ex_min = existing_row.min_value
-        ex_max = existing_row.max_value
+        ex_min = existing_row.min_pct
+        ex_max = existing_row.max_pct
         ex_upper = ex_max if ex_max is not None else float("inf")
         new_upper = new_max if new_max is not None else float("inf")
         if new_min <= ex_upper and new_upper >= ex_min:

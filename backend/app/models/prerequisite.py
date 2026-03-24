@@ -132,11 +132,11 @@ class ConstraintThreshold(ConfigBase):
       "milestone"  — site-level status derived from pending milestone count.
       "overall"    — dashboard-level status derived from on-track site percentage.
 
-    For "milestone": min_value/max_value = pending milestone count range.
-    For "overall": min_value/max_value = percentage range (0–100).
+    For "milestone": min_pct/max_pct = pending milestone count range.
+    For "overall": min_pct/max_pct = percentage range (0–100).
 
     status_label is the string returned in the API response.
-    max_value=null means no upper bound.
+    max_pct=null means no upper bound.
     """
     __tablename__ = "constraint_thresholds"
     __table_args__ = {"schema": _S}
@@ -146,8 +146,8 @@ class ConstraintThreshold(ConfigBase):
     name = Column(String(100), nullable=False)
     status_label = Column(String(50), nullable=False, default="")
     color = Column(String(20), nullable=False)
-    min_value = Column(Integer, nullable=False, default=0)    # lower bound (inclusive)
-    max_value = Column(Integer, nullable=True)                # upper bound (inclusive), null = unbounded
+    min_pct = Column(Float, nullable=False, default=0)    # lower bound (inclusive)
+    max_pct = Column(Float, nullable=True)                # upper bound (inclusive), null = unbounded
     sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

@@ -197,7 +197,7 @@ def get_milestone_thresholds(db: Session) -> list[dict]:
     Load milestone-level constraint thresholds (count-based) from DB.
 
     Used to determine site overall status from pending milestone count.
-    Each dict: {"status_label": str, "color": str, "min_value": int, "max_value": int|None}
+    Each dict: {"status_label": str, "color": str, "min_pct": float, "max_pct": float|None}
     """
     rows = (
         db.query(ConstraintThreshold)
@@ -209,8 +209,8 @@ def get_milestone_thresholds(db: Session) -> list[dict]:
         {
             "status_label": r.status_label,
             "color": r.color,
-            "min_value": r.min_value,
-            "max_value": r.max_value,
+            "min_pct": r.min_pct,
+            "max_pct": r.max_pct,
         }
         for r in rows
     ]
@@ -221,7 +221,7 @@ def get_overall_thresholds(db: Session) -> list[dict]:
     Load dashboard-level constraint thresholds (count-based) from DB.
 
     Used to determine dashboard overall status from on-track site count.
-    Each dict: {"status_label": str, "color": str, "min_value": int, "max_value": int|None}
+    Each dict: {"status_label": str, "color": str, "min_pct": float, "max_pct": float|None}
     """
     rows = (
         db.query(ConstraintThreshold)
@@ -233,8 +233,8 @@ def get_overall_thresholds(db: Session) -> list[dict]:
         {
             "status_label": r.status_label,
             "color": r.color,
-            "min_value": r.min_value,
-            "max_value": r.max_value,
+            "min_pct": r.min_pct,
+            "max_pct": r.max_pct,
         }
         for r in rows
     ]

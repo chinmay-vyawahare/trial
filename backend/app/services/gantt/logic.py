@@ -15,11 +15,11 @@ from .milestones import (
 def _match_count_threshold(count: int, thresholds: List[Dict]) -> tuple[str, str]:
     """
     Walk *thresholds* in sort_order and return (status_label, color) for the
-    first range that contains *count*.  max_value=None means unbounded above.
+    first range that contains *count*.  max_pct=None means unbounded above.
     """
     for t in thresholds:
-        lo = t["min_value"]
-        hi = t["max_value"]
+        lo = t["min_pct"]
+        hi = t["max_pct"]
         if count >= lo and (hi is None or count <= hi):
             return t["status_label"], t["color"]
     return "IN PROGRESS", "orange"  # fallback
