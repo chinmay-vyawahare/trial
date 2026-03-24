@@ -93,8 +93,8 @@ class ConstraintThresholdSchema(BaseModel):
     name: str
     status_label: str
     color: str
-    min_pct: float = 0
-    max_pct: Optional[float] = None
+    min_value: int = 0
+    max_value: Optional[int] = None
     sort_order: int = 0
 
 
@@ -104,8 +104,8 @@ class ConstraintThresholdCreate(BaseModel):
     name: str
     status_label: str
     color: str
-    min_pct: float = 0          # percentage lower bound (inclusive)
-    max_pct: Optional[float] = None  # percentage upper bound (inclusive), null = 100
+    min_value: int = 0          # lower bound (inclusive)
+    max_value: Optional[int] = None  # upper bound (inclusive), null = unbounded
     sort_order: int = 0
 
 
@@ -113,8 +113,8 @@ class ConstraintThresholdUpdate(BaseModel):
     name: Optional[str] = None
     status_label: Optional[str] = None
     color: Optional[str] = None
-    min_pct: Optional[float] = None
-    max_pct: Optional[float] = None
+    min_value: Optional[int] = None
+    max_value: Optional[int] = None
     sort_order: Optional[int] = None
 
 

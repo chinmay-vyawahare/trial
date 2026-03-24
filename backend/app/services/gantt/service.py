@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from .queries import build_gantt_query
-from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, is_site_blocked
+from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_count_threshold, is_site_blocked
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides
 from .utils import parse_date
 
@@ -578,7 +578,7 @@ def get_dashboard_summary(
 
     overall_thresholds = get_overall_thresholds(config_db)
     if overall_thresholds:
-        dashboard_status, _ = _match_pct_threshold(on_track_pct, overall_thresholds)
+        dashboard_status, _ = _match_count_threshold(on_track, overall_thresholds)
     elif on_track_pct >= 60:
         dashboard_status = "ON TRACK"
     elif on_track_pct >= 30:

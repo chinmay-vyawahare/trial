@@ -6,6 +6,7 @@ import {
   ConstraintThreshold,
   UserExpectedDaysEntry,
   ConstraintThresholdCreate,
+  ConstraintThresholdUpdate,
   MilestoneDefinitionCreate,
   MilestoneColumnCreate,
   GcCapacityEntry,
@@ -16,6 +17,7 @@ import {
   getConstraints,
   createConstraint,
   deleteConstraint,
+  updateConstraint,
   createPrerequisite,
   updatePrerequisite,
   adminGetSkippedPrerequisites,
@@ -560,13 +562,16 @@ function ConstraintsAdmin() {
   const [constraints, setConstraints] = useState<ConstraintThreshold[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<ConstraintThresholdUpdate>({});
+  const [editError, setEditError] = useState<string | null>(null);
   const [form, setForm] = useState<ConstraintThresholdCreate>({
     constraint_type: "milestone",
     name: "",
     status_label: "",
     color: "#22c55e",
-    min_pct: 0,
-    max_pct: null,
+    min_value: 0,
+    max_value: null,
     sort_order: 0,
   });
 
@@ -584,11 +589,37 @@ function ConstraintsAdmin() {
     try {
       await createConstraint(form);
       setShowCreate(false);
-      setForm({ constraint_type: "milestone", name: "", status_label: "", color: "#22c55e", min_pct: 0, max_pct: null, sort_order: 0 });
+      setForm({ constraint_type: "milestone", name: "", status_label: "", color: "#22c55e", min_value: 0, max_value: null, sort_order: 0 });
       loadData();
     } catch (e) {
       console.error("Failed to create:", e);
     }
+  }
+
+  function startEdit(c: ConstraintThreshold) {
+    setEditId(c.id);
+    setEditForm({ name: c.name, status_label: c.status_label, color: c.color, min_value: c.min_value, max_value: c.max_value, sort_order: c.sort_order });
+    setEditError(null);
+  }
+
+  async function handleSaveEdit() {
+    if (editId === null) return;
+    setEditError(null);
+    try {
+      await updateConstraint(editId, editForm);
+      setEditId(null);
+      setEditForm({});
+      loadData();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to update";
+      setEditError(msg);
+    }
+  }
+
+  function cancelEdit() {
+    setEditId(null);
+    setEditForm({});
+    setEditError(null);
   }
 
   async function handleDelete(id: number) {
@@ -639,14 +670,14 @@ function ConstraintsAdmin() {
                 className="w-full h-8 rounded-lg border border-gray-200 cursor-pointer" />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Min %</label>
-              <input type="number" value={form.min_pct} onChange={(e) => setForm({ ...form, min_pct: Number(e.target.value) })}
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Min Count</label>
+              <input type="number" value={form.min_value} onChange={(e) => setForm({ ...form, min_value: Number(e.target.value) })}
                 className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg" />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Max %</label>
-              <input type="number" value={form.max_pct ?? ""} onChange={(e) => setForm({ ...form, max_pct: e.target.value ? Number(e.target.value) : null })}
-                placeholder="null = 100"
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Max Count</label>
+              <input type="number" value={form.max_value ?? ""} onChange={(e) => setForm({ ...form, max_value: e.target.value ? Number(e.target.value) : null })}
+                placeholder="null = unbounded"
                 className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg" />
             </div>
             <div>
@@ -664,6 +695,12 @@ function ConstraintsAdmin() {
         </div>
       )}
 
+      {editError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2">
+          {editError}
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
@@ -672,26 +709,87 @@ function ConstraintsAdmin() {
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Type</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Label</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Range</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Min Count</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Max Count</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Order</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody>
             {constraints.map((c) => (
               <tr key={c.id} className="border-b border-gray-50 hover:bg-blue-50 transition-colors">
-                <td className="px-3 py-2">
-                  <div className="w-5 h-5 rounded-full" style={{ backgroundColor: c.color }} />
-                </td>
-                <td className="px-3 py-2 text-xs text-gray-600">{c.constraint_type}</td>
-                <td className="px-3 py-2 font-medium text-gray-800">{c.name}</td>
-                <td className="px-3 py-2 text-gray-600">{c.status_label}</td>
-                <td className="px-3 py-2 text-xs text-gray-500">{c.min_pct}%{c.max_pct !== null ? ` - ${c.max_pct}%` : "+"}</td>
-                <td className="px-3 py-2">
-                  <button onClick={() => handleDelete(c.id)}
-                    className="px-2 py-1 text-[10px] font-medium rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">
-                    Delete
-                  </button>
-                </td>
+                {editId === c.id ? (
+                  <>
+                    <td className="px-3 py-2">
+                      <input type="color" value={editForm.color ?? c.color}
+                        onChange={(e) => setEditForm({ ...editForm, color: e.target.value })}
+                        className="w-8 h-8 rounded border border-gray-200 cursor-pointer" />
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-600">{c.constraint_type}</td>
+                    <td className="px-3 py-2">
+                      <input value={editForm.name ?? c.name}
+                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input value={editForm.status_label ?? c.status_label}
+                        onChange={(e) => setEditForm({ ...editForm, status_label: e.target.value })}
+                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="number" value={editForm.min_value ?? c.min_value}
+                        onChange={(e) => setEditForm({ ...editForm, min_value: Number(e.target.value) })}
+                        className="w-20 px-2 py-1 text-xs border border-gray-200 rounded" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="number" value={editForm.max_value ?? c.max_value ?? ""}
+                        onChange={(e) => setEditForm({ ...editForm, max_value: e.target.value ? Number(e.target.value) : null })}
+                        placeholder="unbounded"
+                        className="w-20 px-2 py-1 text-xs border border-gray-200 rounded" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="number" value={editForm.sort_order ?? c.sort_order}
+                        onChange={(e) => setEditForm({ ...editForm, sort_order: Number(e.target.value) })}
+                        className="w-16 px-2 py-1 text-xs border border-gray-200 rounded" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1">
+                        <button onClick={handleSaveEdit}
+                          className="px-2 py-1 text-[10px] font-medium rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200">
+                          Save
+                        </button>
+                        <button onClick={cancelEdit}
+                          className="px-2 py-1 text-[10px] font-medium rounded bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200">
+                          Cancel
+                        </button>
+                      </div>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="px-3 py-2">
+                      <div className="w-5 h-5 rounded-full" style={{ backgroundColor: c.color }} />
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-600">{c.constraint_type}</td>
+                    <td className="px-3 py-2 font-medium text-gray-800">{c.name}</td>
+                    <td className="px-3 py-2 text-gray-600">{c.status_label}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{c.min_value}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{c.max_value !== null ? c.max_value : "∞"}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{c.sort_order}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1">
+                        <button onClick={() => startEdit(c)}
+                          className="px-2 py-1 text-[10px] font-medium rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200">
+                          Edit
+                        </button>
+                        <button onClick={() => handleDelete(c.id)}
+                          className="px-2 py-1 text-[10px] font-medium rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>

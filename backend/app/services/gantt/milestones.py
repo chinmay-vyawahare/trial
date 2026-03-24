@@ -194,10 +194,10 @@ def get_all_actual_columns(milestones: list[dict]) -> list[str]:
 
 def get_milestone_thresholds(db: Session) -> list[dict]:
     """
-    Load milestone-level constraint thresholds (percentage-based) from DB.
+    Load milestone-level constraint thresholds (count-based) from DB.
 
-    Used to determine site overall status from % of on-track milestones.
-    Each dict: {"status_label": str, "color": str, "min_pct": float, "max_pct": float|None}
+    Used to determine site overall status from pending milestone count.
+    Each dict: {"status_label": str, "color": str, "min_value": int, "max_value": int|None}
     """
     rows = (
         db.query(ConstraintThreshold)
@@ -209,8 +209,8 @@ def get_milestone_thresholds(db: Session) -> list[dict]:
         {
             "status_label": r.status_label,
             "color": r.color,
-            "min_pct": r.min_pct,
-            "max_pct": r.max_pct,
+            "min_value": r.min_value,
+            "max_value": r.max_value,
         }
         for r in rows
     ]
@@ -218,10 +218,10 @@ def get_milestone_thresholds(db: Session) -> list[dict]:
 
 def get_overall_thresholds(db: Session) -> list[dict]:
     """
-    Load dashboard-level constraint thresholds (percentage-based) from DB.
+    Load dashboard-level constraint thresholds (count-based) from DB.
 
-    Used to determine dashboard overall status from % of on-track sites.
-    Each dict: {"status_label": str, "color": str, "min_pct": float, "max_pct": float|None}
+    Used to determine dashboard overall status from on-track site count.
+    Each dict: {"status_label": str, "color": str, "min_value": int, "max_value": int|None}
     """
     rows = (
         db.query(ConstraintThreshold)
@@ -233,8 +233,8 @@ def get_overall_thresholds(db: Session) -> list[dict]:
         {
             "status_label": r.status_label,
             "color": r.color,
-            "min_pct": r.min_pct,
-            "max_pct": r.max_pct,
+            "min_value": r.min_value,
+            "max_value": r.max_value,
         }
         for r in rows
     ]

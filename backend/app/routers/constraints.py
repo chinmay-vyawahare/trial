@@ -1,12 +1,12 @@
 """
-Constraint threshold CRUD APIs (percentage-based).
+Constraint threshold CRUD APIs (count-based).
 
 Two constraint_type values:
 
-  "milestone" — site overall status from % of on-track milestones
-  "overall"   — dashboard status from % of on-track sites
+  "milestone" — site overall status from pending milestone count
+  "overall"   — dashboard status from on-track site count
 
-min_pct / max_pct define percentage ranges (0–100).
+min_value / max_value define count ranges (integers).
 
 - GET    /constraints                          — list all thresholds
 - GET    /constraints/milestone                — list milestone-level thresholds only
@@ -82,16 +82,36 @@ def create_constraint(
     """
     if body.constraint_type not in ("milestone", "overall"):
         raise HTTPException(status_code=400, detail="constraint_type must be 'milestone' or 'overall'.")
-    if body.min_pct < 0 or body.min_pct > 100:
-        raise HTTPException(status_code=400, detail="min_pct must be between 0 and 100.")
-    if body.max_pct is not None and (body.max_pct < 0 or body.max_pct > 100):
-        raise HTTPException(status_code=400, detail="max_pct must be between 0 and 100.")
-    if body.max_pct is not None and body.min_pct > body.max_pct:
-        raise HTTPException(status_code=400, detail="min_pct cannot be greater than max_pct.")
+    if body.min_value < 0:
+        raise HTTPException(status_code=400, detail="min_value must be >= 0.")
+    if body.max_value is not None and body.max_value < 0:
+        raise HTTPException(status_code=400, detail="max_value must be >= 0.")
+    if body.max_value is not None and body.min_value > body.max_value:
+        raise HTTPException(status_code=400, detail="min_value cannot be greater than max_value.")
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="name is required and cannot be empty.")
     if not body.color or not body.color.strip():
         raise HTTPException(status_code=400, detail="color is required and cannot be empty.")
+
+    # Check for overlapping ranges within the same constraint_type
+    same_type = (
+        db.query(ConstraintThreshold)
+        .filter(ConstraintThreshold.constraint_type == body.constraint_type)
+        .all()
+    )
+    for existing_row in same_type:
+        ex_min = existing_row.min_value
+        ex_max = existing_row.max_value
+        new_min = body.min_value
+        new_max = body.max_value
+        # Check overlap: ranges overlap if new_min <= ex_max and new_max >= ex_min
+        ex_upper = ex_max if ex_max is not None else float("inf")
+        new_upper = new_max if new_max is not None else float("inf")
+        if new_min <= ex_upper and new_upper >= ex_min:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Range {new_min}-{new_max} overlaps with existing constraint '{existing_row.name}' ({ex_min}-{ex_max}).",
+            )
 
     # Prevent duplicate (same constraint_type + name)
     existing = (
@@ -113,8 +133,8 @@ def create_constraint(
         name=body.name,
         status_label=body.status_label,
         color=body.color,
-        min_pct=body.min_pct,
-        max_pct=body.max_pct,
+        min_value=body.min_value,
+        max_value=body.max_value,
         sort_order=body.sort_order,
     )
     db.add(row)
@@ -136,15 +156,35 @@ def update_constraint(
 
     updates = body.model_dump(exclude_unset=True)
 
-    # Validate percentage fields if provided
-    new_min = updates.get("min_pct", row.min_pct)
-    new_max = updates.get("max_pct", row.max_pct)
-    if new_min is not None and (new_min < 0 or new_min > 100):
-        raise HTTPException(status_code=400, detail="min_pct must be between 0 and 100.")
-    if new_max is not None and (new_max < 0 or new_max > 100):
-        raise HTTPException(status_code=400, detail="max_pct must be between 0 and 100.")
+    # Validate fields
+    new_min = updates.get("min_value", row.min_value)
+    new_max = updates.get("max_value", row.max_value)
+    if new_min is not None and new_min < 0:
+        raise HTTPException(status_code=400, detail="min_value must be >= 0.")
+    if new_max is not None and new_max < 0:
+        raise HTTPException(status_code=400, detail="max_value must be >= 0.")
     if new_min is not None and new_max is not None and new_min > new_max:
-        raise HTTPException(status_code=400, detail="min_pct cannot be greater than max_pct.")
+        raise HTTPException(status_code=400, detail="min_value cannot be greater than max_value.")
+
+    # Check for overlapping ranges (exclude self)
+    same_type = (
+        db.query(ConstraintThreshold)
+        .filter(
+            ConstraintThreshold.constraint_type == row.constraint_type,
+            ConstraintThreshold.id != constraint_id,
+        )
+        .all()
+    )
+    for existing_row in same_type:
+        ex_min = existing_row.min_value
+        ex_max = existing_row.max_value
+        ex_upper = ex_max if ex_max is not None else float("inf")
+        new_upper = new_max if new_max is not None else float("inf")
+        if new_min <= ex_upper and new_upper >= ex_min:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Range {new_min}-{new_max} overlaps with existing constraint '{existing_row.name}' ({ex_min}-{ex_max}).",
+            )
 
     for field, value in updates.items():
         setattr(row, field, value)

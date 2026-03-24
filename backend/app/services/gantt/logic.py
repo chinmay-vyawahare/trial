@@ -9,18 +9,18 @@ from .milestones import (
 
 
 # ----------------------------------------------------------------
-# Threshold helpers (percentage-based)
+# Threshold helpers (count-based)
 # ----------------------------------------------------------------
 
-def _match_pct_threshold(pct: float, thresholds: List[Dict]) -> tuple[str, str]:
+def _match_count_threshold(count: int, thresholds: List[Dict]) -> tuple[str, str]:
     """
     Walk *thresholds* in sort_order and return (status_label, color) for the
-    first range that contains *pct*.  max_pct=None means unbounded above (100%).
+    first range that contains *count*.  max_value=None means unbounded above.
     """
     for t in thresholds:
-        lo = t["min_pct"]
-        hi = t["max_pct"]
-        if pct >= lo and (hi is None or pct <= hi):
+        lo = t["min_value"]
+        hi = t["max_value"]
+        if count >= lo and (hi is None or count <= hi):
             return t["status_label"], t["color"]
     return "IN PROGRESS", "orange"  # fallback
 
@@ -66,23 +66,22 @@ def compute_overall_status(
     milestone_thresholds: List[Dict] | None = None,
 ) -> str:
     """
-    Determine site-level overall status from the percentage of on-track milestones.
+    Determine site-level overall status from the on-track milestone count.
 
-    Computes on_track_pct = (on_track_count / total_count) * 100 and matches
-    it against DB-driven *milestone_thresholds* (percentage ranges).
+    Matches on_track_count against DB-driven *milestone_thresholds* (count ranges).
+    Higher on-track count = better status.
 
     Falls back to hardcoded brackets if no thresholds are available.
     """
     if total_count == 0:
         return "ON TRACK"
 
-    on_track_pct = (on_track_count / total_count) * 100
-
     if milestone_thresholds:
-        label, _ = _match_pct_threshold(on_track_pct, milestone_thresholds)
+        label, _ = _match_count_threshold(on_track_count, milestone_thresholds)
         return label
 
     # fallback
+    on_track_pct = (on_track_count / total_count) * 100
     if on_track_pct >= 60:
         return "ON TRACK"
     elif on_track_pct >= 30:

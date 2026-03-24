@@ -31,7 +31,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 async function fetchAPI<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: "no-store", ...init });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    let detail = `API error: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch { /* ignore parse errors */ }
+    throw new Error(detail);
+  }
   return res.json();
 }
 
@@ -207,7 +214,14 @@ export async function getPrerequisites(): Promise<PrerequisiteDefinition[]> {
 
 export async function getPrerequisiteFlowchart(): Promise<string> {
   const res = await fetch(`${API_BASE}/api/v1/schedular/prerequisites/flowchart`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    let detail = `API error: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch { /* ignore parse errors */ }
+    throw new Error(detail);
+  }
   return res.text();
 }
 

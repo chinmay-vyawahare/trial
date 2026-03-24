@@ -104,8 +104,8 @@ export interface ConstraintThreshold {
   name: string;
   status_label: string;
   color: string;
-  min_pct: number;
-  max_pct: number | null;
+  min_value: number;
+  max_value: number | null;
   sort_order: number;
 }
 
@@ -168,8 +168,8 @@ export interface ConstraintThresholdCreate {
   name: string;
   status_label: string;
   color: string;
-  min_pct: number;
-  max_pct?: number | null;
+  min_value: number;
+  max_value?: number | null;
   sort_order?: number;
 }
 
@@ -177,8 +177,8 @@ export interface ConstraintThresholdUpdate {
   name?: string;
   status_label?: string;
   color?: string;
-  min_pct?: number;
-  max_pct?: number | null;
+  min_value?: number;
+  max_value?: number | null;
   sort_order?: number;
 }
 

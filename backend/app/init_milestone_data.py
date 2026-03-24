@@ -308,18 +308,19 @@ SEED_GANTT_CONFIG = [
 #   Out of all sites, compute the on_track_sites percentage.
 #   Checked in sort_order; first matching range wins.
 #
-# min_pct / max_pct define the percentage range (0–100).
-# max_pct = None means no upper bound (treated as 100).
+# min_value / max_value define count ranges (integers).
+# For "milestone": on-track milestone count. For "overall": on-track site count.
+# max_value = None means no upper bound.
 # ----------------------------------------------------------------
 SEED_CONSTRAINT_THRESHOLDS = [
-    # --- milestone-level: site overall status from % on-track milestones ---
+    # --- milestone-level: site overall status from on-track milestone count ---
     {
         "constraint_type": "milestone",
         "name": "On Track",
         "status_label": "ON TRACK",
         "color": "green",
-        "min_pct": 60,
-        "max_pct": None,       # 60–100%
+        "min_value": 9,
+        "max_value": None,     # 9+ on-track milestones
         "sort_order": 1,
     },
     {
@@ -327,8 +328,8 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "name": "In Progress",
         "status_label": "IN PROGRESS",
         "color": "orange",
-        "min_pct": 30,
-        "max_pct": 59.99,      # 30–59.99%
+        "min_value": 4,
+        "max_value": 8,        # 4–8 on-track milestones
         "sort_order": 2,
     },
     {
@@ -336,18 +337,18 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "name": "Critical",
         "status_label": "CRITICAL",
         "color": "red",
-        "min_pct": 0,
-        "max_pct": 29.99,      # 0–29.99%
+        "min_value": 0,
+        "max_value": 3,        # 0–3 on-track milestones
         "sort_order": 3,
     },
-    # --- overall: dashboard status from % of on-track sites ---
+    # --- overall: dashboard status from on-track site count ---
     {
         "constraint_type": "overall",
         "name": "On Track",
         "status_label": "ON TRACK",
         "color": "green",
-        "min_pct": 60,
-        "max_pct": None,       # 60–100%
+        "min_value": 10,
+        "max_value": None,     # 10+ on-track sites
         "sort_order": 1,
     },
     {
@@ -355,8 +356,8 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "name": "In Progress",
         "status_label": "IN PROGRESS",
         "color": "orange",
-        "min_pct": 30,
-        "max_pct": 59.99,      # 30–59.99%
+        "min_value": 5,
+        "max_value": 9,        # 5–9 on-track sites
         "sort_order": 2,
     },
     {
@@ -364,8 +365,8 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "name": "Critical",
         "status_label": "CRITICAL",
         "color": "red",
-        "min_pct": 0,
-        "max_pct": 29.99,      # 0–29.99%
+        "min_value": 0,
+        "max_value": 4,        # 0–4 on-track sites
         "sort_order": 3,
     },
 ]
@@ -384,6 +385,25 @@ def _ensure_columns(engine):
                 f"ALTER TABLE {_schema}.milestone_definitions ADD COLUMN history_expected_days INTEGER"
             ))
             logger.info("Added history_expected_days column to milestone_definitions.")
+
+    # Migrate constraint_thresholds: rename min_pct/max_pct → min_value/max_value
+    ct_cols = {c["name"] for c in inspector.get_columns("constraint_thresholds", schema=_schema)}
+    with engine.begin() as conn:
+        if "min_pct" in ct_cols and "min_value" not in ct_cols:
+            conn.execute(text(
+                f"ALTER TABLE {_schema}.constraint_thresholds RENAME COLUMN min_pct TO min_value"
+            ))
+            conn.execute(text(
+                f"ALTER TABLE {_schema}.constraint_thresholds RENAME COLUMN max_pct TO max_value"
+            ))
+            # Convert percentage values to integer counts
+            conn.execute(text(
+                f"ALTER TABLE {_schema}.constraint_thresholds ALTER COLUMN min_value TYPE INTEGER USING min_value::INTEGER"
+            ))
+            conn.execute(text(
+                f"ALTER TABLE {_schema}.constraint_thresholds ALTER COLUMN max_value TYPE INTEGER USING max_value::INTEGER"
+            ))
+            logger.info("Migrated constraint_thresholds from percentage to count-based (min_value/max_value).")
 
 
 def init_milestone_data():
