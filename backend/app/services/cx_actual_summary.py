@@ -3,7 +3,7 @@ CX Actual Construction Summary service.
 
 Queries sites where pj_a_4225_construction_start_finish IS NOT NULL
 (actual construction has started). Defaults to current-month-start .. today.
-Groups results by ISO week/year.
+Groups results by day.
 """
 
 from collections import defaultdict
@@ -69,7 +69,7 @@ def _build_where(
     return " AND ".join(clauses), params
 
 
-def get_cx_actual_weekly_summary(
+def get_cx_actual_daily_summary(
     db: Session,
     *,
     region: str | None = None,
@@ -81,9 +81,9 @@ def get_cx_actual_weekly_summary(
     regional_dev_initiatives: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], str, str]:
     """
-    Return week-wise site counts grouped by ISO week/year
+    Return day-wise site counts grouped by date
     based on pj_a_4225_construction_start_finish (actual construction start).
     """
     # Default range: 1st of current month → today
@@ -118,8 +118,8 @@ def get_cx_actual_weekly_summary(
 
     rows = db.execute(query, params).fetchall()
 
-    # Group by ISO week
-    weekly: dict[tuple[int, int], list[dict]] = defaultdict(list)
+    # Group by date
+    daily: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         raw_date = row.pj_a_4225_construction_start_finish
         if not raw_date:
@@ -129,9 +129,8 @@ def get_cx_actual_weekly_summary(
         except (ValueError, TypeError):
             continue
 
-        iso = cx_date.isocalendar()
-        key = (iso.year, iso.week)
-        weekly[key].append({
+        day_key = str(cx_date)
+        daily[day_key].append({
             "site_id": row.s_site_id,
             "project_id": row.pj_project_id,
             "project_name": row.pj_project_name,
@@ -139,19 +138,14 @@ def get_cx_actual_weekly_summary(
             "market": row.m_market,
             "area": row.m_area,
             "vendor": row.construction_gc,
-            "cx_actual_date": str(cx_date),
+            "cx_actual_date": day_key,
         })
 
-    # Sort by year, week
+    # Sort by date
     result = []
-    for (year, week), sites in sorted(weekly.items()):
-        week_start = date.fromisocalendar(year, week, 1)
-        week_end = date.fromisocalendar(year, week, 7)
+    for day, sites in sorted(daily.items()):
         result.append({
-            "week": week,
-            "year": year,
-            "week_start": str(week_start),
-            "week_end": str(week_end),
+            "date": day,
             "total": len(sites),
             "sites": sites,
         })

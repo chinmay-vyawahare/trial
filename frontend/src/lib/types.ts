@@ -401,21 +401,18 @@ export interface CxActualSite {
   cx_actual_date: string;
 }
 
-export interface CxActualWeek {
-  week: number;
-  year: number;
-  week_start: string;
-  week_end: string;
+export interface CxActualDay {
+  date: string;
   total: number;
   sites: CxActualSite[];
 }
 
 export interface CxActualSummaryResponse {
   total_sites: number;
-  total_weeks: number;
+  total_days: number;
   start_date: string;
   end_date: string;
-  weeks: CxActualWeek[];
+  days: CxActualDay[];
 }
 
 export interface SlaHistoryGanttResponse {

@@ -1,7 +1,7 @@
 """
 CX Actual Construction Summary router.
 
-GET /api/v1/schedular/cx-actual-summary  — week-wise site counts based on
+GET /api/v1/schedular/cx-actual-summary  — day-wise site counts based on
     pj_a_4225_construction_start_finish (actual construction start date).
     Defaults to current month start → today.
 """
@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db, get_config_db
 from app.models.prerequisite import UserFilter
-from app.services.cx_actual_summary import get_cx_actual_weekly_summary
+from app.services.cx_actual_summary import get_cx_actual_daily_summary
 
 router = APIRouter(
     prefix="/api/v1/schedular/cx-actual-summary",
@@ -36,7 +36,7 @@ def _get_gate_checks(config_db: Session, user_id: str | None):
 
 
 @router.get("")
-def cx_actual_weekly_summary(
+def cx_actual_daily_summary(
     start_date: str = Query(None, description="Start date (YYYY-MM-DD) — defaults to 1st of current month"),
     end_date: str = Query(None, description="End date (YYYY-MM-DD) — defaults to today"),
     region: str = Query(None, description="Filter by region"),
@@ -49,7 +49,7 @@ def cx_actual_weekly_summary(
     config_db: Session = Depends(get_config_db),
 ):
     """
-    Week-wise site summary based on actual construction start date
+    Day-wise site summary based on actual construction start date
     (pj_a_4225_construction_start_finish IS NOT NULL).
 
     Default range: 1st of current month → today.
@@ -57,7 +57,7 @@ def cx_actual_weekly_summary(
     """
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
 
-    weeks, applied_start, applied_end = get_cx_actual_weekly_summary(
+    days, applied_start, applied_end = get_cx_actual_daily_summary(
         db,
         region=region,
         market=market,
@@ -71,9 +71,9 @@ def cx_actual_weekly_summary(
     )
 
     return {
-        "total_sites": sum(w["total"] for w in weeks),
-        "total_weeks": len(weeks),
+        "total_sites": sum(d["total"] for d in days),
+        "total_days": len(days),
         "start_date": applied_start,
         "end_date": applied_end,
-        "weeks": weeks,
+        "days": days,
     }
