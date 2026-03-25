@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { PrerequisiteDefinition, UserExpectedDaysEntry, UserHistoryExpectedDaysEntry } from "@/lib/types";
-import { getPrerequisites, getUserExpectedDays, setUserExpectedDays, getUserHistoryExpectedDays, resetSlaHistory } from "@/lib/api";
+import { getPrerequisites, getUserExpectedDays, setUserExpectedDays, deleteUserExpectedDays, getUserHistoryExpectedDays, resetSlaHistory } from "@/lib/api";
 
 interface Props {
   userId: string;
@@ -17,6 +17,7 @@ export default function UserExpectedDays({ userId }: Props) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editDays, setEditDays] = useState(0);
   const [resetting, setResetting] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const overrideMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -87,6 +88,20 @@ export default function UserExpectedDays({ userId }: Props) {
       console.error("Failed to save:", e);
     } finally {
       setSaving(null);
+    }
+  }
+
+  async function handleDelete(key: string) {
+    if (!userId) return;
+    if (!confirm(`Remove your override for "${key}"?`)) return;
+    setDeleting(key);
+    try {
+      await deleteUserExpectedDays(userId, key);
+      await loadOverrides();
+    } catch (e) {
+      console.error("Failed to delete:", e);
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -252,12 +267,23 @@ export default function UserExpectedDays({ userId }: Props) {
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => startEdit(p)}
-                            className="px-2 py-1 text-[10px] font-medium rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
-                          >
-                            Edit
-                          </button>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => startEdit(p)}
+                              className="px-2 py-1 text-[10px] font-medium rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+                            >
+                              Edit
+                            </button>
+                            {hasOverride && (
+                              <button
+                                onClick={() => handleDelete(p.key)}
+                                disabled={deleting === p.key}
+                                className="px-2 py-1 text-[10px] font-medium rounded bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 disabled:opacity-50"
+                              >
+                                {deleting === p.key ? "..." : "Delete"}
+                              </button>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>

@@ -281,6 +281,12 @@ export async function setUserExpectedDays(userId: string, body: {
   });
 }
 
+export async function deleteUserExpectedDays(userId: string, milestoneKey: string): Promise<{ detail: string }> {
+  return fetchAPI<{ detail: string }>(`/api/v1/schedular/user-expected-days/${userId}/${milestoneKey}`, {
+    method: "DELETE",
+  });
+}
+
 /* ── Skip Prerequisites (user-level) ─────────────────────────────── */
 
 export async function skipPrerequisite(body: { user_id: string; milestone_key: string }): Promise<SkippedPrerequisite> {

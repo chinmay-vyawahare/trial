@@ -7,6 +7,7 @@ of the global MilestoneDefinition.expected_days.
 
 - PUT    /user-expected-days/{user_id}                          — set/update expected_days for a milestone
 - GET    /user-expected-days/{user_id}                          — list all overrides for a user
+- DELETE /user-expected-days/{user_id}/{milestone_key}          — delete a single override
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -84,5 +85,30 @@ def list_expected_days(user_id: str, db: Session = Depends(get_config_db)):
         .filter(UserExpectedDays.user_id == user_id)
         .all()
     )
+
+
+@router.delete("/{user_id}/{milestone_key}")
+def delete_expected_days(
+    user_id: str,
+    milestone_key: str,
+    db: Session = Depends(get_config_db),
+):
+    """Delete a single expected_days override for a user and milestone."""
+    row = (
+        db.query(UserExpectedDays)
+        .filter(
+            UserExpectedDays.user_id == user_id,
+            UserExpectedDays.milestone_key == milestone_key,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No override found for user '{user_id}' and milestone '{milestone_key}'",
+        )
+    db.delete(row)
+    db.commit()
+    return {"detail": "Override deleted"}
 
 
