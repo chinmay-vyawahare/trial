@@ -22,6 +22,8 @@ const tabs = [
   { key: "expected-days", label: "Expected Days" },
   { key: "pace-constraints", label: "Pace Constraints" },
   { key: "analytics", label: "Analytics" },
+  { key: "cx-forecast", label: "CX Forecast" },
+  { key: "cx-actual", label: "CX Actual" },
   { key: "admin", label: "Admin" },
 ];
 

@@ -360,6 +360,64 @@ export interface DrilldownResponse {
   date_to?: string;
 }
 
+/* ── CX Forecast Summary ─────────────────────────────────────────── */
+
+export interface CxForecastSite {
+  site_id: string;
+  project_id: string;
+  project_name: string;
+  region: string;
+  market: string;
+  area: string;
+  vendor: string;
+  cx_start_date: string;
+}
+
+export interface CxForecastWeek {
+  week: number;
+  year: number;
+  week_start: string;
+  week_end: string;
+  total: number;
+  sites: CxForecastSite[];
+}
+
+export interface CxForecastSummaryResponse {
+  total_sites: number;
+  total_weeks: number;
+  weeks: CxForecastWeek[];
+}
+
+/* ── CX Actual Summary ───────────────────────────────────────────── */
+
+export interface CxActualSite {
+  site_id: string;
+  project_id: string;
+  project_name: string;
+  region: string;
+  market: string;
+  area: string;
+  vendor: string;
+  cx_actual_date: string;
+}
+
+export interface CxActualWeek {
+  week: number;
+  year: number;
+  week_start: string;
+  week_end: string;
+  total: number;
+  sites: CxActualSite[];
+}
+
+export interface CxActualSummaryResponse {
+  total_sites: number;
+  total_weeks: number;
+  start_date: string;
+  end_date: string;
+  weeks: CxActualWeek[];
+}
+
 export interface SlaHistoryGanttResponse {
   sla_type: string;
   date_from: string;

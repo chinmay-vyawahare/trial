@@ -14,6 +14,8 @@ import UserExpectedDays from "@/components/UserExpectedDays";
 import UserPaceConstraints from "@/components/UserPaceConstraints";
 import PrerequisiteFlowchart from "@/components/PrerequisiteFlowchart";
 import PendingMilestonesChart from "@/components/PendingMilestonesChart";
+import CxForecastChart from "@/components/CxForecastChart";
+import CxActualChart from "@/components/CxActualChart";
 
 export default function Home() {
   const [sites, setSites] = useState<SiteGantt[]>([]);
@@ -373,6 +375,28 @@ export default function Home() {
                 slaMode={slaMode}
                 slaDateFrom={slaDateFrom}
                 slaDateTo={slaDateTo}
+                refreshKey={analyticsRefreshKey}
+              />
+            )}
+            {activeTab === "cx-forecast" && (
+              <CxForecastChart
+                region={region}
+                market={market}
+                area={area}
+                siteId={siteIdFilter}
+                vendor={vendor}
+                userId={userId}
+                refreshKey={analyticsRefreshKey}
+              />
+            )}
+            {activeTab === "cx-actual" && (
+              <CxActualChart
+                region={region}
+                market={market}
+                area={area}
+                siteId={siteIdFilter}
+                vendor={vendor}
+                userId={userId}
                 refreshKey={analyticsRefreshKey}
               />
             )}

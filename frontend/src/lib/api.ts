@@ -26,6 +26,8 @@ import type {
   PendingByMilestoneResponse,
   DrilldownResponse,
   UserHistoryExpectedDaysEntry,
+  CxForecastSummaryResponse,
+  CxActualSummaryResponse,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -717,6 +719,56 @@ export async function getDrilldownSlaHistory(params: {
   if (params.filter_date_from) sp.set("filter_date_from", params.filter_date_from);
   if (params.filter_date_to) sp.set("filter_date_to", params.filter_date_to);
   return fetchAPI<DrilldownResponse>(`/api/v1/schedular/analytics/drilldown/sla-history?${sp}`);
+}
+
+/* ── CX Forecast Summary ──────────────────────────────────────────── */
+
+export async function getCxForecastSummary(filters?: {
+  start_date?: string;
+  end_date?: string;
+  region?: string;
+  market?: string;
+  site_id?: string;
+  vendor?: string;
+  area?: string;
+  user_id?: string;
+}): Promise<CxForecastSummaryResponse> {
+  const params = new URLSearchParams();
+  if (filters?.start_date) params.set("start_date", filters.start_date);
+  if (filters?.end_date) params.set("end_date", filters.end_date);
+  if (filters?.region) params.set("region", filters.region);
+  if (filters?.market) params.set("market", filters.market);
+  if (filters?.site_id) params.set("site_id", filters.site_id);
+  if (filters?.vendor) params.set("vendor", filters.vendor);
+  if (filters?.area) params.set("area", filters.area);
+  if (filters?.user_id) params.set("user_id", filters.user_id);
+  const qs = params.toString();
+  return fetchAPI<CxForecastSummaryResponse>(`/api/v1/schedular/cx-forecast-summary${qs ? `?${qs}` : ""}`);
+}
+
+/* ── CX Actual Summary ────────────────────────────────────────────── */
+
+export async function getCxActualSummary(filters?: {
+  start_date?: string;
+  end_date?: string;
+  region?: string;
+  market?: string;
+  site_id?: string;
+  vendor?: string;
+  area?: string;
+  user_id?: string;
+}): Promise<CxActualSummaryResponse> {
+  const params = new URLSearchParams();
+  if (filters?.start_date) params.set("start_date", filters.start_date);
+  if (filters?.end_date) params.set("end_date", filters.end_date);
+  if (filters?.region) params.set("region", filters.region);
+  if (filters?.market) params.set("market", filters.market);
+  if (filters?.site_id) params.set("site_id", filters.site_id);
+  if (filters?.vendor) params.set("vendor", filters.vendor);
+  if (filters?.area) params.set("area", filters.area);
+  if (filters?.user_id) params.set("user_id", filters.user_id);
+  const qs = params.toString();
+  return fetchAPI<CxActualSummaryResponse>(`/api/v1/schedular/cx-actual-summary${qs ? `?${qs}` : ""}`);
 }
 
 /* ── Health ────────────────────────────────────────────────────────── */
