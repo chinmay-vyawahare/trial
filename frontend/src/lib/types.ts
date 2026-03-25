@@ -94,7 +94,6 @@ export interface SlaMilestone {
   default_expected_days: number;
   history_expected_days: number | null;
   sample_count: number;
-  is_skipped: boolean;
 }
 
 /* ── Constraints ──────────────────────────────────────────────────── */
@@ -155,6 +154,16 @@ export interface MilestoneDefinitionUpdate {
   start_gap_days?: number;
   task_owner?: string | null;
   phase_type?: string | null;
+}
+
+export interface UserHistoryExpectedDaysEntry {
+  id: number;
+  user_id: string;
+  milestone_key: string;
+  milestone_name: string | null;
+  history_expected_days: number;
+  date_from: string | null;
+  date_to: string | null;
 }
 
 export interface SkippedPrerequisite {

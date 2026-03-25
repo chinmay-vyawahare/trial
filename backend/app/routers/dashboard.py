@@ -15,6 +15,8 @@ from app.core.database import get_db, get_config_db
 from app.services.gantt import get_dashboard_summary
 from app.services.gantt.milestones import (
     get_user_expected_days_overrides,
+    get_history_expected_days_by_user,
+    save_user_history_expected_days,
 )
 from app.services.weekly_status import get_weekly_status_counts
 from app.models.prerequisite import MilestoneDefinition, UserFilter
@@ -61,6 +63,7 @@ def dashboard_summary(
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
+    sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -74,7 +77,7 @@ def dashboard_summary(
       - excluded_crew_shortage_sites, excluded_pace_constraint_sites
     """
     skipped_keys = _get_skipped_keys(config_db)
-    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
+    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
 
     return get_dashboard_summary(
@@ -133,10 +136,19 @@ def sla_dashboard_summary(
     if df > dt:
         raise HTTPException(status_code=400, detail="date_from must be before date_to.")
 
-    # Compute SLA history using median
+    skipped_keys = _get_skipped_keys(config_db)
+    plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+
+    # Compute SLA history using median — with user filters applied
     from app.services.sla_history import compute_history_expected_days
 
-    history_results = compute_history_expected_days(db, config_db, df, dt, use_median=True)
+    history_results = compute_history_expected_days(
+        db, config_db, df, dt, use_median=True,
+        region=region, market=market, site_id=site_id,
+        vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+    )
 
     # Build overrides dict from median history
     history_overrides = {}
@@ -144,8 +156,9 @@ def sla_dashboard_summary(
         if item["history_expected_days"] is not None:
             history_overrides[item["milestone_key"]] = item["history_expected_days"]
 
-    skipped_keys = _get_skipped_keys(config_db)
-    plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+    # Save per-user history expected days
+    if user_id:
+        save_user_history_expected_days(config_db, user_id, history_results, df, dt)
 
     # Get dashboard summary using history-based SLA overrides and gantt filters
     summary = get_dashboard_summary(
@@ -186,6 +199,7 @@ def weekly_status_user_override(
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
+    sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -197,7 +211,7 @@ def weekly_status_user_override(
     If user_id is provided, uses that user's SLA overrides (expected_days).
     """
     skipped_keys = _get_skipped_keys(config_db)
-    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
+    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
 
     weeks = get_weekly_status_counts(
@@ -253,17 +267,27 @@ def weekly_status_history(
     if df > dt:
         raise HTTPException(status_code=400, detail="date_from must be before date_to.")
 
+    skipped_keys = _get_skipped_keys(config_db)
+    plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+
     from app.services.sla_history import compute_history_expected_days
 
-    history_results = compute_history_expected_days(db, config_db, df, dt)
+    history_results = compute_history_expected_days(
+        db, config_db, df, dt,
+        region=region, market=market, site_id=site_id,
+        vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+    )
 
     history_overrides = {}
     for item in history_results:
         computed = item["history_expected_days"]
         history_overrides[item["milestone_key"]] = computed if computed is not None else 0
 
-    skipped_keys = _get_skipped_keys(config_db)
-    plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+    # Save per-user history expected days
+    if user_id:
+        save_user_history_expected_days(config_db, user_id, history_results, df, dt)
 
     weeks = get_weekly_status_counts(
         db,

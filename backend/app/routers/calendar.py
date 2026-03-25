@@ -75,6 +75,7 @@ def get_calendar(
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status (ON TRACK, IN PROGRESS, CRITICAL, Blocked, etc.)"),
+    sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -93,7 +94,7 @@ def get_calendar(
         config_db, user_id, region, market, site_id, vendor, area
     )
     skipped_keys = _get_skipped_keys(config_db)
-    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
+    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
 
     sites = get_calendar_sites(
         db=db,

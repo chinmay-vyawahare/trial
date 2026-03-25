@@ -134,6 +134,7 @@ def list_sites(
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints — marks excess sites as excluded"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user — marks excess sites as excluded"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
+    sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -146,8 +147,7 @@ def list_sites(
         config_db, user_id, region, market, site_id, vendor, area
     )
     skipped_keys = _get_skipped_keys(config_db)
-    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
-
+    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     sites, total_count, count = get_all_sites_gantt(
         db,
         config_db,
@@ -186,50 +186,3 @@ def list_sites(
             "total_count": total_count,
         },
     }
-
-
-@router.get("/dashboard")
-def dashboard(
-    user_id: str = Query(..., description="User ID — filters are loaded from saved preferences"),
-    db: Session = Depends(get_db),
-    config_db: Session = Depends(get_config_db),
-):
-    """
-    Dashboard summary. All filters are read from the user's saved
-    UserFilter row — no manual filter params needed.
-    """
-    if not user_id or not user_id.strip():
-        raise HTTPException(status_code=400, detail="user_id is required and cannot be empty.")
-
-    saved = _get_user_filters(config_db, user_id)
-
-    region = saved.region if saved else None
-    market = saved.market if saved else None
-    vendor = saved.vendor if saved else None
-    area = saved.area if saved else None
-
-    plan_type_include = None
-    regional_dev_initiatives = None
-    if saved:
-        if saved.plan_type_include:
-            try:
-                plan_type_include = json.loads(saved.plan_type_include)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        regional_dev_initiatives = saved.regional_dev_initiatives
-
-    skipped_keys = _get_skipped_keys(config_db)
-    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id)
-
-    return get_dashboard_summary(
-        db,
-        config_db,
-        region=region,
-        market=market,
-        vendor=vendor,
-        area=area,
-        plan_type_include=plan_type_include,
-        regional_dev_initiatives=regional_dev_initiatives,
-        skipped_keys=skipped_keys,
-        user_expected_days_overrides=user_ed_overrides,
-    )

@@ -11,8 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, get_config_db
-from app.models.prerequisite import MilestoneDefinition, UserFilter
+from app.models.prerequisite import MilestoneDefinition, UserFilter, UserHistoryExpectedDays
 from app.services.gantt import get_history_gantt
+from app.schemas.gantt import UserHistoryExpectedDaysOut
 
 router = APIRouter(
     prefix="/api/v1/schedular/sla-history",
@@ -152,20 +153,3 @@ def history_gantt_charts(
     }
 
 
-@router.post("/reset")
-def reset_sla_to_default(
-    config_db: Session = Depends(get_config_db),
-):
-    """
-    Clear all history_expected_days from milestone_definitions,
-    reverting to default expected_days.
-    """
-    updated = (
-        config_db.query(MilestoneDefinition)
-        .filter(MilestoneDefinition.history_expected_days.isnot(None))
-        .update({MilestoneDefinition.history_expected_days: None})
-    )
-    config_db.commit()
-    if updated == 0:
-        raise HTTPException(status_code=404, detail="No history SLA values found to reset")
-    return {"detail": f"Reset history_expected_days for {updated} milestones"}

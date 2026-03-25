@@ -1,6 +1,7 @@
 import logging
 import sys
 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
@@ -29,6 +30,7 @@ from app.routers import gc_capacity, pace_constraints, calendar
 from app.routers import analytics
 from app.init_milestone_data import init_milestone_data
 from app.services.assistant.nodes.simulation import set_main_loop
+from app.routers import history_sla_days
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +58,11 @@ app.add_middleware(
 )
 
 app.include_router(sites.router)
+app.include_router(sla_history.router)
 app.include_router(dashboard.router)
 app.include_router(calendar.router)
-app.include_router(sla_history.router)
 app.include_router(user_expected_days.router)
+app.include_router(history_sla_days.router)
 app.include_router(filters.router)
 app.include_router(prerequisites.router)
 app.include_router(constraints.router)

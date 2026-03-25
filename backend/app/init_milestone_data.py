@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.database import config_engine, ConfigBase, ConfigSessionLocal
 from app.models.prerequisite import (
     MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig,
-    ConstraintThreshold,
+    ConstraintThreshold, UserHistoryExpectedDays,
 )
 
 logger = logging.getLogger(__name__)
@@ -371,23 +371,6 @@ SEED_CONSTRAINT_THRESHOLDS = [
     },
 ]
 
-
-def _ensure_columns(engine):
-    """Add columns that may not exist on an older schema."""
-    from sqlalchemy import text, inspect
-    from app.core.config import settings
-    _schema = settings.UTILITY_SCHEMA
-    inspector = inspect(engine)
-    cols = {c["name"] for c in inspector.get_columns("milestone_definitions", schema=_schema)}
-    with engine.begin() as conn:
-        if "history_expected_days" not in cols:
-            conn.execute(text(
-                f"ALTER TABLE {_schema}.milestone_definitions ADD COLUMN history_expected_days INTEGER"
-            ))
-            logger.info("Added history_expected_days column to milestone_definitions.")
-
-
-
 def init_milestone_data():
     """Create tables and seed default data if not already present."""
     ConfigBase.metadata.create_all(bind=config_engine, tables=[
@@ -396,10 +379,8 @@ def init_milestone_data():
         PrereqTail.__table__,
         GanttConfig.__table__,
         ConstraintThreshold.__table__,
+        UserHistoryExpectedDays.__table__,
     ])
-
-    # Ensure new columns exist on pre-existing tables
-    _ensure_columns(config_engine)
 
     db: Session = ConfigSessionLocal()
     try:

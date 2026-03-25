@@ -215,32 +215,35 @@ def get_calendar_history_sites(
     Pass 2: full milestone computation only for matching rows.
     """
     from app.services.sla_history import compute_history_expected_days
-    from app.models.prerequisite import MilestoneDefinition
+    from app.models.prerequisite import UserHistoryExpectedDays
+    from app.services.gantt.milestones import save_user_history_expected_days
     from sqlalchemy import func as sa_func
 
-    # Compute and save history-based expected_days
-    history_results = compute_history_expected_days(db, config_db, sla_date_from, sla_date_to)
+    # Compute history-based expected_days
+    history_results = compute_history_expected_days(
+        db, config_db, sla_date_from, sla_date_to,
+        region=region, market=market, site_id=site_id,
+        vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+    )
     history_overrides = {}
     for item in history_results:
         computed = item["history_expected_days"]
         effective = computed if computed is not None else 0
         history_overrides[item["milestone_key"]] = effective
 
-        ms_def = (
-            config_db.query(MilestoneDefinition)
-            .filter(MilestoneDefinition.key == item["milestone_key"])
-            .first()
+    # Save per-user history expected days
+    if user_id:
+        save_user_history_expected_days(config_db, user_id, history_results, sla_date_from, sla_date_to)
+
+    last_updated_row = None
+    if user_id:
+        last_updated_row = (
+            config_db.query(sa_func.max(UserHistoryExpectedDays.updated_at))
+            .filter(UserHistoryExpectedDays.user_id == user_id)
+            .scalar()
         )
-        if ms_def:
-            ms_def.history_expected_days = effective
-
-    config_db.commit()
-
-    last_updated_row = (
-        config_db.query(sa_func.max(MilestoneDefinition.updated_at))
-        .filter(MilestoneDefinition.history_expected_days.isnot(None))
-        .scalar()
-    )
     sla_last_updated = str(last_updated_row) if last_updated_row else None
 
     # Load config with history overrides applied

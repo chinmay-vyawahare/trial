@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { PrerequisiteDefinition, UserExpectedDaysEntry } from "@/lib/types";
-import { getPrerequisites, getUserExpectedDays, setUserExpectedDays } from "@/lib/api";
+import { PrerequisiteDefinition, UserExpectedDaysEntry, UserHistoryExpectedDaysEntry } from "@/lib/types";
+import { getPrerequisites, getUserExpectedDays, setUserExpectedDays, getUserHistoryExpectedDays, resetSlaHistory } from "@/lib/api";
 
 interface Props {
   userId: string;
@@ -10,18 +10,25 @@ interface Props {
 
 export default function UserExpectedDays({ userId }: Props) {
   const [overrides, setOverrides] = useState<UserExpectedDaysEntry[]>([]);
+  const [historyEntries, setHistoryEntries] = useState<UserHistoryExpectedDaysEntry[]>([]);
   const [allPrereqs, setAllPrereqs] = useState<PrerequisiteDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editDays, setEditDays] = useState(0);
+  const [resetting, setResetting] = useState(false);
 
-  // Build a map of user overrides keyed by milestone_key
   const overrideMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const o of overrides) map.set(o.milestone_key, o.expected_days);
     return map;
   }, [overrides]);
+
+  const historyMap = useMemo(() => {
+    const map = new Map<string, UserHistoryExpectedDaysEntry>();
+    for (const e of historyEntries) map.set(e.milestone_key, e);
+    return map;
+  }, [historyEntries]);
 
   useEffect(() => {
     setLoading(true);
@@ -32,8 +39,13 @@ export default function UserExpectedDays({ userId }: Props) {
   }, []);
 
   useEffect(() => {
-    if (userId) loadOverrides();
-    else setOverrides([]);
+    if (userId) {
+      loadOverrides();
+      loadHistory();
+    } else {
+      setOverrides([]);
+      setHistoryEntries([]);
+    }
   }, [userId]);
 
   async function loadOverrides() {
@@ -43,6 +55,20 @@ export default function UserExpectedDays({ userId }: Props) {
     } catch {
       setOverrides([]);
     }
+  }
+
+  async function loadHistory() {
+    try {
+      const data = await getUserHistoryExpectedDays(userId);
+      setHistoryEntries(data);
+    } catch {
+      setHistoryEntries([]);
+    }
+  }
+
+  function loadAll() {
+    loadOverrides();
+    loadHistory();
   }
 
   function startEdit(prereq: PrerequisiteDefinition) {
@@ -64,6 +90,20 @@ export default function UserExpectedDays({ userId }: Props) {
     }
   }
 
+  async function handleResetHistory() {
+    if (!userId) return;
+    if (!confirm(`Reset all history SLA values for user "${userId}"?`)) return;
+    setResetting(true);
+    try {
+      await resetSlaHistory(userId);
+      setHistoryEntries([]);
+    } catch (e) {
+      console.error("Failed to reset:", e);
+    } finally {
+      setResetting(false);
+    }
+  }
+
   if (!userId) {
     return (
       <div className="flex items-center justify-center h-full text-gray-400 text-sm">
@@ -80,23 +120,44 @@ export default function UserExpectedDays({ userId }: Props) {
     );
   }
 
+  const dateFrom = historyEntries.length > 0 ? historyEntries[0].date_from : null;
+  const dateTo = historyEntries.length > 0 ? historyEntries[0].date_to : null;
+
   return (
     <div className="h-full overflow-auto p-5">
-      <div className="max-w-5xl mx-auto space-y-4">
+      <div className="max-w-6xl mx-auto space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-gray-800">Expected Days Overrides</h3>
+            <h3 className="font-bold text-gray-800">User Expected Days</h3>
             <p className="text-xs text-gray-400 mt-0.5">
               User: <span className="font-semibold text-blue-700">{userId}</span>
-              {" — "}Click Edit on any milestone to set a custom expected days value.
+              {dateFrom && dateTo && (
+                <>
+                  {" — "}History computed from:{" "}
+                  <span className="font-semibold text-purple-700">
+                    {dateFrom.slice(0, 10)} → {dateTo.slice(0, 10)}
+                  </span>
+                </>
+              )}
             </p>
           </div>
-          <button
-            onClick={loadOverrides}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200"
-          >
-            Refresh
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={loadAll}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200"
+            >
+              Refresh
+            </button>
+            {historyEntries.length > 0 && (
+              <button
+                onClick={handleResetHistory}
+                disabled={resetting}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 disabled:opacity-50"
+              >
+                {resetting ? "Resetting..." : "Reset History SLA"}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
@@ -110,7 +171,8 @@ export default function UserExpectedDays({ userId }: Props) {
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Owner</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Phase</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Default Days</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Your Days</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-purple-600 uppercase bg-purple-50/50">History Days</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-emerald-600 uppercase bg-emerald-50/50">Your Days</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
@@ -118,13 +180,15 @@ export default function UserExpectedDays({ userId }: Props) {
                 {allPrereqs.map((p) => {
                   const userDays = overrideMap.get(p.key);
                   const hasOverride = userDays !== undefined;
+                  const historyEntry = historyMap.get(p.key);
+                  const hasHistory = historyEntry !== undefined;
                   const isEditing = editingKey === p.key;
 
                   return (
                     <tr
                       key={p.key}
                       className={`border-b border-gray-50 transition-colors ${
-                        hasOverride ? "bg-purple-50/40 hover:bg-purple-50" : "hover:bg-blue-50"
+                        hasOverride || hasHistory ? "bg-blue-50/30 hover:bg-blue-50" : "hover:bg-gray-50"
                       }`}
                     >
                       <td className="px-3 py-2 text-gray-400">{p.sort_order}</td>
@@ -141,7 +205,18 @@ export default function UserExpectedDays({ userId }: Props) {
                           {p.expected_days}d
                         </span>
                       </td>
-                      <td className="px-3 py-2">
+                      {/* History Days column */}
+                      <td className="px-3 py-2 bg-purple-50/20">
+                        {hasHistory ? (
+                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                            {historyEntry.history_expected_days}d
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+                      {/* User Override Days column */}
+                      <td className="px-3 py-2 bg-emerald-50/20">
                         {isEditing ? (
                           <input
                             type="number"
@@ -152,7 +227,7 @@ export default function UserExpectedDays({ userId }: Props) {
                             autoFocus
                           />
                         ) : hasOverride ? (
-                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                             {userDays}d
                           </span>
                         ) : (

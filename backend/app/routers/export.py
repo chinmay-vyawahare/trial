@@ -36,6 +36,7 @@ def export_gantt_to_csv(
     status: str = Query(None, description="Filter by overall_status"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
+    sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
 ):
     """
     Export gantt chart data as a downloadable CSV file.
@@ -57,6 +58,7 @@ def export_gantt_to_csv(
             consider_vendor_capacity=consider_vendor_capacity,
             pace_constraint_flag=pace_constraint_flag,
             status=status,
+            sla_type=sla_type,
         )
     except Exception as e:
         logger.exception(f"Failed to export gantt CSV: {e}")

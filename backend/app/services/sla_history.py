@@ -9,11 +9,9 @@ For root milestones (no predecessor), expected_days stays 0.
 For text-type milestones (e.g. cpo, 4000), duration is not date-based so
 they keep their default expected_days.
 
-Skipped milestones (is_skipped=True) are excluded entirely from computation.
-When a milestone's predecessor is skipped (or is a text milestone), the service
-walks UP the dependency chain to find the nearest non-skipped, date-based
+When a milestone's predecessor is a text milestone, the service
+walks UP the dependency chain to find the nearest date-based
 ancestor and uses that instead. This handles chains like:
-  A (date) → B (skipped) → C (date)  →  C's history = median(C_actual - A_actual)
   quote (date) → cpo (text) → 1555 (date)  →  1555's history = median(1555_actual - quote_actual)
 """
 
@@ -22,7 +20,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text as sa_text
 
 from app.core.database import STAGING_TABLE
-from app.models.prerequisite import MilestoneDefinition
 from app.services.gantt.milestones import get_milestones
 
 
@@ -53,26 +50,14 @@ def _get_date_columns(ms: dict) -> list[str] | None:
     return columns if columns else None
 
 
-def _get_skipped_keys(config_db: Session) -> set[str]:
-    """Return globally skipped milestone keys."""
-    rows = (
-        config_db.query(MilestoneDefinition.key)
-        .filter(MilestoneDefinition.is_skipped == True)
-        .all()
-    )
-    return {r[0] for r in rows}
-
-
 def _find_date_ancestors(
     key: str,
     ms_lookup: dict,
     date_cols_lookup: dict[str, list[str]],
-    skipped_keys: set[str],
 ) -> list[str]:
     """
     Walk up the dependency chain from `key` to find the nearest ancestor(s)
-    that have date columns AND are not skipped. Skips over text-only milestones
-    and skipped milestones.
+    that have date columns. Skips over text-only milestones.
 
     Returns a list of milestone keys with date columns.
     """
@@ -88,17 +73,55 @@ def _find_date_ancestors(
     result = []
 
     for d in dep_list:
-        if d in skipped_keys:
-            # Skipped milestone — walk up further
-            result.extend(_find_date_ancestors(d, ms_lookup, date_cols_lookup, skipped_keys))
-        elif d in date_cols_lookup:
-            # This predecessor has date columns and is not skipped — use it
+        if d in date_cols_lookup:
+            # This predecessor has date columns — use it
             result.append(d)
         else:
             # Text milestone (no date columns) — walk up further
-            result.extend(_find_date_ancestors(d, ms_lookup, date_cols_lookup, skipped_keys))
+            result.extend(_find_date_ancestors(d, ms_lookup, date_cols_lookup))
 
     return result
+
+
+def _build_filter_clauses(
+    region: str | None = None,
+    market: str | None = None,
+    site_id: str | None = None,
+    vendor: str | None = None,
+    area: str | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
+) -> tuple[str, dict]:
+    """Build WHERE clause fragments and params for geographic/gate filters."""
+    clauses = []
+    params: dict = {}
+
+    if region:
+        clauses.append("region = :f_region")
+        params["f_region"] = region
+    if market:
+        clauses.append("m_market = :f_market")
+        params["f_market"] = market
+    if site_id:
+        clauses.append("s_site_id = :f_site_id")
+        params["f_site_id"] = site_id
+    if vendor:
+        clauses.append("construction_gc = :f_vendor")
+        params["f_vendor"] = vendor
+    if area:
+        clauses.append("m_area = :f_area")
+        params["f_area"] = area
+    if plan_type_include:
+        placeholders = ", ".join(f":f_pti_{i}" for i in range(len(plan_type_include)))
+        clauses.append(f"por_plan_type IN ({placeholders})")
+        for i, val in enumerate(plan_type_include):
+            params[f"f_pti_{i}"] = val
+    if regional_dev_initiatives:
+        clauses.append("COALESCE(por_regional_dev_initiatives, '') ILIKE :f_rdi_pattern")
+        params["f_rdi_pattern"] = f"%{regional_dev_initiatives}%"
+
+    sql = (" AND " + " AND ".join(clauses)) if clauses else ""
+    return sql, params
 
 
 def compute_history_expected_days(
@@ -107,6 +130,13 @@ def compute_history_expected_days(
     date_from: date,
     date_to: date,
     use_median: bool = True,
+    region: str | None = None,
+    market: str | None = None,
+    site_id: str | None = None,
+    vendor: str | None = None,
+    area: str | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
 ) -> list[dict]:
     """
     Compute expected_days for each milestone based on historical actual dates.
@@ -114,19 +144,24 @@ def compute_history_expected_days(
     For each milestone with a predecessor:
       expected_days = AVG/MEDIAN(milestone_actual - predecessor_actual) in days
 
-    Skipped milestones (is_skipped=True) are excluded and get None for
-    history_expected_days. When a predecessor is skipped or is a text milestone,
-    walks up to the nearest non-skipped, date-based ancestor.
+    When a predecessor is a text milestone, walks up to the nearest
+    date-based ancestor.
 
     Only sites where BOTH actual dates fall within [date_from, date_to]
-    are included.
+    are included. Geographic and gate-check filters are applied when provided.
 
     Returns a list of:
       {milestone_key, milestone_name, default_expected_days,
-       history_expected_days, sample_count, is_skipped}
+       history_expected_days, sample_count}
     """
+    filter_sql, filter_params = _build_filter_clauses(
+        region=region, market=market, site_id=site_id,
+        vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+    )
+
     milestones_config = get_milestones(config_db)
-    skipped_keys = _get_skipped_keys(config_db)
 
     # Build key→milestone lookup and key→date_columns lookup
     ms_lookup = {ms["key"]: ms for ms in milestones_config}
@@ -148,13 +183,7 @@ def compute_history_expected_days(
             "default_expected_days": ms["expected_days"],
             "history_expected_days": None,
             "sample_count": 0,
-            "is_skipped": key in skipped_keys,
         }
-
-        # Skipped milestones — exclude from computation
-        if key in skipped_keys:
-            results.append(result_item)
-            continue
 
         # Root milestone (no predecessor) — stays 0
         if dep is None:
@@ -172,8 +201,8 @@ def compute_history_expected_days(
         # Get the milestone's own date column(s)
         ms_date_cols = date_cols_lookup[key]
 
-        # Get predecessor date column(s), walking past text AND skipped milestones
-        ancestor_keys = _find_date_ancestors(key, ms_lookup, date_cols_lookup, skipped_keys)
+        # Get predecessor date column(s), walking past text milestones
+        ancestor_keys = _find_date_ancestors(key, ms_lookup, date_cols_lookup)
         pred_date_cols = []
         for ak in ancestor_keys:
             pred_date_cols.extend(date_cols_lookup[ak])
@@ -215,9 +244,10 @@ def compute_history_expected_days(
             WHERE {_BASE_WHERE}
               AND {not_null_sql}
               AND {ms_date_expr} BETWEEN :date_from AND :date_to
+              {filter_sql}
         """)
 
-        row = db.execute(query, {"date_from": date_from, "date_to": date_to}).fetchone()
+        row = db.execute(query, {"date_from": date_from, "date_to": date_to, **filter_params}).fetchone()
 
         if row and row[0] is not None and row[1] > 0:
             avg_days = max(0, row[0])  # clamp to 0 minimum

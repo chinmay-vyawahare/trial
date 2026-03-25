@@ -65,6 +65,7 @@ def export_gantt_csv(
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
     status: str | None = None,
+    sla_type: str = "default",
 ) -> str:
     """
     Build a CSV string of the full gantt chart.
@@ -79,7 +80,7 @@ def export_gantt_csv(
     user_ed_overrides = {}
     if user_id:
         filters = _get_user_filters(config_db, user_id)
-        user_ed_overrides = get_user_expected_days_overrides(config_db, user_id)
+        user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
 
     skipped_keys = _get_skipped_keys(config_db)
 

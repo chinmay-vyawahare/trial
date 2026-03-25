@@ -25,6 +25,7 @@ import type {
   PendingMilestonesResponse,
   PendingByMilestoneResponse,
   DrilldownResponse,
+  UserHistoryExpectedDaysEntry,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -336,8 +337,13 @@ export async function getSlaHistoryGantt(params: {
 
 /* ── SLA History — Reset ──────────────────────────────────────────── */
 
-export async function resetSlaHistory(): Promise<{ detail: string }> {
-  return fetchAPI<{ detail: string }>("/api/v1/schedular/sla-history/reset", { method: "POST" });
+export async function resetSlaHistory(userId?: string): Promise<{ detail: string }> {
+  const params = userId ? `?user_id=${encodeURIComponent(userId)}` : "";
+  return fetchAPI<{ detail: string }>(`/api/v1/schedular/history-sla-days/reset${params}`, { method: "POST" });
+}
+
+export async function getUserHistoryExpectedDays(userId: string): Promise<UserHistoryExpectedDaysEntry[]> {
+  return fetchAPI<UserHistoryExpectedDaysEntry[]>(`/api/v1/schedular/history-sla-days/${encodeURIComponent(userId)}`);
 }
 
 /* ── Admin ────────────────────────────────────────────────────────── */

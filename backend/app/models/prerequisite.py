@@ -228,6 +228,29 @@ class UserExpectedDays(ConfigBase):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class UserHistoryExpectedDays(ConfigBase):
+    """
+    Per-user history-based SLA days for each milestone.
+
+    When history SLA is computed for a user (from a date range), the computed
+    history_expected_days are stored here per-user instead of globally in
+    MilestoneDefinition. Each user gets their own set of history-based values.
+    """
+    __tablename__ = "user_history_expected_days"
+    __table_args__ = {"schema": _S}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    milestone_key = Column(String(50), nullable=False)
+    milestone_name = Column(String(200), nullable=True)
+    history_expected_days = Column(Integer, nullable=False)
+    date_from = Column(DateTime, nullable=True)   # date range used for computation
+    date_to = Column(DateTime, nullable=True)
+    sample_count = Column(Integer, nullable=True, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class GcCapacityMarketTrial(ConfigBase):
     """
     GC (vendor) capacity per market — predefined read-only table in public schema.

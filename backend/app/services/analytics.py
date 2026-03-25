@@ -166,11 +166,21 @@ def _get_sites_history(
 ) -> tuple[list[dict], int]:
     """Return (active_sites, blocked_count) with blocked sites removed."""
     from app.services.sla_history import compute_history_expected_days
-    history_results = compute_history_expected_days(db, config_db, date_from, date_to, use_median=True)
+    from app.services.gantt.milestones import save_user_history_expected_days
+    history_results = compute_history_expected_days(
+        db, config_db, date_from, date_to, use_median=True,
+        region=region, market=market, site_id=site_id,
+        vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+    )
     history_overrides = {}
     for item in history_results:
         if item["history_expected_days"] is not None:
             history_overrides[item["milestone_key"]] = item["history_expected_days"]
+    # Save per-user history expected days
+    if user_id:
+        save_user_history_expected_days(config_db, user_id, history_results, date_from, date_to)
     return _get_sites(
         db, config_db,
         region=region, market=market, site_id=site_id, vendor=vendor, area=area,

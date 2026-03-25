@@ -84,6 +84,7 @@ def pending_milestones_auto(
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
+    sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -97,7 +98,7 @@ def pending_milestones_auto(
     fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
 
     skipped_keys = _get_skipped_keys(config_db)
-    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
+    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
 
     data = get_pending_milestones_auto(
@@ -202,6 +203,7 @@ def pending_by_milestone_auto(
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
+    sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -212,7 +214,7 @@ def pending_by_milestone_auto(
     fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
 
     skipped_keys = _get_skipped_keys(config_db)
-    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
+    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
 
     data = get_pending_by_milestone_auto(
@@ -320,6 +322,7 @@ def drilldown_auto(
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
+    sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -337,7 +340,7 @@ def drilldown_auto(
     fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
 
     skipped_keys = _get_skipped_keys(config_db)
-    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id else {}
+    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
 
     sites, blocked = drilldown_sites_auto(

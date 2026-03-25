@@ -145,7 +145,6 @@ function SlaSection({ summary }: { summary: DashboardSlaSummary | null }) {
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Default Days</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">History Days</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Sample Count</th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -172,17 +171,6 @@ function SlaSection({ summary }: { summary: DashboardSlaSummary | null }) {
                     )}
                   </td>
                   <td className="px-3 py-2 text-gray-600">{m.sample_count}</td>
-                  <td className="px-3 py-2">
-                    {m.is_skipped ? (
-                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
-                        Skipped
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        Active
-                      </span>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>

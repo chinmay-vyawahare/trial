@@ -389,6 +389,18 @@ class UserExpectedDaysOut(BaseModel):
     expected_days: int
 
 
+class UserHistoryExpectedDaysOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    user_id: str
+    milestone_key: str
+    milestone_name: Optional[str] = None
+    history_expected_days: int
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+
+
 # ----------------------------------------------------------------
 # SLA History schemas
 # ----------------------------------------------------------------

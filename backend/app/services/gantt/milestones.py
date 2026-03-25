@@ -7,7 +7,7 @@ Single source of truth: database tables seeded by init_milestone_data.py.
 import json
 from collections import defaultdict
 from sqlalchemy.orm import Session
-from app.models.prerequisite import MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig, ConstraintThreshold, UserExpectedDays
+from app.models.prerequisite import MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig, ConstraintThreshold, UserExpectedDays, UserHistoryExpectedDays
 
 
 def _parse_json_or_str(raw: str):
@@ -147,6 +147,73 @@ def get_history_expected_days_overrides(db: Session) -> dict[str, int]:
         .all()
     )
     return {r[0]: r[1] for r in rows}
+
+
+def get_history_expected_days_by_user(db: Session, user_id: str) -> dict[str, int]:
+    """
+    Return a {milestone_key: history_expected_days} map for a specific user
+    from the user_history_expected_days table.
+
+    Returns an empty dict if no user_id or no records found.
+    """
+    if not user_id:
+        return {}
+    rows = (
+        db.query(UserHistoryExpectedDays)
+        .filter(UserHistoryExpectedDays.user_id == user_id)
+        .all()
+    )
+    return {r.milestone_key: r.history_expected_days for r in rows}
+
+
+def save_user_history_expected_days(
+    db: Session,
+    user_id: str,
+    history_results: list[dict],
+    date_from=None,
+    date_to=None,
+) -> None:
+    """
+    Save computed history_expected_days for a user.
+
+    Upserts each milestone's history_expected_days into user_history_expected_days.
+    """
+    if not user_id:
+        return
+
+    for item in history_results:
+        computed = item.get("history_expected_days")
+        effective = computed if computed is not None else 0
+
+        existing = (
+            db.query(UserHistoryExpectedDays)
+            .filter(
+                UserHistoryExpectedDays.user_id == user_id,
+                UserHistoryExpectedDays.milestone_key == item["milestone_key"],
+            )
+            .first()
+        )
+        if existing:
+            existing.history_expected_days = effective
+            existing.milestone_name = item.get("milestone_name")
+            existing.sample_count = item.get("sample_count", 0)
+            if date_from:
+                existing.date_from = date_from
+            if date_to:
+                existing.date_to = date_to
+        else:
+            row = UserHistoryExpectedDays(
+                user_id=user_id,
+                milestone_key=item["milestone_key"],
+                milestone_name=item.get("milestone_name"),
+                history_expected_days=effective,
+                sample_count=item.get("sample_count", 0),
+                date_from=date_from,
+                date_to=date_to,
+            )
+            db.add(row)
+
+    db.commit()
 
 
 def apply_user_expected_days(milestones: list[dict], overrides: dict[str, int]) -> list[dict]:

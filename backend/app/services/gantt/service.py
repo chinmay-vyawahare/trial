@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from .queries import build_gantt_query
 from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_count_threshold, is_site_blocked
-from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides
+from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides, get_history_expected_days_by_user, save_user_history_expected_days
 from .utils import parse_date
 
 def _apply_pace_constraint(
@@ -623,17 +623,22 @@ def get_history_gantt(
     Gantt chart using history-based SLA.
 
     Computes history_expected_days from the given date range, saves them
-    into milestone_definitions.history_expected_days, then runs the gantt
+    per-user into user_history_expected_days, then runs the gantt
     logic using those values as expected_days overrides.
     """
-    # Import here to avoid circular import (sla_history → gantt.milestones → gantt.service)
     from app.services.sla_history import compute_history_expected_days
-    from app.models.prerequisite import MilestoneDefinition
+    from app.models.prerequisite import UserHistoryExpectedDays
 
     # Compute history-based expected_days from actual dates
-    history_results = compute_history_expected_days(db, config_db, date_from, date_to)
+    history_results = compute_history_expected_days(
+        db, config_db, date_from, date_to,
+        region=region, market=market, site_id=site_id,
+        vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+    )
 
-    # Build overrides dict and save to DB.
+    # Build overrides dict.
     # In history mode, ALL milestones use computed history values.
     # If no historical data exists (None), use 0 — never fall back to defaults.
     history_overrides = {}
@@ -642,24 +647,19 @@ def get_history_gantt(
         effective = computed if computed is not None else 0
         history_overrides[item["milestone_key"]] = effective
 
-        # Save/update in milestone_definitions
-        ms_def = (
-            config_db.query(MilestoneDefinition)
-            .filter(MilestoneDefinition.key == item["milestone_key"])
-            .first()
-        )
-        if ms_def:
-            ms_def.history_expected_days = effective
+    # Save per-user history expected days
+    if user_id:
+        save_user_history_expected_days(config_db, user_id, history_results, date_from, date_to)
 
-    config_db.commit()
-
-    # Get the latest updated_at timestamp for history SLA
+    # Get the latest updated_at timestamp for this user's history SLA
     from sqlalchemy import func as sa_func
-    last_updated_row = (
-        config_db.query(sa_func.max(MilestoneDefinition.updated_at))
-        .filter(MilestoneDefinition.history_expected_days.isnot(None))
-        .scalar()
-    )
+    last_updated_row = None
+    if user_id:
+        last_updated_row = (
+            config_db.query(sa_func.max(UserHistoryExpectedDays.updated_at))
+            .filter(UserHistoryExpectedDays.user_id == user_id)
+            .scalar()
+        )
     sla_last_updated = str(last_updated_row) if last_updated_row else None
 
     # Reuse the standard gantt function with history overrides
