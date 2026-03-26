@@ -14,11 +14,11 @@ from app.services.gantt import get_all_sites_gantt
 def get_weekly_status_counts(
     db: Session,
     config_db: Session,
-    region: str = None,
-    market: str = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     site_id: str = None,
     vendor: str = None,
-    area: str = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
     skipped_keys: set[str] | None = None,
@@ -29,21 +29,32 @@ def get_weekly_status_counts(
     status: str | None = None,
 ) -> list[dict]:
     """
-    Return weekly status counts grouped by ISO week/year.
+    Return weekly status counts grouped by ISO week/year, with region breakdown.
 
     Each entry:
       {
         "week": 10,
         "year": 2026,
         "week_start": "2026-03-02",
+        "week_end": "2026-03-08",
         "total": 5,
         "status_counts": {
-          "ON TRACK": 2,
-          "IN PROGRESS": 1,
-          "CRITICAL": 1,
-          "Blocked": 0,
-          "Excluded - Crew Shortage": 0,
-          "Excluded - Pace Constraint": 1,
+          "EAST": {
+            "ON TRACK": 2,
+            "IN PROGRESS": 1,
+            "CRITICAL": 0,
+            "Blocked": 0,
+            "Excluded - Crew Shortage": 0,
+            "Excluded - Pace Constraint": 0,
+          },
+          "WEST": {
+            "ON TRACK": 0,
+            "IN PROGRESS": 0,
+            "CRITICAL": 1,
+            "Blocked": 0,
+            "Excluded - Crew Shortage": 0,
+            "Excluded - Pace Constraint": 1,
+          }
         }
       }
     """
@@ -67,15 +78,15 @@ def get_weekly_status_counts(
 
     # Post-filter by status if requested
     if status:
-        sites = [s for s in sites if s.get("overall_status", "").upper() == status.upper()]
+        sites = [s for s in sites if (s.get("exclude_reason") or s.get("overall_status", "")).upper() == status.upper()]
 
     ALL_STATUSES = [
         "ON TRACK", "IN PROGRESS", "CRITICAL",
         "Blocked", "Excluded - Crew Shortage", "Excluded - Pace Constraint",
     ]
 
-    # Group by (year, week)
-    weekly: dict[tuple[int, int], dict[str, int]] = defaultdict(lambda: {s: 0 for s in ALL_STATUSES})
+    # Group by (year, week) -> region -> status counts
+    weekly = {}
     for site in sites:
         forecast = site.get("forecasted_cx_start_date")
         if not forecast:
@@ -87,25 +98,47 @@ def get_weekly_status_counts(
 
         iso = fd.isocalendar()
         key = (iso.year, iso.week)
-        site_status = site.get("overall_status", "")
-        if site_status in weekly[key]:
-            weekly[key][site_status] += 1
-        else:
-            weekly[key][site_status] = weekly[key].get(site_status, 0) + 1
+
+        region_name = site.get("Region") or site.get("region") or "Unknown"
+        # Use exclude_reason for excluded sites, otherwise overall_status
+        exclude = site.get("exclude_reason")
+        site_status = exclude if exclude else site.get("overall_status", "")
+
+        if key not in weekly:
+            weekly[key] = {}
+
+        if region_name not in weekly[key]:
+            weekly[key][region_name] = {s: 0 for s in ALL_STATUSES}
+
+        if site_status not in weekly[key][region_name]:
+            weekly[key][region_name][site_status] = 0
+
+        weekly[key][region_name][site_status] += 1
 
     # Sort by year, week and build result
     result = []
-    for (year, week), counts in sorted(weekly.items()):
+    for (year, week), regional_counts in sorted(weekly.items()):
         # Compute the Monday of this ISO week
-        week_start = date.fromisocalendar(year, week, 1)
-        week_end = date.fromisocalendar(year, week, 7)
+        try:
+            week_start = date.fromisocalendar(year, week, 1)
+            week_end = date.fromisocalendar(year, week, 7)
+        except ValueError:
+            continue  # skip invalid week
+
+        # Safe total calculation
+        total = sum(
+            sum(status.values())
+            for status in regional_counts.values()
+            if isinstance(status, dict)
+        )
+
         result.append({
             "week": week,
             "year": year,
-            "week_start": str(week_start),
-            "week_end": str(week_end),
-            "total": sum(counts.values()),
-            "status_counts": counts,
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+            "total": total,
+            "status_counts": regional_counts,
         })
 
     return result

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 interface Props {
   userId: string;
@@ -54,6 +55,12 @@ export default function TopBar({ userId, onUserIdApply }: Props) {
         <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 border border-blue-200">
           MODE: PLANNER
         </span>
+        <Link
+          href="/test-api"
+          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white hover:from-violet-600 hover:to-fuchsia-600 transition-all shadow-sm"
+        >
+          Test APIs
+        </Link>
       </div>
     </header>
   );

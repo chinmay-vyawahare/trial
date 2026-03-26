@@ -21,35 +21,39 @@ def _get_user_filters(db: Session, user_id: str) -> UserFilter | None:
 def _save_user_filters(
     db: Session,
     user_id: str,
-    region: str | None,
-    market: str | None,
+    region: list[str] | None,
+    market: list[str] | None,
     site_id: str | None,
     vendor: str | None,
-    area: str | None,
+    area: list[str] | None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
 ):
     """Upsert filter preferences for a user."""
     pti_json = json.dumps(plan_type_include) if plan_type_include else None
+    # Store list filters as JSON, single values as-is
+    region_json = json.dumps(region) if region else None
+    market_json = json.dumps(market) if market else None
+    area_json = json.dumps(area) if area else None
 
     existing = _get_user_filters(db, user_id)
 
     if existing:
-        existing.region = region
-        existing.market = market
+        existing.region = region_json
+        existing.market = market_json
         existing.vendor = vendor
         existing.site_id = site_id
-        existing.area = area
+        existing.area = area_json
         existing.plan_type_include = pti_json
         existing.regional_dev_initiatives = regional_dev_initiatives
     else:
         db.add(UserFilter(
             user_id=user_id,
-            region=region,
-            market=market,
+            region=region_json,
+            market=market_json,
             vendor=vendor,
             site_id=site_id,
-            area=area,
+            area=area_json,
             plan_type_include=pti_json,
             regional_dev_initiatives=regional_dev_initiatives,
         ))
@@ -60,11 +64,11 @@ def _save_user_filters(
 def _resolve_filters(
     config_db: Session,
     user_id: str | None,
-    region: str | None,
-    market: str | None,
+    region: list[str] | None,
+    market: list[str] | None,
     site_id: str | None,
     vendor: str | None,
-    area: str | None,
+    area: list[str] | None,
 ):
     """
     Merge explicit query-param filters with the user's saved filters.
@@ -123,11 +127,11 @@ def _get_skipped_keys(config_db: Session) -> set[str]:
 
 @router.get("")
 def list_sites(
-    region: str = Query(None, description="Filter by region"),
-    market: str = Query(None, description="Filter by market"),
+    region: list[str] = Query(None, description="Filter by region (multi-value)"),
+    market: list[str] = Query(None, description="Filter by market (multi-value)"),
     site_id: str = Query(None, description="Filter by site ID"),
     vendor: str = Query(None, description="Filter by vendor"),
-    area: str = Query(None, description="Filter by area (m_area column)"),
+    area: list[str] = Query(None, description="Filter by area (multi-value)"),
     user_id: str = Query(None, description="User ID for saved filters"),
     limit: int = Query(None, description="Limit the number of results"),
     offset: int = Query(None, description="Offset the results"),

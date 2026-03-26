@@ -209,11 +209,11 @@ def _apply_vendor_capacity(sites: list[dict], db: Session) -> list[dict]:
 def get_all_sites_gantt(
     db: Session,
     config_db: Session,
-    region: str = None,
-    market: str = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     site_id: str = None,
     vendor: str = None,
-    area: str = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
     limit: int = None,
@@ -423,7 +423,16 @@ def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipp
     return compute_overall_status(on_track, total, ms_thresholds)
 
 
-def _get_pace_constraint(config_db: Session, user_id: str | None, region: str = None, area: str = None, market: str = None) -> list[dict]:
+def _normalize_geo_filter(value) -> list[str]:
+    """Normalize a geo filter value (str, list, or None) to a list of lowercase strings."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value.strip().lower()]
+    return [v.strip().lower() for v in value if v]
+
+
+def _get_pace_constraint(config_db: Session, user_id: str | None, region=None, area=None, market=None) -> list[dict]:
     """
     Fetch pace constraints for a user that match the geo filters.
 
@@ -442,9 +451,9 @@ def _get_pace_constraint(config_db: Session, user_id: str | None, region: str = 
     if not constraints:
         return []
 
-    f_region = (region or "").strip().lower()
-    f_area = (area or "").strip().lower()
-    f_market = (market or "").strip().lower()
+    f_regions = _normalize_geo_filter(region)
+    f_areas = _normalize_geo_filter(area)
+    f_markets = _normalize_geo_filter(market)
 
     result = []
     for c in constraints:
@@ -454,13 +463,13 @@ def _get_pace_constraint(config_db: Session, user_id: str | None, region: str = 
 
         # Match: constraint geo must align with the filter geo
         if c_region:
-            if f_region and c_region != f_region:
+            if f_regions and c_region not in f_regions:
                 continue
         if c_area:
-            if f_area and c_area != f_area:
+            if f_areas and c_area not in f_areas:
                 continue
         if c_market:
-            if f_market and c_market != f_market:
+            if f_markets and c_market not in f_markets:
                 continue
 
         result.append({
@@ -476,11 +485,11 @@ def _get_pace_constraint(config_db: Session, user_id: str | None, region: str = 
 def get_dashboard_summary(
     db: Session,
     config_db: Session,
-    region: str = None,
-    market: str = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     site_id: str = None,
     vendor: str = None,
-    area: str = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
     skipped_keys: set[str] | None = None,
@@ -509,8 +518,9 @@ def get_dashboard_summary(
     )
 
     result = _get_pace_constraint(config_db, user_id, region=region, area=area, market=market)
+    print(result,"Result")
     pace_max = sum(item.get("max_sites", 0) for item in (result or []))
-
+    print(pace_max,"Pace Max")
     empty = {
         "dashboard_status": "ON TRACK",
         "on_track_pct": 0,
@@ -523,6 +533,7 @@ def get_dashboard_summary(
         "excluded_pace_constraint_sites": 0,
         "pace_constraint_max_sites": pace_max,
     }
+    
     if not sites:
         return empty
 
@@ -562,13 +573,11 @@ def get_dashboard_summary(
         return empty
 
     blocked = sum(1 for s in sites if s["overall_status"] == "Blocked")
-    excluded_crew = sum(1 for s in sites if s["overall_status"] == "Excluded - Crew Shortage")
-    excluded_pace = sum(1 for s in sites if s["overall_status"] == "Excluded - Pace Constraint")
+    excluded_crew = sum(1 for s in sites if s.get("exclude_reason") == "Excluded - Crew Shortage")
+    excluded_pace = sum(1 for s in sites if s.get("exclude_reason") == "Excluded - Pace Constraint")
 
-    # Count statuses excluding blocked/excluded sites
-    countable = [s for s in sites if s["overall_status"] not in (
-        "Blocked", "Excluded - Crew Shortage", "Excluded - Pace Constraint"
-    )]
+    # Count statuses excluding blocked
+    countable = [s for s in sites if s["overall_status"] not in ("Blocked")]
     on_track = sum(1 for s in countable if s["overall_status"] == "ON TRACK")
     in_progress = sum(1 for s in countable if s["overall_status"] == "IN PROGRESS")
     critical = sum(1 for s in countable if s["overall_status"] == "CRITICAL")
@@ -605,11 +614,11 @@ def get_history_gantt(
     config_db: Session,
     date_from: date,
     date_to: date,
-    region: str = None,
-    market: str = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     site_id: str = None,
     vendor: str = None,
-    area: str = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
     limit: int = None,

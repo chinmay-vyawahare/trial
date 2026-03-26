@@ -12,9 +12,9 @@ interface Props {
   vendors: string[];
   planTypes: string[];
   devInitiatives: string[];
-  selectedRegion: string;
-  selectedMarket: string;
-  selectedArea: string;
+  selectedRegion: string[];
+  selectedMarket: string[];
+  selectedArea: string[];
   selectedSiteId: string;
   selectedVendor: string;
   selectedPlanType: string;
@@ -29,9 +29,9 @@ interface Props {
   selectedStatus: string;
   onStatusChange: (s: string) => void;
   userId: string;
-  onRegionChange: (r: string) => void;
-  onMarketChange: (m: string) => void;
-  onAreaChange: (a: string) => void;
+  onRegionChange: (r: string[]) => void;
+  onMarketChange: (m: string[]) => void;
+  onAreaChange: (a: string[]) => void;
   onSiteIdChange: (s: string) => void;
   onVendorChange: (v: string) => void;
   onPlanTypeChange: (p: string) => void;
@@ -70,6 +70,75 @@ function Select({
     >
       {children}
     </select>
+  );
+}
+
+function MultiSelect({
+  selected,
+  onChange,
+  options,
+  placeholder,
+}: {
+  selected: string[];
+  onChange: (v: string[]) => void;
+  options: string[];
+  placeholder: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  function toggle(val: string) {
+    if (selected.includes(val)) onChange(selected.filter((v) => v !== val));
+    else onChange([...selected, val]);
+  }
+
+  const label = selected.length === 0 ? placeholder : selected.length === 1 ? selected[0] : `${selected.length} selected`;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full px-2.5 py-2 text-xs rounded-lg border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 text-left truncate"
+      >
+        <span className={selected.length === 0 ? "text-gray-400" : ""}>{label}</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { onChange([]); }}
+              className="w-full px-2.5 py-1.5 text-[10px] text-red-500 hover:bg-red-50 text-left font-medium border-b border-gray-100"
+            >
+              Clear selection
+            </button>
+          )}
+          {options.map((o) => (
+            <label key={o} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-blue-50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.includes(o)}
+                onChange={() => toggle(o)}
+                className="accent-blue-500 w-3 h-3"
+              />
+              <span className="text-xs text-gray-700 truncate">{o}</span>
+            </label>
+          ))}
+          {options.length === 0 && (
+            <div className="px-2.5 py-2 text-xs text-gray-400">No options</div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -122,52 +191,22 @@ export default function Sidebar({
           Filters
         </div>
 
-        {/* Region dropdown */}
+        {/* Region multi-select */}
         <div>
           <Label>Region</Label>
-          <Select
-            value={selectedRegion}
-            onChange={(e) => onRegionChange(e.target.value)}
-          >
-            <option value="">All Regions</option>
-            {regions.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </Select>
+          <MultiSelect selected={selectedRegion} onChange={onRegionChange} options={regions} placeholder="All Regions" />
         </div>
 
-        {/* Area dropdown */}
+        {/* Area multi-select */}
         <div>
           <Label>Area</Label>
-          <Select
-            value={selectedArea}
-            onChange={(e) => onAreaChange(e.target.value)}
-          >
-            <option value="">All Areas</option>
-            {areas.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </Select>
+          <MultiSelect selected={selectedArea} onChange={onAreaChange} options={areas} placeholder="All Areas" />
         </div>
 
-        {/* Market dropdown */}
+        {/* Market multi-select */}
         <div>
           <Label>Market</Label>
-          <Select
-            value={selectedMarket}
-            onChange={(e) => onMarketChange(e.target.value)}
-          >
-            <option value="">All Markets</option>
-            {markets.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </Select>
+          <MultiSelect selected={selectedMarket} onChange={onMarketChange} options={markets} placeholder="All Markets" />
         </div>
 
         {/* Site ID dropdown */}

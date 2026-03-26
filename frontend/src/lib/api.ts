@@ -28,9 +28,23 @@ import type {
   UserHistoryExpectedDaysEntry,
   CxForecastSummaryResponse,
   CxActualSummaryResponse,
+  SiteGantt,
+  WeeklyStatusResponse,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+/** Append a multi-value query param (e.g. region=A&region=B) or single value. */
+function appendMulti(sp: URLSearchParams, key: string, values: string[] | string | undefined) {
+  if (!values) return;
+  if (Array.isArray(values)) {
+    for (const v of values) {
+      if (v) sp.append(key, v);
+    }
+  } else if (values) {
+    sp.append(key, values);
+  }
+}
 
 async function fetchAPI<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: "no-store", ...init });
@@ -83,11 +97,11 @@ export async function getAllFilters(): Promise<FilterOptions> {
 /* ── Gantt Charts ─────────────────────────────────────────────────── */
 
 export async function getGanttCharts(filters?: {
-  region?: string;
-  market?: string;
+  region?: string[];
+  market?: string[];
   site_id?: string;
   vendor?: string;
-  area?: string;
+  area?: string[];
   user_id?: string;
   limit?: number;
   offset?: number;
@@ -96,11 +110,11 @@ export async function getGanttCharts(filters?: {
   status?: string;
 }): Promise<GanttResponse> {
   const params = new URLSearchParams();
-  if (filters?.region) params.set("region", filters.region);
-  if (filters?.market) params.set("market", filters.market);
+  appendMulti(params, "region", filters?.region);
+  appendMulti(params, "market", filters?.market);
   if (filters?.site_id) params.set("site_id", filters.site_id);
   if (filters?.vendor) params.set("vendor", filters.vendor);
-  if (filters?.area) params.set("area", filters.area);
+  appendMulti(params, "area", filters?.area);
   if (filters?.user_id) params.set("user_id", filters.user_id);
   if (filters?.limit) params.set("limit", String(filters.limit));
   if (filters?.offset) params.set("offset", String(filters.offset));
@@ -114,9 +128,9 @@ export async function getGanttCharts(filters?: {
 /* ── Dashboard ────────────────────────────────────────────────────── */
 
 export async function getDashboardSummary(filters?: {
-  region?: string;
-  market?: string;
-  area?: string;
+  region?: string[];
+  market?: string[];
+  area?: string[];
   site_id?: string;
   vendor?: string;
   user_id?: string;
@@ -125,9 +139,9 @@ export async function getDashboardSummary(filters?: {
   status?: string;
 }): Promise<DashboardSummary> {
   const params = new URLSearchParams();
-  if (filters?.region) params.set("region", filters.region);
-  if (filters?.market) params.set("market", filters.market);
-  if (filters?.area) params.set("area", filters.area);
+  appendMulti(params, "region", filters?.region);
+  appendMulti(params, "market", filters?.market);
+  appendMulti(params, "area", filters?.area);
   if (filters?.site_id) params.set("site_id", filters.site_id);
   if (filters?.vendor) params.set("vendor", filters.vendor);
   if (filters?.user_id) params.set("user_id", filters.user_id);
@@ -141,32 +155,89 @@ export async function getDashboardSummary(filters?: {
 export async function getDashboardSlaSummary(params: {
   date_from: string;
   date_to: string;
-  region?: string;
-  market?: string;
-  area?: string;
+  region?: string[];
+  market?: string[];
+  area?: string[];
 }): Promise<DashboardSlaSummary> {
   const sp = new URLSearchParams();
   sp.set("date_from", params.date_from);
   sp.set("date_to", params.date_to);
-  if (params.region) sp.set("region", params.region);
-  if (params.market) sp.set("market", params.market);
-  if (params.area) sp.set("area", params.area);
+  appendMulti(sp, "region", params.region);
+  appendMulti(sp, "market", params.market);
+  appendMulti(sp, "area", params.area);
   return fetchAPI<DashboardSlaSummary>(`/api/v1/schedular/dashboard/sla-history-summary?${sp}`);
+}
+
+/* ── Weekly Status ────────────────────────────────────────────────── */
+
+export async function getWeeklyStatusDefault(filters?: {
+  region?: string[];
+  market?: string[];
+  area?: string[];
+  site_id?: string;
+  vendor?: string;
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+  status?: string;
+  sla_type?: string;
+}): Promise<WeeklyStatusResponse> {
+  const params = new URLSearchParams();
+  appendMulti(params, "region", filters?.region);
+  appendMulti(params, "market", filters?.market);
+  appendMulti(params, "area", filters?.area);
+  if (filters?.site_id) params.set("site_id", filters.site_id);
+  if (filters?.vendor) params.set("vendor", filters.vendor);
+  if (filters?.user_id) params.set("user_id", filters.user_id);
+  if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
+  if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.sla_type) params.set("sla_type", filters.sla_type);
+  const qs = params.toString();
+  return fetchAPI<WeeklyStatusResponse>(`/api/v1/schedular/dashboard/weekly-status-sla-default${qs ? `?${qs}` : ""}`);
+}
+
+export async function getWeeklyStatusHistory(params: {
+  date_from: string;
+  date_to: string;
+  region?: string[];
+  market?: string[];
+  area?: string[];
+  site_id?: string;
+  vendor?: string;
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+  status?: string;
+}): Promise<WeeklyStatusResponse> {
+  const sp = new URLSearchParams();
+  sp.set("date_from", params.date_from);
+  sp.set("date_to", params.date_to);
+  appendMulti(sp, "region", params.region);
+  appendMulti(sp, "market", params.market);
+  appendMulti(sp, "area", params.area);
+  if (params.site_id) sp.set("site_id", params.site_id);
+  if (params.vendor) sp.set("vendor", params.vendor);
+  if (params.user_id) sp.set("user_id", params.user_id);
+  if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
+  if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  if (params.status) sp.set("status", params.status);
+  return fetchAPI<WeeklyStatusResponse>(`/api/v1/schedular/dashboard/weekly-status-sla-history?${sp}`);
 }
 
 /* ── Gantt Charts — Dashboard (with user_id) ──────────────────────── */
 
 export async function getGanttDashboard(filters?: {
   user_id?: string;
-  region?: string;
-  market?: string;
-  area?: string;
+  region?: string[];
+  market?: string[];
+  area?: string[];
 }): Promise<DashboardSummary> {
   const params = new URLSearchParams();
   if (filters?.user_id) params.set("user_id", filters.user_id);
-  if (filters?.region) params.set("region", filters.region);
-  if (filters?.market) params.set("market", filters.market);
-  if (filters?.area) params.set("area", filters.area);
+  appendMulti(params, "region", filters?.region);
+  appendMulti(params, "market", filters?.market);
+  appendMulti(params, "area", filters?.area);
   const qs = params.toString();
   return fetchAPI<DashboardSummary>(`/api/v1/schedular/gantt-charts/dashboard${qs ? `?${qs}` : ""}`);
 }
@@ -314,9 +385,9 @@ export async function unskipAllPrerequisites(userId: string): Promise<{ detail: 
 export async function getSlaHistoryGantt(params: {
   date_from: string;
   date_to: string;
-  region?: string;
-  market?: string;
-  area?: string;
+  region?: string[];
+  market?: string[];
+  area?: string[];
   site_id?: string;
   vendor?: string;
   user_id?: string;
@@ -329,9 +400,9 @@ export async function getSlaHistoryGantt(params: {
   const sp = new URLSearchParams();
   sp.set("date_from", params.date_from);
   sp.set("date_to", params.date_to);
-  if (params.region) sp.set("region", params.region);
-  if (params.market) sp.set("market", params.market);
-  if (params.area) sp.set("area", params.area);
+  appendMulti(sp, "region", params.region);
+  appendMulti(sp, "market", params.market);
+  appendMulti(sp, "area", params.area);
   if (params.site_id) sp.set("site_id", params.site_id);
   if (params.vendor) sp.set("vendor", params.vendor);
   if (params.user_id) sp.set("user_id", params.user_id);
@@ -459,9 +530,9 @@ export async function deleteUserHistory(userId: string): Promise<{ detail: strin
 /* ── Export ────────────────────────────────────────────────────────── */
 
 export function getExportCsvUrl(filters?: {
-  region?: string;
-  market?: string;
-  area?: string;
+  region?: string[];
+  market?: string[];
+  area?: string[];
   site_id?: string;
   vendor?: string;
   user_id?: string;
@@ -470,9 +541,9 @@ export function getExportCsvUrl(filters?: {
   status?: string;
 }): string {
   const params = new URLSearchParams();
-  if (filters?.region) params.set("region", filters.region);
-  if (filters?.market) params.set("market", filters.market);
-  if (filters?.area) params.set("area", filters.area);
+  appendMulti(params, "region", filters?.region);
+  appendMulti(params, "market", filters?.market);
+  appendMulti(params, "area", filters?.area);
   if (filters?.site_id) params.set("site_id", filters.site_id);
   if (filters?.vendor) params.set("vendor", filters.vendor);
   if (filters?.user_id) params.set("user_id", filters.user_id);
@@ -486,9 +557,9 @@ export function getExportCsvUrl(filters?: {
 export function getExportCsvHistoryUrl(filters: {
   date_from: string;
   date_to: string;
-  region?: string;
-  market?: string;
-  area?: string;
+  region?: string[];
+  market?: string[];
+  area?: string[];
   site_id?: string;
   vendor?: string;
   user_id?: string;
@@ -499,9 +570,9 @@ export function getExportCsvHistoryUrl(filters: {
   const params = new URLSearchParams();
   params.set("date_from", filters.date_from);
   params.set("date_to", filters.date_to);
-  if (filters.region) params.set("region", filters.region);
-  if (filters.market) params.set("market", filters.market);
-  if (filters.area) params.set("area", filters.area);
+  appendMulti(params, "region", filters.region);
+  appendMulti(params, "market", filters.market);
+  appendMulti(params, "area", filters.area);
   if (filters.site_id) params.set("site_id", filters.site_id);
   if (filters.vendor) params.set("vendor", filters.vendor);
   if (filters.user_id) params.set("user_id", filters.user_id);
@@ -546,11 +617,11 @@ export async function deletePaceConstraint(id: number, userId: string): Promise<
 /* ── Analytics ────────────────────────────────────────────────────── */
 
 export async function getPendingMilestonesAuto(filters?: {
-  region?: string;
-  market?: string;
+  region?: string[];
+  market?: string[];
   site_id?: string;
   vendor?: string;
-  area?: string;
+  area?: string[];
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
@@ -558,11 +629,11 @@ export async function getPendingMilestonesAuto(filters?: {
   filter_date_to?: string;
 }): Promise<PendingMilestonesResponse> {
   const params = new URLSearchParams();
-  if (filters?.region) params.set("region", filters.region);
-  if (filters?.market) params.set("market", filters.market);
+  appendMulti(params, "region", filters?.region);
+  appendMulti(params, "market", filters?.market);
   if (filters?.site_id) params.set("site_id", filters.site_id);
   if (filters?.vendor) params.set("vendor", filters.vendor);
-  if (filters?.area) params.set("area", filters.area);
+  appendMulti(params, "area", filters?.area);
   if (filters?.user_id) params.set("user_id", filters.user_id);
   if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
   if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
@@ -575,11 +646,11 @@ export async function getPendingMilestonesAuto(filters?: {
 export async function getPendingMilestonesSlaHistory(params: {
   date_from: string;
   date_to: string;
-  region?: string;
-  market?: string;
+  region?: string[];
+  market?: string[];
   site_id?: string;
   vendor?: string;
-  area?: string;
+  area?: string[];
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
@@ -589,11 +660,11 @@ export async function getPendingMilestonesSlaHistory(params: {
   const sp = new URLSearchParams();
   sp.set("date_from", params.date_from);
   sp.set("date_to", params.date_to);
-  if (params.region) sp.set("region", params.region);
-  if (params.market) sp.set("market", params.market);
+  appendMulti(sp, "region", params.region);
+  appendMulti(sp, "market", params.market);
   if (params.site_id) sp.set("site_id", params.site_id);
   if (params.vendor) sp.set("vendor", params.vendor);
-  if (params.area) sp.set("area", params.area);
+  appendMulti(sp, "area", params.area);
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
   if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
@@ -603,11 +674,11 @@ export async function getPendingMilestonesSlaHistory(params: {
 }
 
 export async function getPendingByMilestoneAuto(filters?: {
-  region?: string;
-  market?: string;
+  region?: string[];
+  market?: string[];
   site_id?: string;
   vendor?: string;
-  area?: string;
+  area?: string[];
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
@@ -615,11 +686,11 @@ export async function getPendingByMilestoneAuto(filters?: {
   filter_date_to?: string;
 }): Promise<PendingByMilestoneResponse> {
   const params = new URLSearchParams();
-  if (filters?.region) params.set("region", filters.region);
-  if (filters?.market) params.set("market", filters.market);
+  appendMulti(params, "region", filters?.region);
+  appendMulti(params, "market", filters?.market);
   if (filters?.site_id) params.set("site_id", filters.site_id);
   if (filters?.vendor) params.set("vendor", filters.vendor);
-  if (filters?.area) params.set("area", filters.area);
+  appendMulti(params, "area", filters?.area);
   if (filters?.user_id) params.set("user_id", filters.user_id);
   if (filters?.consider_vendor_capacity) params.set("consider_vendor_capacity", "true");
   if (filters?.pace_constraint_flag) params.set("pace_constraint_flag", "true");
@@ -632,11 +703,11 @@ export async function getPendingByMilestoneAuto(filters?: {
 export async function getPendingByMilestoneSlaHistory(params: {
   date_from: string;
   date_to: string;
-  region?: string;
-  market?: string;
+  region?: string[];
+  market?: string[];
   site_id?: string;
   vendor?: string;
-  area?: string;
+  area?: string[];
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
@@ -646,11 +717,11 @@ export async function getPendingByMilestoneSlaHistory(params: {
   const sp = new URLSearchParams();
   sp.set("date_from", params.date_from);
   sp.set("date_to", params.date_to);
-  if (params.region) sp.set("region", params.region);
-  if (params.market) sp.set("market", params.market);
+  appendMulti(sp, "region", params.region);
+  appendMulti(sp, "market", params.market);
   if (params.site_id) sp.set("site_id", params.site_id);
   if (params.vendor) sp.set("vendor", params.vendor);
-  if (params.area) sp.set("area", params.area);
+  appendMulti(sp, "area", params.area);
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
   if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
@@ -663,11 +734,11 @@ export async function getDrilldownAuto(params: {
   drilldown_type: string;
   pending_count?: number;
   milestone_key?: string;
-  region?: string;
-  market?: string;
+  region?: string[];
+  market?: string[];
   site_id?: string;
   vendor?: string;
-  area?: string;
+  area?: string[];
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
@@ -678,11 +749,11 @@ export async function getDrilldownAuto(params: {
   sp.set("drilldown_type", params.drilldown_type);
   if (params.pending_count !== undefined && params.pending_count !== null) sp.set("pending_count", String(params.pending_count));
   if (params.milestone_key) sp.set("milestone_key", params.milestone_key);
-  if (params.region) sp.set("region", params.region);
-  if (params.market) sp.set("market", params.market);
+  appendMulti(sp, "region", params.region);
+  appendMulti(sp, "market", params.market);
   if (params.site_id) sp.set("site_id", params.site_id);
   if (params.vendor) sp.set("vendor", params.vendor);
-  if (params.area) sp.set("area", params.area);
+  appendMulti(sp, "area", params.area);
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
   if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
@@ -697,11 +768,11 @@ export async function getDrilldownSlaHistory(params: {
   drilldown_type: string;
   pending_count?: number;
   milestone_key?: string;
-  region?: string;
-  market?: string;
+  region?: string[];
+  market?: string[];
   site_id?: string;
   vendor?: string;
-  area?: string;
+  area?: string[];
   user_id?: string;
   consider_vendor_capacity?: boolean;
   pace_constraint_flag?: boolean;
@@ -714,11 +785,11 @@ export async function getDrilldownSlaHistory(params: {
   sp.set("drilldown_type", params.drilldown_type);
   if (params.pending_count !== undefined && params.pending_count !== null) sp.set("pending_count", String(params.pending_count));
   if (params.milestone_key) sp.set("milestone_key", params.milestone_key);
-  if (params.region) sp.set("region", params.region);
-  if (params.market) sp.set("market", params.market);
+  appendMulti(sp, "region", params.region);
+  appendMulti(sp, "market", params.market);
   if (params.site_id) sp.set("site_id", params.site_id);
   if (params.vendor) sp.set("vendor", params.vendor);
-  if (params.area) sp.set("area", params.area);
+  appendMulti(sp, "area", params.area);
   if (params.user_id) sp.set("user_id", params.user_id);
   if (params.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
   if (params.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
@@ -732,21 +803,21 @@ export async function getDrilldownSlaHistory(params: {
 export async function getCxForecastSummary(filters?: {
   start_date?: string;
   end_date?: string;
-  region?: string;
-  market?: string;
+  region?: string[];
+  market?: string[];
   site_id?: string;
   vendor?: string;
-  area?: string;
+  area?: string[];
   user_id?: string;
 }): Promise<CxForecastSummaryResponse> {
   const params = new URLSearchParams();
   if (filters?.start_date) params.set("start_date", filters.start_date);
   if (filters?.end_date) params.set("end_date", filters.end_date);
-  if (filters?.region) params.set("region", filters.region);
-  if (filters?.market) params.set("market", filters.market);
+  appendMulti(params, "region", filters?.region);
+  appendMulti(params, "market", filters?.market);
   if (filters?.site_id) params.set("site_id", filters.site_id);
   if (filters?.vendor) params.set("vendor", filters.vendor);
-  if (filters?.area) params.set("area", filters.area);
+  appendMulti(params, "area", filters?.area);
   if (filters?.user_id) params.set("user_id", filters.user_id);
   const qs = params.toString();
   return fetchAPI<CxForecastSummaryResponse>(`/api/v1/schedular/cx-forecast-summary${qs ? `?${qs}` : ""}`);
@@ -757,24 +828,56 @@ export async function getCxForecastSummary(filters?: {
 export async function getCxActualSummary(filters?: {
   start_date?: string;
   end_date?: string;
-  region?: string;
-  market?: string;
+  region?: string[];
+  market?: string[];
   site_id?: string;
   vendor?: string;
-  area?: string;
+  area?: string[];
   user_id?: string;
 }): Promise<CxActualSummaryResponse> {
   const params = new URLSearchParams();
   if (filters?.start_date) params.set("start_date", filters.start_date);
   if (filters?.end_date) params.set("end_date", filters.end_date);
-  if (filters?.region) params.set("region", filters.region);
-  if (filters?.market) params.set("market", filters.market);
+  appendMulti(params, "region", filters?.region);
+  appendMulti(params, "market", filters?.market);
   if (filters?.site_id) params.set("site_id", filters.site_id);
   if (filters?.vendor) params.set("vendor", filters.vendor);
-  if (filters?.area) params.set("area", filters.area);
+  appendMulti(params, "area", filters?.area);
   if (filters?.user_id) params.set("user_id", filters.user_id);
   const qs = params.toString();
   return fetchAPI<CxActualSummaryResponse>(`/api/v1/schedular/cx-actual-summary${qs ? `?${qs}` : ""}`);
+}
+
+/* ── Calendar ──────────────────────────────────────────────────────── */
+
+export async function getCalendarSites(filters: {
+  start_date: string;
+  end_date: string;
+  region?: string[];
+  market?: string[];
+  site_id?: string;
+  vendor?: string;
+  area?: string[];
+  user_id?: string;
+  consider_vendor_capacity?: boolean;
+  pace_constraint_flag?: boolean;
+  status?: string;
+  sla_type?: string;
+}): Promise<{ sla_type: string; start_date: string; end_date: string; count: number; sites: SiteGantt[] }> {
+  const sp = new URLSearchParams();
+  sp.set("start_date", filters.start_date);
+  sp.set("end_date", filters.end_date);
+  appendMulti(sp, "region", filters.region);
+  appendMulti(sp, "market", filters.market);
+  if (filters.site_id) sp.set("site_id", filters.site_id);
+  if (filters.vendor) sp.set("vendor", filters.vendor);
+  appendMulti(sp, "area", filters.area);
+  if (filters.user_id) sp.set("user_id", filters.user_id);
+  if (filters.consider_vendor_capacity) sp.set("consider_vendor_capacity", "true");
+  if (filters.pace_constraint_flag) sp.set("pace_constraint_flag", "true");
+  if (filters.status) sp.set("status", filters.status);
+  if (filters.sla_type) sp.set("sla_type", filters.sla_type);
+  return fetchAPI(`/api/v1/schedular/calendar?${sp}`);
 }
 
 /* ── Health ────────────────────────────────────────────────────────── */

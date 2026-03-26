@@ -1,16 +1,17 @@
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import STAGING_TABLE
+from app.core.filters import apply_geo_filters
 
 
 def build_gantt_query(
     milestone_columns: list[str],
     planned_start_column: str,
-    region: str = None,
-    market: str = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     site_id: str = None,
     vendor: str = None,
-    area: str = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
     limit: int = None,
@@ -35,21 +36,11 @@ def build_gantt_query(
         where_clauses.append("COALESCE(por_regional_dev_initiatives, '') ILIKE :rdi_pattern")
         params["rdi_pattern"] = f"%{regional_dev_initiatives}%"
 
-    if region:
-        where_clauses.append("region = :region")
-        params["region"] = region
-    if market:
-        where_clauses.append("m_market = :market")
-        params["market"] = market
-    if site_id:
-        where_clauses.append("s_site_id = :site_id")
-        params["site_id"] = site_id
-    if vendor:
-        where_clauses.append("construction_gc = :vendor")
-        params["vendor"] = vendor
-    if area:
-        where_clauses.append("m_area = :area")
-        params["area"] = area
+    apply_geo_filters(
+        where_clauses, params,
+        region=region, market=market, area=area,
+        site_id=site_id, vendor=vendor,
+    )
 
     where_sql = " AND ".join(where_clauses)
 
@@ -105,10 +96,10 @@ def build_gantt_query(
 def build_dashboard_query(
     milestone_columns: list[str],
     planned_start_column: str,
-    region: str = None,
-    market: str = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     vendor: str = None,
-    area: str = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
 ):
@@ -130,18 +121,11 @@ def build_dashboard_query(
         where_clauses.append("COALESCE(por_regional_dev_initiatives, '') ILIKE :rdi_pattern")
         params["rdi_pattern"] = f"%{regional_dev_initiatives}%"
 
-    if region:
-        where_clauses.append("region = :region")
-        params["region"] = region
-    if market:
-        where_clauses.append("m_market = :market")
-        params["market"] = market
-    if vendor:
-        where_clauses.append("construction_gc = :vendor")
-        params["vendor"] = vendor
-    if area:
-        where_clauses.append("m_area = :area")
-        params["area"] = area
+    apply_geo_filters(
+        where_clauses, params,
+        region=region, market=market, area=area,
+        vendor=vendor,
+    )
 
     where_sql = " AND ".join(where_clauses)
 

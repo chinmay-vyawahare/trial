@@ -25,11 +25,11 @@ router = APIRouter(
 
 @router.get("/gantt-csv")
 def export_gantt_to_csv(
-    region: str = Query(None, description="Filter by region"),
-    market: str = Query(None, description="Filter by market"),
+    region: list[str] = Query(None, description="Filter by region (multi-value)"),
+    market: list[str] = Query(None, description="Filter by market (multi-value)"),
     site_id: str = Query(None, description="Filter by site ID"),
     vendor: str = Query(None, description="Filter by vendor"),
-    area: str = Query(None, description="Filter by area"),
+    area: list[str] = Query(None, description="Filter by area (multi-value)"),
     user_id: str = Query(None, description="User ID — if provided, applies user's saved filters. If not, exports all sites."),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
@@ -78,11 +78,11 @@ def export_gantt_to_csv(
 def export_gantt_to_csv_history(
     date_from: str = Query(..., description="History date range start (YYYY-MM-DD)"),
     date_to: str = Query(..., description="History date range end (YYYY-MM-DD)"),
-    region: str = Query(None, description="Filter by region"),
-    market: str = Query(None, description="Filter by market"),
+    region: list[str] = Query(None, description="Filter by region (multi-value)"),
+    market: list[str] = Query(None, description="Filter by market (multi-value)"),
     site_id: str = Query(None, description="Filter by site ID"),
     vendor: str = Query(None, description="Filter by vendor"),
-    area: str = Query(None, description="Filter by area"),
+    area: list[str] = Query(None, description="Filter by area (multi-value)"),
     user_id: str = Query(None, description="User ID — if provided, applies user's saved filters."),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),

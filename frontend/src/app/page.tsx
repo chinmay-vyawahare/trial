@@ -16,6 +16,8 @@ import PrerequisiteFlowchart from "@/components/PrerequisiteFlowchart";
 import PendingMilestonesChart from "@/components/PendingMilestonesChart";
 import CxForecastChart from "@/components/CxForecastChart";
 import CxActualChart from "@/components/CxActualChart";
+import CalendarView from "@/components/CalendarView";
+import WeeklyStatusChart from "@/components/WeeklyStatusChart";
 
 export default function Home() {
   const [sites, setSites] = useState<SiteGantt[]>([]);
@@ -31,9 +33,9 @@ export default function Home() {
     dev_initiatives: [],
   });
   const [loading, setLoading] = useState(false);
-  const [region, setRegion] = useState("");
-  const [market, setMarket] = useState("");
-  const [area, setArea] = useState("");
+  const [region, setRegion] = useState<string[]>([]);
+  const [market, setMarket] = useState<string[]>([]);
+  const [area, setArea] = useState<string[]>([]);
   const [siteIdFilter, setSiteIdFilter] = useState("");
   const [vendor, setVendor] = useState("");
   const [planType, setPlanType] = useState("");
@@ -69,9 +71,16 @@ export default function Home() {
     if (!newUserId) return;
     try {
       const uf = await getUserFilters(newUserId);
-      if (uf.region) setRegion(uf.region);
-      if (uf.market) setMarket(uf.market);
-      if (uf.area) setArea(uf.area);
+      // region/market/area may be stored as JSON arrays in DB
+      if (uf.region) {
+        try { setRegion(JSON.parse(uf.region)); } catch { setRegion([uf.region]); }
+      }
+      if (uf.market) {
+        try { setMarket(JSON.parse(uf.market)); } catch { setMarket([uf.market]); }
+      }
+      if (uf.area) {
+        try { setArea(JSON.parse(uf.area)); } catch { setArea([uf.area]); }
+      }
       if (uf.site_id) setSiteIdFilter(uf.site_id);
       if (uf.vendor) setVendor(uf.vendor);
       if (uf.plan_type_include) setPlanType(uf.plan_type_include);
@@ -86,9 +95,9 @@ export default function Home() {
     setLoading(true);
     try {
       const filters = {
-        region: region || undefined,
-        market: market || undefined,
-        area: area || undefined,
+        region: region.length ? region : undefined,
+        market: market.length ? market : undefined,
+        area: area.length ? area : undefined,
         site_id: siteIdFilter || undefined,
         vendor: vendor || undefined,
         user_id: userId || undefined,
@@ -104,9 +113,9 @@ export default function Home() {
           getSlaHistoryGantt({
             date_from: slaDateFrom,
             date_to: slaDateTo,
-            region: region || undefined,
-            market: market || undefined,
-            area: area || undefined,
+            region: region.length ? region : undefined,
+            market: market.length ? market : undefined,
+            area: area.length ? area : undefined,
             site_id: siteIdFilter || undefined,
             vendor: vendor || undefined,
             user_id: userId || undefined,
@@ -203,9 +212,9 @@ export default function Home() {
     for (const action of actions) {
       if (action.method === "GET" && action.endpoint.includes("/gantt-charts")) {
         // Apply filters from the action params and reload
-        if (action.params.region) setRegion(action.params.region);
-        if (action.params.market) setMarket(action.params.market);
-        if (action.params.area) setArea(action.params.area);
+        if (action.params.region) setRegion([action.params.region]);
+        if (action.params.market) setMarket([action.params.market]);
+        if (action.params.area) setArea([action.params.area]);
         if (action.params.site_id) setSiteIdFilter(action.params.site_id);
         if (action.params.vendor) setVendor(action.params.vendor);
         if (action.params.user_id) setUserId(action.params.user_id);
@@ -226,9 +235,9 @@ export default function Home() {
   }
 
   function clearFilters() {
-    setRegion("");
-    setMarket("");
-    setArea("");
+    setRegion([]);
+    setMarket([]);
+    setArea([]);
     setSiteIdFilter("");
     setVendor("");
     setPlanType("");
@@ -242,9 +251,9 @@ export default function Home() {
 
   function handleExport() {
     const commonFilters = {
-      region: region || undefined,
-      market: market || undefined,
-      area: area || undefined,
+      region: region.length ? region : undefined,
+      market: market.length ? market : undefined,
+      area: area.length ? area : undefined,
       site_id: siteIdFilter || undefined,
       vendor: vendor || undefined,
       user_id: userId || undefined,
@@ -261,9 +270,9 @@ export default function Home() {
     const url = getExportCsvHistoryUrl({
       date_from: slaDateFrom,
       date_to: slaDateTo,
-      region: region || undefined,
-      market: market || undefined,
-      area: area || undefined,
+      region: region.length ? region : undefined,
+      market: market.length ? market : undefined,
+      area: area.length ? area : undefined,
       site_id: siteIdFilter || undefined,
       vendor: vendor || undefined,
       user_id: userId || undefined,
@@ -378,6 +387,23 @@ export default function Home() {
                 refreshKey={analyticsRefreshKey}
               />
             )}
+            {activeTab === "weekly-status" && (
+              <WeeklyStatusChart
+                region={region}
+                market={market}
+                area={area}
+                siteId={siteIdFilter}
+                vendor={vendor}
+                userId={userId}
+                considerVendorCapacity={considerVendorCapacity}
+                paceConstraintFlag={paceConstraintFlag}
+                statusFilter={statusFilter}
+                slaMode={slaMode}
+                slaDateFrom={slaDateFrom}
+                slaDateTo={slaDateTo}
+                refreshKey={analyticsRefreshKey}
+              />
+            )}
             {activeTab === "cx-forecast" && (
               <CxForecastChart
                 region={region}
@@ -397,6 +423,21 @@ export default function Home() {
                 siteId={siteIdFilter}
                 vendor={vendor}
                 userId={userId}
+                refreshKey={analyticsRefreshKey}
+              />
+            )}
+            {activeTab === "calendar" && (
+              <CalendarView
+                region={region}
+                market={market}
+                area={area}
+                siteId={siteIdFilter}
+                vendor={vendor}
+                userId={userId}
+                considerVendorCapacity={considerVendorCapacity}
+                paceConstraintFlag={paceConstraintFlag}
+                statusFilter={statusFilter}
+                slaType={slaMode}
                 refreshKey={analyticsRefreshKey}
               />
             )}

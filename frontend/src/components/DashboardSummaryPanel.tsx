@@ -95,9 +95,9 @@ export default function DashboardSummaryPanel({ regions, markets, areas }: Props
     setLoading(true);
     try {
       const res = await getDashboardSummary({
-        region: dsRegion || undefined,
-        market: dsMarket || undefined,
-        area: dsArea || undefined,
+        region: dsRegion ? [dsRegion] : undefined,
+        market: dsMarket ? [dsMarket] : undefined,
+        area: dsArea ? [dsArea] : undefined,
         user_id: dsUserId || undefined,
       });
       setData(res);

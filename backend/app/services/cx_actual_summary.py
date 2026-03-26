@@ -11,14 +11,15 @@ from datetime import date
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import STAGING_TABLE
+from app.core.filters import apply_geo_filters
 
 
 def _build_where(
-    region: str | None = None,
-    market: str | None = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     site_id: str | None = None,
     vendor: str | None = None,
-    area: str | None = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
     start_date: str | None = None,
@@ -32,21 +33,11 @@ def _build_where(
     ]
     params: dict = {}
 
-    if region:
-        clauses.append("region = :region")
-        params["region"] = region
-    if market:
-        clauses.append("m_market = :market")
-        params["market"] = market
-    if site_id:
-        clauses.append("s_site_id = :site_id")
-        params["site_id"] = site_id
-    if vendor:
-        clauses.append("construction_gc = :vendor")
-        params["vendor"] = vendor
-    if area:
-        clauses.append("m_area = :area")
-        params["area"] = area
+    apply_geo_filters(
+        clauses, params,
+        region=region, market=market, area=area,
+        site_id=site_id, vendor=vendor,
+    )
 
     # Gate checks
     if plan_type_include:
@@ -72,11 +63,11 @@ def _build_where(
 def get_cx_actual_daily_summary(
     db: Session,
     *,
-    region: str | None = None,
-    market: str | None = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     site_id: str | None = None,
     vendor: str | None = None,
-    area: str | None = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
     start_date: str | None = None,

@@ -12,9 +12,9 @@ import {
 } from "@/lib/api";
 
 interface Props {
-  region?: string;
-  market?: string;
-  area?: string;
+  region?: string[];
+  market?: string[];
+  area?: string[];
   siteId?: string;
   vendor?: string;
   userId?: string;
@@ -62,9 +62,9 @@ export default function PendingMilestonesChart({
   const [drilldownLoading, setDrilldownLoading] = useState(false);
 
   const filters = useMemo(() => ({
-    region: region || undefined,
-    market: market || undefined,
-    area: area || undefined,
+    region: region?.length ? region : undefined,
+    market: market?.length ? market : undefined,
+    area: area?.length ? area : undefined,
     site_id: siteId || undefined,
     vendor: vendor || undefined,
     user_id: userId || undefined,

@@ -415,6 +415,32 @@ export interface CxActualSummaryResponse {
   days: CxActualDay[];
 }
 
+/* ── Weekly Status ────────────────────────────────────────────────── */
+
+export interface WeeklyStatusCounts {
+  [status: string]: number;
+}
+
+export interface RegionalStatusCounts {
+  [region: string]: WeeklyStatusCounts;
+}
+
+export interface WeekData {
+  week: number;
+  year: number;
+  week_start: string;
+  week_end: string;
+  total: number;
+  status_counts: RegionalStatusCounts;
+}
+
+export interface WeeklyStatusResponse {
+  sla_type: string;
+  date_from?: string;
+  date_to?: string;
+  weeks: WeekData[];
+}
+
 export interface SlaHistoryGanttResponse {
   sla_type: string;
   date_from: string;

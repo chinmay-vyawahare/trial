@@ -84,33 +84,27 @@ def _find_date_ancestors(
 
 
 def _build_filter_clauses(
-    region: str | None = None,
-    market: str | None = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     site_id: str | None = None,
     vendor: str | None = None,
-    area: str | None = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
 ) -> tuple[str, dict]:
     """Build WHERE clause fragments and params for geographic/gate filters."""
-    clauses = []
+    from app.core.filters import apply_geo_filters
+
+    clauses: list[str] = []
     params: dict = {}
 
-    if region:
-        clauses.append("region = :f_region")
-        params["f_region"] = region
-    if market:
-        clauses.append("m_market = :f_market")
-        params["f_market"] = market
-    if site_id:
-        clauses.append("s_site_id = :f_site_id")
-        params["f_site_id"] = site_id
-    if vendor:
-        clauses.append("construction_gc = :f_vendor")
-        params["f_vendor"] = vendor
-    if area:
-        clauses.append("m_area = :f_area")
-        params["f_area"] = area
+    apply_geo_filters(
+        clauses, params,
+        region=region, market=market, area=area,
+        site_id=site_id, vendor=vendor,
+        prefix="f_",
+    )
+
     if plan_type_include:
         placeholders = ", ".join(f":f_pti_{i}" for i in range(len(plan_type_include)))
         clauses.append(f"por_plan_type IN ({placeholders})")
@@ -130,11 +124,11 @@ def compute_history_expected_days(
     date_from: date,
     date_to: date,
     use_median: bool = True,
-    region: str | None = None,
-    market: str | None = None,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
     site_id: str | None = None,
     vendor: str | None = None,
-    area: str | None = None,
+    area: list[str] | None = None,
     plan_type_include: list[str] | None = None,
     regional_dev_initiatives: str | None = None,
 ) -> list[dict]:

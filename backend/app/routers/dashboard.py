@@ -54,11 +54,11 @@ def _get_gate_checks(config_db: Session, user_id: str | None):
 
 @router.get("/sla-default-summary")
 def dashboard_summary(
-    region: str = Query(None, description="Filter by region"),
-    market: str = Query(None, description="Filter by market"),
+    region: list[str] = Query(None, description="Filter by region (multi-value)"),
+    market: list[str] = Query(None, description="Filter by market (multi-value)"),
     site_id: str = Query(None, description="Filter by site ID"),
     vendor: str = Query(None, description="Filter by vendor"),
-    area: str = Query(None, description="Filter by area"),
+    area: list[str] = Query(None, description="Filter by area (multi-value)"),
     user_id: str = Query(None, description="User ID for SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
@@ -103,11 +103,11 @@ def dashboard_summary(
 def sla_dashboard_summary(
     date_from: str = Query(..., description="SLA history date range start (YYYY-MM-DD)"),
     date_to: str = Query(..., description="SLA history date range end (YYYY-MM-DD)"),
-    region: str = Query(None, description="Filter by region"),
-    market: str = Query(None, description="Filter by market"),
+    region: list[str] = Query(None, description="Filter by region (multi-value)"),
+    market: list[str] = Query(None, description="Filter by market (multi-value)"),
     site_id: str = Query(None, description="Filter by site ID"),
     vendor: str = Query(None, description="Filter by vendor"),
-    area: str = Query(None, description="Filter by area"),
+    area: list[str] = Query(None, description="Filter by area (multi-value)"),
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
@@ -190,11 +190,11 @@ def sla_dashboard_summary(
 
 @router.get("/weekly-status-sla-default")
 def weekly_status_user_override(
-    region: str = Query(None, description="Filter by region"),
-    market: str = Query(None, description="Filter by market"),
+    region: list[str] = Query(None, description="Filter by region (multi-value)"),
+    market: list[str] = Query(None, description="Filter by market (multi-value)"),
     site_id: str = Query(None, description="Filter by site ID"),
     vendor: str = Query(None, description="Filter by vendor"),
-    area: str = Query(None, description="Filter by area"),
+    area: list[str] = Query(None, description="Filter by area (multi-value)"),
     user_id: str = Query(None, description="User ID — uses user's SLA overrides if available"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
@@ -239,11 +239,11 @@ def weekly_status_user_override(
 def weekly_status_history(
     date_from: str = Query(..., description="History date range start (YYYY-MM-DD)"),
     date_to: str = Query(..., description="History date range end (YYYY-MM-DD)"),
-    region: str = Query(None, description="Filter by region"),
-    market: str = Query(None, description="Filter by market"),
+    region: list[str] = Query(None, description="Filter by region (multi-value)"),
+    market: list[str] = Query(None, description="Filter by market (multi-value)"),
     site_id: str = Query(None, description="Filter by site ID"),
     vendor: str = Query(None, description="Filter by vendor"),
-    area: str = Query(None, description="Filter by area"),
+    area: list[str] = Query(None, description="Filter by area (multi-value)"),
     user_id: str = Query(None, description="User ID — uses history-based SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
