@@ -7,8 +7,8 @@ The planner classifies intent, then routes to the appropriate handler.
 Scheduler node uses OpenAI tool-calling to return API endpoints for the frontend.
 
 Chat history is persisted per user_id + thread_id in the chat_history table.
-Only the last 2 message pairs are summarized and included in the system prompt
-to avoid hitting context limits on long threads.
+The last 5 message pairs (10 rows) are summarized and included in the system prompt
+so the LLM has enough context for follow-up confirmations.
 """
 
 import json
@@ -46,11 +46,11 @@ def _get_user_filters(config_db: Session, user_id: str) -> dict:
     return result
 
 
-def _get_recent_messages(config_db: Session, user_id: str, thread_id: str, limit: int = 4) -> list[dict]:
+def _get_recent_messages(config_db: Session, user_id: str, thread_id: str, limit: int = 10) -> list[dict]:
     """Load last N messages from chat_history table filtered by thread_id.
 
-    Default limit=4 (2 messages = 1 user + 1 assistant pair, last 2 pairs)
-    to avoid hitting context limits when threads grow long.
+    Default limit=10 (5 user + assistant pairs) so the LLM has enough
+    conversational context for follow-ups like "yes" / "confirm".
     """
     rows = (
         config_db.query(ChatHistory)
@@ -110,8 +110,8 @@ def run_assistant(
     user_filters = _get_user_filters(config_db, user_id)
     logger.info("  Loaded user filters: %s", json.dumps(user_filters, default=str))
 
-    # Load last 2 message pairs (4 rows) from DB for this thread and summarize
-    recent_messages = _get_recent_messages(config_db, user_id, thread_id, limit=4)
+    # Load last 5 message pairs (10 rows) from DB for this thread and summarize
+    recent_messages = _get_recent_messages(config_db, user_id, thread_id)
     chat_summary = _summarize_history(recent_messages)
     logger.info("  Chat history : %d messages loaded", len(recent_messages))
 
@@ -139,9 +139,9 @@ def run_assistant(
     message = result.get("message", "")
     message = message.replace("\n", " ").replace("  ", " ").strip()
 
-    # Save this exchange to DB
-    raw = json.dumps(result)
-    _save_messages(config_db, user_id, thread_id, user_message, raw)
+    # Save this exchange to DB — store only the human-readable message,
+    # not the full JSON with actions, so the chat summary stays clean
+    _save_messages(config_db, user_id, thread_id, user_message, message)
 
     logger.info(
         "\n"

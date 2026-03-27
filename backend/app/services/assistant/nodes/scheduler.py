@@ -14,6 +14,7 @@ from app.core.database import STAGING_TABLE
 from app.services.assistant.llm import get_openai_client, LLM_MODEL
 from app.services.assistant.tools import API_REGISTRY, FILTER_TOOLS
 from app.services.gantt import get_filter_options
+from app.services.gantt.queries import get_geo_hierarchy
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +42,39 @@ You have tools to fetch available filter values from the database in real time:
 - get_available_vendors — fetch all vendor/GC values
 - get_available_plan_types — fetch all plan type values
 - get_available_dev_initiatives — fetch all dev initiative values
+- get_geolocation_hierarchy — fetch the full region → area → market hierarchy tree
 
 **ALWAYS call the relevant tool** when:
 - The user asks "what markets/regions/areas/sites/vendors are available?"
 - You need to validate or match a user-provided filter value
 - The user asks to change a filter and you need to confirm the value exists
+
+## GEO HIERARCHY (Region → Area → Market)
+
+The geographic filters follow a strict hierarchy: **Region → Area → Market**.
+Every area belongs to exactly one region, and every market belongs to exactly one area.
+
+**You have the `get_geolocation_hierarchy` tool** which returns the full mapping:
+  {{"Central": {{"CO": ["Denver", "Colorado Springs"], "OK": ["Tulsa", "OKC"]}}, "South": {{"TX": ["Dallas", "Houston"]}}}}
+
+### MANDATORY VALIDATION STEPS for any geo filter change (region, area, or market):
+
+When the user asks to change region, area, or market, you MUST follow these steps IN ORDER:
+
+**Step 1**: Call the relevant value tool (e.g. `get_available_markets`) to validate the value exists.
+**Step 2**: Check CURRENT USER FILTERS — does the user have OTHER geo filters already set?
+  - If the user has NO other geo filters set → skip to Step 4.
+  - If the user HAS other geo filters set → proceed to Step 3.
+**Step 3**: Call `get_geolocation_hierarchy` and cross-check:
+  - If user has region and is changing area → verify the new area exists under that region.
+  - If user has region and is changing market → verify the new market exists under that region.
+  - If user has area and is changing market → verify the new market exists under that area.
+  - If user is changing region and has area/market → verify existing area/market exist under the new region.
+  - **If there is a MISMATCH** → do NOT save. Instead, warn the user with empty actions:
+    Example: {{"message": "The market 'Chicago' does not belong to your current region 'South'. In the hierarchy, Chicago is under the 'Central' region → 'IL' area. Would you like me to update your region to 'Central' and area to 'IL' along with the market?", "actions": []}}
+  - **If the user confirms** (e.g. "yes") → update ALL conflicting filters together in one save.
+  - **If there is NO mismatch** → proceed to Step 4.
+**Step 4**: Save the filter with a POST action.
 
 ## AVAILABLE API ENDPOINTS:
 
@@ -69,51 +98,65 @@ You have tools to fetch available filter values from the database in real time:
    - "actions": list of API calls for the frontend (can be empty if just answering a question)
 
 2. Each action must have:
-   - "method": GET
+   - "method": GET, POST, or DELETE
    - "endpoint": full path (replace {{user_id}} with actual value)
-   - "params": query params dict (only include non-null values)
+   - "params": dict of values (only include non-null values)
 
 3. **CRITICAL — ONLY change what the user explicitly asked for:**
    - If user says "change market to Dallas", ONLY include "market" and "user_id" in params.
    - If user says "set region to South", ONLY include "region" and "user_id" in params.
    - NEVER add extra filters that the user did not mention in their request.
-   - The backend merges with saved filters automatically — you do NOT need to re-send existing filters.
    - Only include the filter(s) the user explicitly mentioned + user_id. Nothing else.
 
-4. When user asks to change a filter (e.g. "change market to Dallas"):
-   - First call the relevant tool (e.g. get_available_markets) to get the real values
-   - Match the user's input to the exact value from the tool results
-   - Return the gantt-charts endpoint with ONLY user_id + the changed filter param
-   - The backend auto-saves filters when user_id is provided
-   - Do NOT return a separate save/update call
-   - If the user's input does NOT exactly match any available value but is CLOSE (e.g. typo):
-     * Suggest the closest matching value(s) as a follow-up question
-     * Example: {{"message": "Did you mean 'South'? Please confirm and I'll update the region filter.", "actions": []}}
-   - If multiple values could match, list all options
-   - If no match at all, inform the user and list available options for that filter
+4. **IMPORTANT — region, market, and area are LISTS (arrays), not strings:**
+   - region: always a list, e.g. ["South"] or ["South", "Northeast"]
+   - market: always a list, e.g. ["Dallas"] or ["Dallas", "NYC"]
+   - area: always a list, e.g. ["Urban"] or ["Urban", "Rural"]
+   - plan_type_include: always a list, e.g. ["New Build", "FOA"]
+   - vendor and site_id: remain strings
+   - regional_dev_initiatives: remains a string
 
-5. When user asks "what markets are available" or "list regions" or asks about filter options:
+5. When user asks to change/set a geo filter (region, area, or market):
+   - **YOU MUST follow the MANDATORY VALIDATION STEPS above (Steps 1–4).**
+   - Step 1: Call the value tool to validate the value exists and match it exactly.
+   - Step 2–3: If other geo filters exist, call `get_geolocation_hierarchy` and cross-check.
+     If mismatch → warn with empty actions. If no mismatch → proceed.
+   - Step 4: Return a save_user_filters POST action with ONLY user_id + changed param(s).
+   - Example: {{"message": "Market filter updated to Dallas.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/user-filters", "params": {{"user_id": "<actual_user_id>", "market": ["Dallas"]}}}}]}}
+   - If the value does NOT exactly match but is CLOSE (typo):
+     * Suggest the closest match as a follow-up question
+     * Example: {{"message": "Did you mean 'South'? Please confirm.", "actions": []}}
+   - If no match at all, inform the user and list available options.
+
+5b. When user asks to change a NON-geo filter (vendor, site_id):
+   - Call the relevant value tool, match, and save. No hierarchy check needed.
+
+6. When user asks to change a gate check (plan_type_include or regional_dev_initiatives):
+   - Use the same POST `/api/v1/schedular/user-filters` endpoint
+   - Example: {{"message": "Plan type filter set to New Build.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/user-filters", "params": {{"user_id": "<actual_user_id>", "plan_type_include": ["New Build"]}}}}]}}
+
+7. When user asks "what markets are available" or "list regions" or asks about filter options:
    - Call the relevant tool to get the current values from the database
    - Return the list in the "message" field with a friendly intro and the complete list
    - The "actions" array should be empty
    - Format the list as comma-separated values for clean display
 
-6. If user asks for their current filters, return the filters from CURRENT USER FILTERS
+8. If user asks for their current filters, return the filters from CURRENT USER FILTERS
    in the message field with a clear explanation and do not return an action.
 
-7. When user asks to clear, remove, or reset all their filters:
+9. When user asks to clear, remove, or reset all their filters:
    - Return the clear_user_filters action with method DELETE and the user-filters endpoint
    - Example: {{"message": "All your filters have been cleared.", "actions": [{{"method": "DELETE", "endpoint": "/api/v1/schedular/user-filters/{user_id}", "params": {{"user_id": "<actual_user_id>"}}}}]}}
    - Replace {user_id} in the endpoint with the actual user_id value
 
-8. Only include params that have actual values. Skip null/empty params.
+10. Only include params that have actual values. Skip null/empty params.
 
-9. ONLY respond with valid JSON. No markdown, no code blocks.
+11. ONLY respond with valid JSON. No markdown, no code blocks.
 
-10. Use the RECENT CONVERSATION SUMMARY to maintain context from prior messages.
+12. Use the RECENT CONVERSATION SUMMARY to maintain context from prior messages.
 """
 
-MAX_TOOL_ROUNDS = 5
+MAX_TOOL_ROUNDS = 7
 
 
 # ── Tool execution helpers ─────────────────────────────────────────────
@@ -159,6 +202,18 @@ def _exec_get_available_dev_initiatives(db: Session) -> list[str]:
     return [r[0] for r in rows]
 
 
+def _exec_get_geolocation_hierarchy(db: Session) -> dict:
+    """Return geo hierarchy grouped as {region: {area: [markets]}}."""
+    rows = get_geo_hierarchy(db)
+    hierarchy: dict[str, dict[str, list[str]]] = {}
+    for r in rows:
+        region = r["region"]
+        area = r["area"]
+        market = r["market"]
+        hierarchy.setdefault(region, {}).setdefault(area, []).append(market)
+    return hierarchy
+
+
 TOOL_EXECUTORS = {
     "get_available_regions": _exec_get_available_regions,
     "get_available_markets": _exec_get_available_markets,
@@ -167,6 +222,7 @@ TOOL_EXECUTORS = {
     "get_available_vendors": _exec_get_available_vendors,
     "get_available_plan_types": _exec_get_available_plan_types,
     "get_available_dev_initiatives": _exec_get_available_dev_initiatives,
+    "get_geolocation_hierarchy": _exec_get_geolocation_hierarchy,
 }
 
 

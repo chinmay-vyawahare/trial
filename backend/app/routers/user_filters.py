@@ -23,6 +23,53 @@ router = APIRouter(
     tags=["user-filters"],
 )
 
+@router.post("", response_model=UserFilterOut)
+def save_user_filters(payload: UserFilterSave, db: Session = Depends(get_config_db)):
+    """
+    Save or update filters for a user.  **Partial update** — only fields
+    explicitly included in the request body are changed; omitted fields
+    keep their existing DB values.  This lets the assistant send just
+    ``{user_id, region: ["Central"]}`` without wiping area/market/etc.
+    """
+    # Determine which fields the caller actually sent (vs. left out)
+    provided = payload.model_fields_set - {"user_id"}
+
+    # Serialize list fields as JSON strings for DB storage
+    def _json(val: list | None) -> str | None:
+        return json.dumps(val) if val else None
+
+    field_to_value = {
+        "region":                   _json(payload.region),
+        "market":                   _json(payload.market),
+        "area":                     _json(payload.area),
+        "plan_type_include":        _json(payload.plan_type_include),
+        "vendor":                   payload.vendor,
+        "site_id":                  payload.site_id,
+        "regional_dev_initiatives": payload.regional_dev_initiatives,
+    }
+
+    existing = db.query(UserFilter).filter(UserFilter.user_id == payload.user_id).first()
+
+    if existing:
+        # Only touch columns the caller explicitly provided
+        for field_name in provided:
+            if field_name in field_to_value:
+                setattr(existing, field_name, field_to_value[field_name])
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    # New row — use provided values, everything else stays NULL
+    new_row = UserFilter(
+        user_id=payload.user_id,
+        **{k: v for k, v in field_to_value.items() if k in provided},
+    )
+    db.add(new_row)
+    db.commit()
+    db.refresh(new_row)
+    return new_row
+
+
 @router.get("/{user_id}", response_model=UserFilterOut)
 def get_user_filters(user_id: str, db: Session = Depends(get_config_db)):
     """Return saved filters for a user, or empty defaults if none exist."""

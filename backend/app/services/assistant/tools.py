@@ -11,21 +11,6 @@ Two things live here:
 # ── API REGISTRY (unchanged — frontend-facing endpoints) ────────────────
 
 API_REGISTRY = {
-    "get_gantt_charts": {
-        "method": "GET",
-        "endpoint": "/api/v1/schedular/gantt-charts",
-        "description": "Fetch Gantt chart data with filters applied. When user_id is passed with filters, the filters are auto-saved for that user.",
-        "params": {
-            "region": "string | null",
-            "market": "string | null",
-            "site_id": "string | null",
-            "vendor": "string | null",
-            "area": "string | null",
-            "user_id": "string | null",
-            "limit": "int | null",
-            "offset": "int | null",
-        },
-    },
     "get_user_filters": {
         "method": "GET",
         "endpoint": "/api/v1/schedular/user-filters/{user_id}",
@@ -37,6 +22,21 @@ API_REGISTRY = {
         "endpoint": "/api/v1/schedular/user-filters/{user_id}",
         "description": "Clear/remove all saved filters for a user. Use when user asks to remove, clear, or reset their filters.",
         "params": {"user_id": "string — path param"},
+    },
+    "save_user_filters": {
+        "method": "POST",
+        "endpoint": "/api/v1/schedular/user-filters",
+        "description": "Save or update all user filters and gate checks in a single call. Upserts — creates if not exists, updates otherwise. Use this when the user asks to change/set any filter or gate check.",
+        "params": {
+            "user_id": "string — required",
+            "region": "list[string] | null — e.g. [\"South\", \"Northeast\"]",
+            "market": "list[string] | null — e.g. [\"Dallas\", \"NYC\"]",
+            "vendor": "string | null",
+            "site_id": "string | null",
+            "area": "list[string] | null — e.g. [\"Urban\"]",
+            "plan_type_include": "list[string] | null — gate check, e.g. [\"New Build\", \"FOA\"]",
+            "regional_dev_initiatives": "string | null — gate check, free-text ILIKE pattern",
+        },
     },
 }
 
@@ -98,6 +98,14 @@ FILTER_TOOLS = [
         "function": {
             "name": "get_available_dev_initiatives",
             "description": "Fetch the list of all available regional development initiative values from the database. Call this when the user asks about dev initiatives or gate checks.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_geolocation_hierarchy",
+            "description": "Fetch the complete geographic hierarchy (region → area → market) from the database. Returns a list of {region, area, market} mappings. ALWAYS call this when the user changes a geo filter (region, area, or market) and they already have other geo filters set — use it to check if the new value is consistent with the existing geo filters.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },

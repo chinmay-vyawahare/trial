@@ -31,6 +31,11 @@ Given a user message, classify it into EXACTLY ONE of these intents:
    - Construction progress, forecasts
    - Backward planning, impact analysis
 
+IMPORTANT: If the recent conversation context shows the assistant asked a follow-up question
+(e.g. "Did you mean X?", "Would you like to proceed?", "Are you sure?") and the user is
+confirming or responding to that question (e.g. "yes", "no", "go ahead", "sure", "confirm"),
+then classify with the SAME intent as the original question — NOT as "greeting".
+
 Respond with ONLY a JSON object: {"intent": "greeting" | "scheduler" | "simulation"}
 
 No explanation, no markdown, just the JSON.

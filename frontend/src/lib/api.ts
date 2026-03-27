@@ -331,6 +331,23 @@ export async function getUserFilters(userId: string): Promise<UserFilter> {
   return fetchAPI<UserFilter>(`/api/v1/schedular/user-filters/${userId}`);
 }
 
+export async function saveUserFilters(body: {
+  user_id: string;
+  region?: string[] | null;
+  market?: string[] | null;
+  vendor?: string | null;
+  site_id?: string | null;
+  area?: string[] | null;
+  plan_type_include?: string[] | null;
+  regional_dev_initiatives?: string | null;
+}): Promise<UserFilter> {
+  return fetchAPI<UserFilter>("/api/v1/schedular/user-filters", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export async function deleteUserFilters(userId: string): Promise<void> {
   await fetchAPI<void>(`/api/v1/schedular/user-filters/${userId}`, { method: "DELETE" });
 }

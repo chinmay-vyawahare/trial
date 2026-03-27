@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { SiteGantt, DashboardSummary, FilterOptions, ChatAction } from "@/lib/types";
-import { getGanttCharts, getDashboardSummary, getAllFilters, getExportCsvUrl, getExportCsvHistoryUrl, getSlaHistoryGantt, getUserFilters, deleteUserFilters } from "@/lib/api";
+import { getGanttCharts, getDashboardSummary, getAllFilters, getExportCsvUrl, getExportCsvHistoryUrl, getSlaHistoryGantt, getUserFilters, saveUserFilters, deleteUserFilters } from "@/lib/api";
 import Sidebar, { SlaMode } from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import SummaryCards from "@/components/SummaryCards";
@@ -208,13 +208,68 @@ export default function Home() {
     setExpandedSites(new Set());
   }
 
-  function handleChatActions(actions: ChatAction[]) {
+  async function handleChatActions(actions: ChatAction[]) {
     for (const action of actions) {
-      if (action.method === "GET" && action.endpoint.includes("/gantt-charts")) {
+      if (action.method === "POST" && action.endpoint.includes("/user-filters")) {
+        // AI assistant asked to save/update filters via the unified endpoint
+        const p = action.params as Record<string, unknown>;
+        const uid = (p.user_id as string) || userId;
+        if (!uid) continue;
+
+        // Parse list params — they may arrive as arrays or comma-separated strings
+        const toList = (v: unknown): string[] | undefined => {
+          if (Array.isArray(v)) return v as string[];
+          if (typeof v === "string") return [v];
+          return undefined;
+        };
+
+        const regionList = toList(p.region);
+        const marketList = toList(p.market);
+        const areaList = toList(p.area);
+        const ptiList = toList(p.plan_type_include);
+
+        try {
+          // 1. Save the changed filters to the backend
+          await saveUserFilters({
+            user_id: uid,
+            region: regionList ?? undefined,
+            market: marketList ?? undefined,
+            area: areaList ?? undefined,
+            site_id: (p.site_id as string) ?? undefined,
+            vendor: (p.vendor as string) ?? undefined,
+            plan_type_include: ptiList ?? undefined,
+            regional_dev_initiatives: (p.regional_dev_initiatives as string) ?? undefined,
+          });
+
+          // 2. Re-fetch ALL saved filters so UI reflects the full state
+          const uf = await getUserFilters(uid);
+
+          // Helper: parse a JSON-array string or wrap a plain string
+          const parseList = (v: string | null): string[] => {
+            if (!v) return [];
+            try { return JSON.parse(v); } catch { return [v]; }
+          };
+
+          setRegion(parseList(uf.region));
+          setMarket(parseList(uf.market));
+          setArea(parseList(uf.area));
+          setSiteIdFilter(uf.site_id ?? "");
+          setVendor(uf.vendor ?? "");
+          setPlanType(uf.plan_type_include ?? "");
+          setDevInitiative(uf.regional_dev_initiatives ?? "");
+          setUserId(uid);
+
+          // 3. Reload data with the updated filters
+          setActiveTab("gantt");
+          setTimeout(() => loadData(), 100);
+        } catch (e) {
+          console.error("Failed to save/fetch user filters:", e);
+        }
+      } else if (action.method === "GET" && action.endpoint.includes("/gantt-charts")) {
         // Apply filters from the action params and reload
-        if (action.params.region) setRegion([action.params.region]);
-        if (action.params.market) setMarket([action.params.market]);
-        if (action.params.area) setArea([action.params.area]);
+        if (action.params.region) setRegion(Array.isArray(action.params.region) ? action.params.region : [action.params.region]);
+        if (action.params.market) setMarket(Array.isArray(action.params.market) ? action.params.market : [action.params.market]);
+        if (action.params.area) setArea(Array.isArray(action.params.area) ? action.params.area : [action.params.area]);
         if (action.params.site_id) setSiteIdFilter(action.params.site_id);
         if (action.params.vendor) setVendor(action.params.vendor);
         if (action.params.user_id) setUserId(action.params.user_id);

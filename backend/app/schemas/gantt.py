@@ -331,11 +331,11 @@ class MilestoneReorderRequest(BaseModel):
 
 class UserFilterSave(BaseModel):
     user_id: str
-    region: Optional[str] = None
-    market: Optional[str] = None
+    region: Optional[list[str]] = None
+    market: Optional[list[str]] = None
     vendor: Optional[str] = None
     site_id: Optional[str] = None
-    area: Optional[str] = None
+    area: Optional[list[str]] = None
     plan_type_include: Optional[list[str]] = None           # e.g. ["New Build", "FOA"]
     regional_dev_initiatives: Optional[str] = None          # free-text ILIKE, e.g. "2026 Build Plan"
 
