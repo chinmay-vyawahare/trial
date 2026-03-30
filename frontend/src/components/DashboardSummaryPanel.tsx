@@ -15,6 +15,7 @@ function CircleProgress({
   total,
   color,
   label,
+  subtitle,
   size = 72,
   strokeWidth = 6,
 }: {
@@ -22,6 +23,7 @@ function CircleProgress({
   total: number;
   color: string;
   label: string;
+  subtitle?: string;
   size?: number;
   strokeWidth?: number;
 }) {
@@ -54,6 +56,9 @@ function CircleProgress({
         </div>
       </div>
       <span className="text-[9px] font-bold tracking-wider uppercase text-gray-500">{label}</span>
+      {subtitle && (
+        <span className="text-[8px] font-semibold text-gray-400">({subtitle})</span>
+      )}
     </div>
   );
 }
@@ -168,9 +173,9 @@ export default function DashboardSummaryPanel({ regions, markets, areas }: Props
 
           <div className="w-px h-12 bg-gray-200" />
 
-          <CircleProgress value={data.on_track_sites} total={data.total_sites} color="#22c55e" label="On Track" />
-          <CircleProgress value={data.in_progress_sites} total={data.total_sites} color="#eab308" label="In Progress" />
-          <CircleProgress value={data.critical_sites} total={data.total_sites} color="#ef4444" label="Critical" />
+          <CircleProgress value={data.on_track_sites} total={data.total_sites} color="#22c55e" label="On Track" subtitle={data.status_details?.["ON TRACK"]?.threshold?.milestone_range} />
+          <CircleProgress value={data.in_progress_sites} total={data.total_sites} color="#eab308" label="In Progress" subtitle={data.status_details?.["IN PROGRESS"]?.threshold?.milestone_range} />
+          <CircleProgress value={data.critical_sites} total={data.total_sites} color="#ef4444" label="Critical" subtitle={data.status_details?.["CRITICAL"]?.threshold?.milestone_range} />
           <CircleProgress value={data.blocked_sites} total={data.total_sites} color="#6b7280" label="Blocked" />
           <CircleProgress value={data.excluded_crew_shortage_sites} total={data.total_sites} color="#f97316" label="Crew Shortage" />
           <CircleProgress value={data.excluded_pace_constraint_sites} total={data.total_sites} color="#a855f7" label="Pace Constraint" />

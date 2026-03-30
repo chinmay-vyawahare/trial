@@ -308,19 +308,19 @@ SEED_GANTT_CONFIG = [
 #   Out of all sites, compute the on_track_sites percentage.
 #   Checked in sort_order; first matching range wins.
 #
-# min_pct / max_pct define count ranges.
-# For "milestone": on-track milestone count. For "overall": on-track site count.
+# min_pct / max_pct define percentage ranges (0-100).
+# For "milestone": on-track milestone percentage. For "overall": on-track site percentage.
 # max_pct = None means no upper bound.
 # ----------------------------------------------------------------
 SEED_CONSTRAINT_THRESHOLDS = [
-    # --- milestone-level: site overall status from on-track milestone count ---
+    # --- milestone-level: site overall status from on-track milestone percentage ---
     {
         "constraint_type": "milestone",
         "name": "On Track",
         "status_label": "ON TRACK",
         "color": "green",
-        "min_pct": 9,
-        "max_pct": None,     # 9+ on-track milestones
+        "min_pct": 60,
+        "max_pct": None,     # 60%+ on-track milestones
         "sort_order": 1,
     },
     {
@@ -328,8 +328,8 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "name": "In Progress",
         "status_label": "IN PROGRESS",
         "color": "orange",
-        "min_pct": 4,
-        "max_pct": 8,        # 4–8 on-track milestones
+        "min_pct": 30,
+        "max_pct": 59.99,    # 30–59.99% on-track milestones
         "sort_order": 2,
     },
     {
@@ -338,17 +338,17 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "status_label": "CRITICAL",
         "color": "red",
         "min_pct": 0,
-        "max_pct": 3,        # 0–3 on-track milestones
+        "max_pct": 29.99,    # 0–29.99% on-track milestones
         "sort_order": 3,
     },
-    # --- overall: dashboard status from on-track site count ---
+    # --- overall: dashboard status from on-track site percentage ---
     {
         "constraint_type": "overall",
         "name": "On Track",
         "status_label": "ON TRACK",
         "color": "green",
-        "min_pct": 10,
-        "max_pct": None,     # 10+ on-track sites
+        "min_pct": 60,
+        "max_pct": None,     # 60%+ on-track sites
         "sort_order": 1,
     },
     {
@@ -356,8 +356,8 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "name": "In Progress",
         "status_label": "IN PROGRESS",
         "color": "orange",
-        "min_pct": 5,
-        "max_pct": 9,        # 5–9 on-track sites
+        "min_pct": 30,
+        "max_pct": 59.99,    # 30–59.99% on-track sites
         "sort_order": 2,
     },
     {
@@ -366,7 +366,7 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "status_label": "CRITICAL",
         "color": "red",
         "min_pct": 0,
-        "max_pct": 4,        # 0–4 on-track sites
+        "max_pct": 29.99,    # 0–29.99% on-track sites
         "sort_order": 3,
     },
 ]

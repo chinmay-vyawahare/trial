@@ -345,6 +345,11 @@ export default function GanttView({
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap ${badge.cls}`}>
                     {badge.label}
                   </span>
+                  {s.milestone_range && (
+                    <span className="text-[9px] font-semibold text-gray-500 whitespace-nowrap">
+                      ({s.milestone_range})
+                    </span>
+                  )}
                 </div>
               );
             }

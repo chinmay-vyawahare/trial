@@ -670,13 +670,13 @@ function ConstraintsAdmin() {
                 className="w-full h-8 rounded-lg border border-gray-200 cursor-pointer" />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Min Count</label>
-              <input type="number" value={form.min_pct} onChange={(e) => setForm({ ...form, min_pct: Number(e.target.value) })}
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Min %</label>
+              <input type="number" min={0} max={100} step={0.01} value={form.min_pct} onChange={(e) => setForm({ ...form, min_pct: Number(e.target.value) })}
                 className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg" />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Max Count</label>
-              <input type="number" value={form.max_pct ?? ""} onChange={(e) => setForm({ ...form, max_pct: e.target.value ? Number(e.target.value) : null })}
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Max %</label>
+              <input type="number" min={0} max={100} step={0.01} value={form.max_pct ?? ""} onChange={(e) => setForm({ ...form, max_pct: e.target.value ? Number(e.target.value) : null })}
                 placeholder="null = unbounded"
                 className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg" />
             </div>
@@ -709,8 +709,8 @@ function ConstraintsAdmin() {
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Type</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Label</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Min Count</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Max Count</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Min %</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Max %</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Order</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Actions</th>
             </tr>
@@ -737,12 +737,12 @@ function ConstraintsAdmin() {
                         className="w-full px-2 py-1 text-xs border border-gray-200 rounded" />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="number" value={editForm.min_pct ?? c.min_pct}
+                      <input type="number" min={0} max={100} step={0.01} value={editForm.min_pct ?? c.min_pct}
                         onChange={(e) => setEditForm({ ...editForm, min_pct: Number(e.target.value) })}
                         className="w-20 px-2 py-1 text-xs border border-gray-200 rounded" />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="number" value={editForm.max_pct ?? c.max_pct ?? ""}
+                      <input type="number" min={0} max={100} step={0.01} value={editForm.max_pct ?? c.max_pct ?? ""}
                         onChange={(e) => setEditForm({ ...editForm, max_pct: e.target.value ? Number(e.target.value) : null })}
                         placeholder="unbounded"
                         className="w-20 px-2 py-1 text-xs border border-gray-200 rounded" />
@@ -773,8 +773,8 @@ function ConstraintsAdmin() {
                     <td className="px-3 py-2 text-xs text-gray-600">{c.constraint_type}</td>
                     <td className="px-3 py-2 font-medium text-gray-800">{c.name}</td>
                     <td className="px-3 py-2 text-gray-600">{c.status_label}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{c.min_pct}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{c.max_pct !== null ? c.max_pct : "∞"}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{c.min_pct}%</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{c.max_pct !== null ? `${c.max_pct}%` : "∞"}</td>
                     <td className="px-3 py-2 text-xs text-gray-500">{c.sort_order}</td>
                     <td className="px-3 py-2">
                       <div className="flex gap-1">

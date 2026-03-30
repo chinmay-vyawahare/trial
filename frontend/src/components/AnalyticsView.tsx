@@ -123,9 +123,9 @@ function SlaSection({ summary }: { summary: DashboardSlaSummary | null }) {
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard label="Total Sites" value={summary.total_sites} color="bg-blue-600" />
-        <StatCard label="On Track" value={summary.on_track_sites} color="bg-emerald-600" />
-        <StatCard label="In Progress" value={summary.in_progress_sites} color="bg-amber-500" />
-        <StatCard label="Critical" value={summary.critical_sites} color="bg-red-600" />
+        <StatCard label="On Track" value={summary.on_track_sites} color="bg-emerald-600" subtitle={summary.status_details?.["ON TRACK"]?.threshold?.milestone_range ? `(${summary.status_details["ON TRACK"].threshold.milestone_range})` : undefined} />
+        <StatCard label="In Progress" value={summary.in_progress_sites} color="bg-amber-500" subtitle={summary.status_details?.["IN PROGRESS"]?.threshold?.milestone_range ? `(${summary.status_details["IN PROGRESS"].threshold.milestone_range})` : undefined} />
+        <StatCard label="Critical" value={summary.critical_sites} color="bg-red-600" subtitle={summary.status_details?.["CRITICAL"]?.threshold?.milestone_range ? `(${summary.status_details["CRITICAL"].threshold.milestone_range})` : undefined} />
         <StatCard label="Blocked" value={summary.blocked_sites} color="bg-gray-500" />
       </div>
 
@@ -181,11 +181,14 @@ function SlaSection({ summary }: { summary: DashboardSlaSummary | null }) {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+function StatCard({ label, value, color, subtitle }: { label: string; value: number; color: string; subtitle?: string }) {
   return (
     <div className={`${color} rounded-xl p-4 text-white shadow-lg`}>
       <div className="text-sm font-medium opacity-90">{label}</div>
       <div className="text-3xl font-bold mt-1">{value}</div>
+      {subtitle && (
+        <div className="text-[10px] font-semibold opacity-75 mt-0.5">{subtitle}</div>
+      )}
     </div>
   );
 }

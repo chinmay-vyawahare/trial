@@ -324,7 +324,12 @@ export default function PendingMilestonesChart({
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{site.market}</td>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{site.vendor_name || "—"}</td>
                           <td className="px-3 py-2 text-center">
-                            <StatusBadge status={site.overall_status} />
+                            <div className="flex items-center justify-center gap-1">
+                              <StatusBadge status={site.overall_status} />
+                              {site.milestone_range && (
+                                <span className="text-[9px] font-semibold text-gray-500">({site.milestone_range})</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                             {site.note && (

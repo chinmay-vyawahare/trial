@@ -96,7 +96,14 @@ export default function SiteTable({ sites, onSelectSite }: Props) {
                 <td className="px-3 py-2 text-gray-700">{s.project_name}</td>
                 <td className="px-3 py-2 text-gray-600">{s.market}</td>
                 <td className="px-3 py-2 text-gray-600">{s.vendor_name || "—"}</td>
-                <td className="px-3 py-2">{statusBadge(s.overall_status)}</td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    {statusBadge(s.overall_status)}
+                    {s.milestone_range && (
+                      <span className="text-[10px] font-semibold text-gray-500">({s.milestone_range})</span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-emerald-600">{s.milestone_status_summary.on_track} on track</span>

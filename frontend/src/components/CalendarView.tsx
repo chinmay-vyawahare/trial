@@ -180,9 +180,14 @@ export default function CalendarView({
                               <td className="px-3 py-2 text-gray-600">{s.area}</td>
                               <td className="px-3 py-2 text-gray-600">{s.vendor_name}</td>
                               <td className="px-3 py-2">
-                                <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${statusColor[s.overall_status] || "bg-gray-100 text-gray-600 border-gray-200"}`}>
-                                  {s.exclude_reason || s.overall_status}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${statusColor[s.overall_status] || "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                                    {s.exclude_reason || s.overall_status}
+                                  </span>
+                                  {s.milestone_range && (
+                                    <span className="text-[9px] font-semibold text-gray-500">({s.milestone_range})</span>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}

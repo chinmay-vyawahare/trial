@@ -6,6 +6,7 @@ from app.services.gantt.logic import (
     compute_forecasted_cx_start_only,
     compute_milestones_for_site,
     compute_overall_status,
+    get_milestone_range_for_status,
     is_site_blocked,
 )
 from app.services.gantt.milestones import (
@@ -88,9 +89,11 @@ def _build_sites(rows, config_db, ms_thresholds, skipped_keys, user_expected_day
         if blocked:
             overall = "Blocked"
             on_track_pct = 0
+            milestone_range = f"0-{total}/{total}"
         else:
             overall = compute_overall_status(on_track_count, total, ms_thresholds)
             on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
+            milestone_range = get_milestone_range_for_status(overall, total, ms_thresholds) if ms_thresholds else f"{on_track_count}/{total}"
 
         sites.append({
             "vendor_name": row.get("construction_gc") or "",
@@ -109,6 +112,7 @@ def _build_sites(rows, config_db, ms_thresholds, skipped_keys, user_expected_day
             ],
             "overall_status": overall,
             "on_track_pct": on_track_pct,
+            "milestone_range": milestone_range,
             "milestone_status_summary": {
                 "total": total,
                 "on_track": on_track_count,

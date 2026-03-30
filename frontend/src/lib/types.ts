@@ -38,6 +38,7 @@ export interface SiteGantt {
   milestones: Milestone[];
   overall_status: string;
   on_track_pct: number;
+  milestone_range?: string;
   milestone_status_summary: MilestoneStatusSummary;
   excluded_due_to_crew_shortage?: boolean;
   excluded_due_to_pace_constraint?: boolean;
@@ -68,6 +69,25 @@ export interface FilterOptions {
 
 /* ── Dashboard ────────────────────────────────────────────────────── */
 
+export interface StatusThreshold {
+  min_pct: number;
+  max_pct: number | null;
+  milestone_range: string;
+  description: string;
+}
+
+export interface StatusDetail {
+  site_count: number;
+  total_milestones: number;
+  on_track_milestones: number;
+  in_progress_milestones: number;
+  delayed_milestones: number;
+  on_track_pct: number;
+  in_progress_pct: number;
+  delayed_pct: number;
+  threshold?: StatusThreshold;
+}
+
 export interface DashboardSummary {
   dashboard_status: string;
   on_track_pct: number;
@@ -79,6 +99,12 @@ export interface DashboardSummary {
   excluded_crew_shortage_sites: number;
   excluded_pace_constraint_sites: number;
   pace_constraint_max_sites: number;
+  status_details?: {
+    "ON TRACK": StatusDetail;
+    "IN PROGRESS": StatusDetail;
+    "CRITICAL": StatusDetail;
+    "Blocked": StatusDetail;
+  };
 }
 
 export interface DashboardSlaSummary extends DashboardSummary {

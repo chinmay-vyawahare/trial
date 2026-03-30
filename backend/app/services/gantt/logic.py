@@ -9,20 +9,40 @@ from .milestones import (
 
 
 # ----------------------------------------------------------------
-# Threshold helpers (count-based)
+# Threshold helpers (percentage-based)
 # ----------------------------------------------------------------
 
-def _match_count_threshold(count: int, thresholds: List[Dict]) -> tuple[str, str]:
+def _match_pct_threshold(pct: float, thresholds: List[Dict]) -> tuple[str, str]:
     """
     Walk *thresholds* in sort_order and return (status_label, color) for the
-    first range that contains *count*.  max_pct=None means unbounded above.
+    first range that contains *pct*.  max_pct=None means unbounded above.
+    min_pct / max_pct are percentage values (0-100).
     """
     for t in thresholds:
         lo = t["min_pct"]
         hi = t["max_pct"]
-        if count >= lo and (hi is None or count <= hi):
+        if pct >= lo and (hi is None or pct <= hi):
             return t["status_label"], t["color"]
     return "IN PROGRESS", "orange"  # fallback
+
+
+def get_milestone_range_for_status(
+    status_label: str,
+    total_milestones: int,
+    thresholds: List[Dict],
+) -> str:
+    """
+    Return a string like '9-14/14' showing the on-track milestone count range
+    that corresponds to the given status_label for a site with total_milestones.
+    """
+    import math
+    for t in thresholds:
+        if t["status_label"] == status_label:
+            lo = math.ceil(t["min_pct"] / 100 * total_milestones) if total_milestones > 0 else 0
+            hi = math.floor(t["max_pct"] / 100 * total_milestones) if (t["max_pct"] is not None and total_milestones > 0) else total_milestones
+            return f"{lo}-{hi}/{total_milestones}"
+    # fallback
+    return f"0-{total_milestones}/{total_milestones}"
 
 
 def compute_status(
@@ -66,22 +86,23 @@ def compute_overall_status(
     milestone_thresholds: List[Dict] | None = None,
 ) -> str:
     """
-    Determine site-level overall status from the on-track milestone count.
+    Determine site-level overall status from the on-track milestone percentage.
 
-    Matches on_track_count against DB-driven *milestone_thresholds* (count ranges).
-    Higher on-track count = better status.
+    Computes on-track percentage and matches against DB-driven *milestone_thresholds*
+    (percentage ranges). Higher on-track % = better status.
 
     Falls back to hardcoded brackets if no thresholds are available.
     """
     if total_count == 0:
         return "ON TRACK"
 
+    on_track_pct = (on_track_count / total_count) * 100
+
     if milestone_thresholds:
-        label, _ = _match_count_threshold(on_track_count, milestone_thresholds)
+        label, _ = _match_pct_threshold(on_track_pct, milestone_thresholds)
         return label
 
     # fallback
-    on_track_pct = (on_track_count / total_count) * 100
     if on_track_pct >= 60:
         return "ON TRACK"
     elif on_track_pct >= 30:
