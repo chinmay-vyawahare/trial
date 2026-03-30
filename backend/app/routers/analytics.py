@@ -82,6 +82,7 @@ def pending_milestones_auto(
     user_id: str = Query(None, description="User ID for SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
@@ -117,6 +118,7 @@ def pending_milestones_auto(
         user_id=user_id,
         filter_date_from=fd_from,
         filter_date_to=fd_to,
+        strict_pace_apply=strict_pace_apply,
     )
 
     return {
@@ -139,6 +141,7 @@ def pending_milestones_sla_history(
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
@@ -179,6 +182,7 @@ def pending_milestones_sla_history(
         user_id=user_id,
         filter_date_from=fd_from,
         filter_date_to=fd_to,
+        strict_pace_apply=strict_pace_apply,
     )
 
     return {
@@ -201,6 +205,7 @@ def pending_by_milestone_auto(
     user_id: str = Query(None, description="User ID for SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
@@ -233,6 +238,7 @@ def pending_by_milestone_auto(
         user_id=user_id,
         filter_date_from=fd_from,
         filter_date_to=fd_to,
+        strict_pace_apply=strict_pace_apply,
     )
 
     return {
@@ -255,6 +261,7 @@ def pending_by_milestone_sla_history(
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
@@ -295,6 +302,7 @@ def pending_by_milestone_sla_history(
         user_id=user_id,
         filter_date_from=fd_from,
         filter_date_to=fd_to,
+        strict_pace_apply=strict_pace_apply,
     )
 
     return {
@@ -320,6 +328,7 @@ def drilldown_auto(
     user_id: str = Query(None, description="User ID for SLA overrides"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
@@ -362,6 +371,7 @@ def drilldown_auto(
         user_id=user_id,
         filter_date_from=fd_from,
         filter_date_to=fd_to,
+        strict_pace_apply=strict_pace_apply,
     )
 
     return {
@@ -389,6 +399,7 @@ def drilldown_sla_history(
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
@@ -439,6 +450,7 @@ def drilldown_sla_history(
         user_id=user_id,
         filter_date_from=fd_from,
         filter_date_to=fd_to,
+        strict_pace_apply=strict_pace_apply,
     )
 
     return {

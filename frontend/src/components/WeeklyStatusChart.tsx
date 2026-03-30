@@ -13,6 +13,7 @@ interface Props {
   userId: string;
   considerVendorCapacity: boolean;
   paceConstraintFlag: boolean;
+  strictPaceApply?: boolean;
   statusFilter: string;
   slaMode: string;
   slaDateFrom: string;
@@ -42,7 +43,7 @@ function aggregateStatusCounts(regionalCounts: RegionalStatusCounts): Record<str
 
 export default function WeeklyStatusChart({
   region, market, area, siteId, vendor, userId,
-  considerVendorCapacity, paceConstraintFlag, statusFilter,
+  considerVendorCapacity, paceConstraintFlag, strictPaceApply, statusFilter,
   slaMode, slaDateFrom, slaDateTo, refreshKey,
 }: Props) {
   const [data, setData] = useState<WeeklyStatusResponse | null>(null);
@@ -64,6 +65,7 @@ export default function WeeklyStatusChart({
         user_id: userId || undefined,
         consider_vendor_capacity: considerVendorCapacity || undefined,
         pace_constraint_flag: paceConstraintFlag || undefined,
+        strict_pace_apply: strictPaceApply || undefined,
         status: statusFilter || undefined,
       };
 
@@ -83,7 +85,7 @@ export default function WeeklyStatusChart({
     } finally {
       setLoading(false);
     }
-  }, [region, market, area, siteId, vendor, userId, considerVendorCapacity, paceConstraintFlag, statusFilter, slaMode, slaDateFrom, slaDateTo]);
+  }, [region, market, area, siteId, vendor, userId, considerVendorCapacity, paceConstraintFlag, strictPaceApply, statusFilter, slaMode, slaDateFrom, slaDateTo]);
 
   useEffect(() => {
     load();

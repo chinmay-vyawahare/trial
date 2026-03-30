@@ -74,6 +74,7 @@ def get_calendar(
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     status: str = Query(None, description="Filter by overall_status (ON TRACK, IN PROGRESS, CRITICAL, Blocked, etc.)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     db: Session = Depends(get_db),
@@ -114,6 +115,7 @@ def get_calendar(
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
         status=status,
+        strict_pace_apply=strict_pace_apply,
     )
 
     return {
@@ -139,6 +141,7 @@ def get_calendar_history(
     user_id: str = Query(None, description="User ID for saved filters"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     status: str = Query(None, description="Filter by overall_status (ON TRACK, IN PROGRESS, CRITICAL, Blocked, etc.)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -184,6 +187,7 @@ def get_calendar_history(
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
         status=status,
+        strict_pace_apply=strict_pace_apply,
     )
 
     return {

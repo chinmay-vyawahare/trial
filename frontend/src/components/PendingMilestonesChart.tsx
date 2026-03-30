@@ -20,6 +20,7 @@ interface Props {
   userId?: string;
   considerVendorCapacity?: boolean;
   paceConstraintFlag?: boolean;
+  strictPaceApply?: boolean;
   slaMode: "default" | "history";
   slaDateFrom?: string;
   slaDateTo?: string;
@@ -34,7 +35,7 @@ const BAR_COLORS = [
 
 export default function PendingMilestonesChart({
   region, market, area, siteId, vendor, userId,
-  considerVendorCapacity, paceConstraintFlag,
+  considerVendorCapacity, paceConstraintFlag, strictPaceApply,
   slaMode, slaDateFrom, slaDateTo,
   refreshKey,
 }: Props) {
@@ -70,9 +71,10 @@ export default function PendingMilestonesChart({
     user_id: userId || undefined,
     consider_vendor_capacity: considerVendorCapacity || undefined,
     pace_constraint_flag: paceConstraintFlag || undefined,
+    strict_pace_apply: strictPaceApply || undefined,
     filter_date_from: filterDateFrom || undefined,
     filter_date_to: filterDateTo || undefined,
-  }), [region, market, area, siteId, vendor, userId, considerVendorCapacity, paceConstraintFlag, filterDateFrom, filterDateTo]);
+  }), [region, market, area, siteId, vendor, userId, considerVendorCapacity, paceConstraintFlag, strictPaceApply, filterDateFrom, filterDateTo]);
 
   const loadData = useCallback(async () => {
     setLoading(true);

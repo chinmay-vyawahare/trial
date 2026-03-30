@@ -33,6 +33,7 @@ def export_gantt_to_csv(
     user_id: str = Query(None, description="User ID — if provided, applies user's saved filters. If not, exports all sites."),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     status: str = Query(None, description="Filter by overall_status"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -57,6 +58,7 @@ def export_gantt_to_csv(
             area=area,
             consider_vendor_capacity=consider_vendor_capacity,
             pace_constraint_flag=pace_constraint_flag,
+            strict_pace_apply=strict_pace_apply,
             status=status,
             sla_type=sla_type,
         )
@@ -86,6 +88,7 @@ def export_gantt_to_csv_history(
     user_id: str = Query(None, description="User ID — if provided, applies user's saved filters."),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     status: str = Query(None, description="Filter by overall_status or exclude_reason"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -118,6 +121,7 @@ def export_gantt_to_csv_history(
             area=area,
             consider_vendor_capacity=consider_vendor_capacity,
             pace_constraint_flag=pace_constraint_flag,
+            strict_pace_apply=strict_pace_apply,
             status=status,
         )
     except Exception as e:

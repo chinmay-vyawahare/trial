@@ -11,9 +11,10 @@ import {
 
 interface Props {
   userId: string;
+  onConstraintChange?: () => void;
 }
 
-export default function UserPaceConstraints({ userId }: Props) {
+export default function UserPaceConstraints({ userId, onConstraintChange }: Props) {
   const [entries, setEntries] = useState<PaceConstraintEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -71,6 +72,7 @@ export default function UserPaceConstraints({ userId }: Props) {
       setNewRegion("");
       setNewMaxSites(5);
       await load();
+      onConstraintChange?.();
     } catch {
       /* ignore */
     }
@@ -100,6 +102,7 @@ export default function UserPaceConstraints({ userId }: Props) {
       });
       setEditId(null);
       await load();
+      onConstraintChange?.();
     } catch {
       /* ignore */
     }
@@ -111,6 +114,7 @@ export default function UserPaceConstraints({ userId }: Props) {
     try {
       await deletePaceConstraint(id, userId);
       await load();
+      onConstraintChange?.();
     } catch {
       /* ignore */
     }

@@ -64,6 +64,7 @@ def export_gantt_csv(
     area: list[str] | None = None,
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
+    strict_pace_apply: bool = False,
     status: str | None = None,
     sla_type: str = "default",
 ) -> str:
@@ -109,6 +110,7 @@ def export_gantt_csv(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        strict_pace_apply=strict_pace_apply,
     )
 
     # Post-filter by status if requested
@@ -255,6 +257,7 @@ def export_gantt_csv_history(
     area: list[str] | None = None,
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
+    strict_pace_apply: bool = False,
     status: str | None = None,
 ) -> str:
     """
@@ -292,6 +295,7 @@ def export_gantt_csv_history(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        strict_pace_apply=strict_pace_apply,
     )
 
     # Post-filter by status if requested

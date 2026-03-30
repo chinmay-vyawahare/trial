@@ -55,6 +55,7 @@ export default function Home() {
   const [statusFilter, setStatusFilter] = useState("");
   const [considerVendorCapacity, setConsiderVendorCapacity] = useState(false);
   const [paceConstraintFlag, setPaceConstraintFlag] = useState<boolean>(false);
+  const [strictPaceApply, setStrictPaceApply] = useState<boolean>(false);
   const initialLoad = useRef(true);
   const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
 
@@ -88,6 +89,8 @@ export default function Home() {
     } catch (e) {
       console.error("No saved filters for user:", e);
     }
+    // Refresh dashboard with the new user context
+    setTimeout(() => loadData(), 100);
   }
 
   // Load gantt data — called on initial mount and when user clicks "Create Gantt Chart"
@@ -103,6 +106,7 @@ export default function Home() {
         user_id: userId || undefined,
         consider_vendor_capacity: considerVendorCapacity || undefined,
         pace_constraint_flag: paceConstraintFlag || undefined,
+        strict_pace_apply: strictPaceApply || undefined,
         status: statusFilter || undefined,
       };
 
@@ -121,6 +125,7 @@ export default function Home() {
             user_id: userId || undefined,
             consider_vendor_capacity: considerVendorCapacity || undefined,
             pace_constraint_flag: paceConstraintFlag || undefined,
+            strict_pace_apply: strictPaceApply || undefined,
             status: statusFilter || undefined,
           }),
           getDashboardSummary(filters),
@@ -154,7 +159,7 @@ export default function Home() {
       setLoading(false);
       setAnalyticsRefreshKey((k) => k + 1);
     }
-  }, [region, market, area, siteIdFilter, vendor, userId, slaMode, slaDateFrom, slaDateTo, considerVendorCapacity, paceConstraintFlag, statusFilter]);
+  }, [region, market, area, siteIdFilter, vendor, userId, slaMode, slaDateFrom, slaDateTo, considerVendorCapacity, paceConstraintFlag, strictPaceApply, statusFilter]);
 
   // Auto-load only on first mount
   useEffect(() => {
@@ -314,6 +319,7 @@ export default function Home() {
       user_id: userId || undefined,
       consider_vendor_capacity: considerVendorCapacity || undefined,
       pace_constraint_flag: paceConstraintFlag || undefined,
+      strict_pace_apply: strictPaceApply || undefined,
       status: statusFilter || undefined,
     };
     const url = getExportCsvUrl(commonFilters);
@@ -333,6 +339,7 @@ export default function Home() {
       user_id: userId || undefined,
       consider_vendor_capacity: considerVendorCapacity || undefined,
       pace_constraint_flag: paceConstraintFlag || undefined,
+      strict_pace_apply: strictPaceApply || undefined,
       status: statusFilter || undefined,
     });
     window.open(url, "_blank");
@@ -375,6 +382,8 @@ export default function Home() {
           onConsiderVendorCapacityChange={setConsiderVendorCapacity}
           paceConstraintFlag={paceConstraintFlag}
           onPaceConstraintFlagChange={setPaceConstraintFlag}
+          strictPaceApply={strictPaceApply}
+          onStrictPaceApplyChange={setStrictPaceApply}
           selectedStatus={statusFilter}
           onStatusChange={setStatusFilter}
           userId={userId}
@@ -425,7 +434,7 @@ export default function Home() {
             )}
             {activeTab === "flowchart" && <PrerequisiteFlowchart />}
             {activeTab === "expected-days" && <UserExpectedDays userId={userId} />}
-            {activeTab === "pace-constraints" && <UserPaceConstraints userId={userId} />}
+            {activeTab === "pace-constraints" && <UserPaceConstraints userId={userId} onConstraintChange={loadData} />}
             {activeTab === "analytics" && (
               <PendingMilestonesChart
                 region={region}
@@ -436,6 +445,7 @@ export default function Home() {
                 userId={userId}
                 considerVendorCapacity={considerVendorCapacity}
                 paceConstraintFlag={paceConstraintFlag}
+                strictPaceApply={strictPaceApply}
                 slaMode={slaMode}
                 slaDateFrom={slaDateFrom}
                 slaDateTo={slaDateTo}
@@ -452,6 +462,7 @@ export default function Home() {
                 userId={userId}
                 considerVendorCapacity={considerVendorCapacity}
                 paceConstraintFlag={paceConstraintFlag}
+                strictPaceApply={strictPaceApply}
                 statusFilter={statusFilter}
                 slaMode={slaMode}
                 slaDateFrom={slaDateFrom}
@@ -491,6 +502,7 @@ export default function Home() {
                 userId={userId}
                 considerVendorCapacity={considerVendorCapacity}
                 paceConstraintFlag={paceConstraintFlag}
+                strictPaceApply={strictPaceApply}
                 statusFilter={statusFilter}
                 slaType={slaMode}
                 refreshKey={analyticsRefreshKey}

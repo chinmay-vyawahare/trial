@@ -27,6 +27,7 @@ def get_weekly_status_counts(
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
     status: str | None = None,
+    strict_pace_apply: bool = False,
 ) -> list[dict]:
     """
     Return weekly status counts grouped by ISO week/year, with region breakdown.
@@ -74,6 +75,7 @@ def get_weekly_status_counts(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        strict_pace_apply=strict_pace_apply,
     )
 
     # Post-filter by status if requested
@@ -81,8 +83,7 @@ def get_weekly_status_counts(
         sites = [s for s in sites if (s.get("exclude_reason") or s.get("overall_status", "")).upper() == status.upper()]
 
     ALL_STATUSES = [
-        "ON TRACK", "IN PROGRESS", "CRITICAL",
-        "Blocked", "Excluded - Crew Shortage", "Excluded - Pace Constraint",
+        "ON TRACK", "IN PROGRESS", "CRITICAL","Blocked", 
     ]
 
     # Group by (year, week) -> region -> status counts
@@ -100,9 +101,7 @@ def get_weekly_status_counts(
         key = (iso.year, iso.week)
 
         region_name = site.get("Region") or site.get("region") or "Unknown"
-        # Use exclude_reason for excluded sites, otherwise overall_status
-        exclude = site.get("exclude_reason")
-        site_status = exclude if exclude else site.get("overall_status", "")
+        site_status = site.get("overall_status", "")
 
         if key not in weekly:
             weekly[key] = {}

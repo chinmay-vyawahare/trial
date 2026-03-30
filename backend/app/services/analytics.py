@@ -137,6 +137,7 @@ def _get_sites(
     consider_vendor_capacity=False, pace_constraint_flag=False, user_id=None,
     filter_date_from: date | None = None,
     filter_date_to: date | None = None,
+    strict_pace_apply: bool = False,
 ) -> tuple[list[dict], int]:
     """Return (active_sites, blocked_count) with blocked sites removed."""
     from app.services.gantt import get_all_sites_gantt
@@ -150,6 +151,7 @@ def _get_sites(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        strict_pace_apply=strict_pace_apply,
     )
     sites = _filter_sites_by_date_range(sites, filter_date_from, filter_date_to)
     return _separate_blocked(sites)
@@ -163,6 +165,7 @@ def _get_sites_history(
     pace_constraint_flag=False, user_id=None,
     filter_date_from: date | None = None,
     filter_date_to: date | None = None,
+    strict_pace_apply: bool = False,
 ) -> tuple[list[dict], int]:
     """Return (active_sites, blocked_count) with blocked sites removed."""
     from app.services.sla_history import compute_history_expected_days
@@ -193,6 +196,7 @@ def _get_sites_history(
         user_id=user_id,
         filter_date_from=filter_date_from,
         filter_date_to=filter_date_to,
+        strict_pace_apply=strict_pace_apply,
     )
 
 
@@ -213,6 +217,7 @@ def get_pending_milestones_auto(
     user_id: str | None = None,
     filter_date_from: date | None = None,
     filter_date_to: date | None = None,
+    strict_pace_apply: bool = False,
 ) -> dict:
     """Pending milestone distribution using auto/user-override SLA."""
     sites, blocked = _get_sites(
@@ -227,6 +232,7 @@ def get_pending_milestones_auto(
         user_id=user_id,
         filter_date_from=filter_date_from,
         filter_date_to=filter_date_to,
+        strict_pace_apply=strict_pace_apply,
     )
     return _count_pending_milestones(sites, blocked)
 
@@ -249,6 +255,7 @@ def get_pending_milestones_history(
     user_id: str | None = None,
     filter_date_from: date | None = None,
     filter_date_to: date | None = None,
+    strict_pace_apply: bool = False,
 ) -> dict:
     """Pending milestone distribution using SLA history-based expected_days."""
     sites, blocked = _get_sites_history(
@@ -262,6 +269,7 @@ def get_pending_milestones_history(
         user_id=user_id,
         filter_date_from=filter_date_from,
         filter_date_to=filter_date_to,
+        strict_pace_apply=strict_pace_apply,
     )
     return _count_pending_milestones(sites, blocked)
 
@@ -283,6 +291,7 @@ def get_pending_by_milestone_auto(
     user_id: str | None = None,
     filter_date_from: date | None = None,
     filter_date_to: date | None = None,
+    strict_pace_apply: bool = False,
 ) -> dict:
     """Per-milestone pending site count using auto/user-override SLA."""
     sites, blocked = _get_sites(
@@ -297,6 +306,7 @@ def get_pending_by_milestone_auto(
         user_id=user_id,
         filter_date_from=filter_date_from,
         filter_date_to=filter_date_to,
+        strict_pace_apply=strict_pace_apply,
     )
     return _count_pending_by_milestone_name(sites, blocked)
 
@@ -319,6 +329,7 @@ def get_pending_by_milestone_history(
     user_id: str | None = None,
     filter_date_from: date | None = None,
     filter_date_to: date | None = None,
+    strict_pace_apply: bool = False,
 ) -> dict:
     """Per-milestone pending site count using SLA history-based expected_days."""
     sites, blocked = _get_sites_history(
@@ -332,6 +343,7 @@ def get_pending_by_milestone_history(
         user_id=user_id,
         filter_date_from=filter_date_from,
         filter_date_to=filter_date_to,
+        strict_pace_apply=strict_pace_apply,
     )
     return _count_pending_by_milestone_name(sites, blocked)
 
@@ -387,6 +399,7 @@ def drilldown_sites_auto(
     user_id: str | None = None,
     filter_date_from: date | None = None,
     filter_date_to: date | None = None,
+    strict_pace_apply: bool = False,
 ) -> tuple[list[dict], int]:
     """Drilldown: return (filtered_sites, blocked_count)."""
     sites, blocked = _get_sites(
@@ -401,6 +414,7 @@ def drilldown_sites_auto(
         user_id=user_id,
         filter_date_from=filter_date_from,
         filter_date_to=filter_date_to,
+        strict_pace_apply=strict_pace_apply,
     )
     return _filter_drilldown(sites, drilldown_type, pending_count, milestone_key), blocked
 
@@ -426,6 +440,7 @@ def drilldown_sites_history(
     user_id: str | None = None,
     filter_date_from: date | None = None,
     filter_date_to: date | None = None,
+    strict_pace_apply: bool = False,
 ) -> tuple[list[dict], int]:
     """Drilldown: return (filtered_sites, blocked_count)."""
     sites, blocked = _get_sites_history(
@@ -439,5 +454,6 @@ def drilldown_sites_history(
         user_id=user_id,
         filter_date_from=filter_date_from,
         filter_date_to=filter_date_to,
+        strict_pace_apply=strict_pace_apply,
     )
     return _filter_drilldown(sites, drilldown_type, pending_count, milestone_key), blocked

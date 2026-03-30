@@ -13,6 +13,7 @@ interface Props {
   userId: string;
   considerVendorCapacity: boolean;
   paceConstraintFlag: boolean;
+  strictPaceApply?: boolean;
   statusFilter: string;
   slaType: string;
   refreshKey: number;
@@ -25,7 +26,7 @@ interface CalendarDay {
 
 export default function CalendarView({
   region, market, area, siteId, vendor, userId,
-  considerVendorCapacity, paceConstraintFlag, statusFilter, slaType,
+  considerVendorCapacity, paceConstraintFlag, strictPaceApply, statusFilter, slaType,
   refreshKey,
 }: Props) {
   const [data, setData] = useState<{ count: number; sites: SiteGantt[] } | null>(null);
@@ -58,6 +59,7 @@ export default function CalendarView({
         user_id: userId || undefined,
         consider_vendor_capacity: considerVendorCapacity || undefined,
         pace_constraint_flag: paceConstraintFlag || undefined,
+        strict_pace_apply: strictPaceApply || undefined,
         status: statusFilter || undefined,
         sla_type: slaType !== "default" ? slaType : undefined,
       });
@@ -67,7 +69,7 @@ export default function CalendarView({
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, region, market, area, siteId, vendor, userId, considerVendorCapacity, paceConstraintFlag, statusFilter, slaType]);
+  }, [startDate, endDate, region, market, area, siteId, vendor, userId, considerVendorCapacity, paceConstraintFlag, strictPaceApply, statusFilter, slaType]);
 
   useEffect(() => { load(); }, [refreshKey]);
 

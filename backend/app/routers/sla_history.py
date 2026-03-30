@@ -75,6 +75,7 @@ def history_gantt_charts(
     offset: int = Query(None, description="Offset results"),
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user — marks excess sites as excluded"),
+    strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -126,6 +127,7 @@ def history_gantt_charts(
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
+        strict_pace_apply=strict_pace_apply,
     )
 
     # Post-filter by overall_status or exclude_reason if requested

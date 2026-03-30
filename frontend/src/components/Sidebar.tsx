@@ -26,6 +26,8 @@ interface Props {
   onConsiderVendorCapacityChange: (v: boolean) => void;
   paceConstraintFlag: boolean;
   onPaceConstraintFlagChange: (v: boolean) => void;
+  strictPaceApply: boolean;
+  onStrictPaceApplyChange: (v: boolean) => void;
   selectedStatus: string;
   onStatusChange: (s: string) => void;
   userId: string;
@@ -174,6 +176,8 @@ export default function Sidebar({
   onConsiderVendorCapacityChange,
   paceConstraintFlag,
   onPaceConstraintFlagChange,
+  strictPaceApply,
+  onStrictPaceApplyChange,
   selectedStatus,
   onStatusChange,
   userId,
@@ -383,6 +387,23 @@ export default function Sidebar({
           </label>
           <p className="text-[9px] text-gray-400 mt-1 leading-tight">
             Applies all pace constraints configured for this user.
+          </p>
+        </div>
+        {/* Strict Pace Apply Toggle */}
+        <div>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={strictPaceApply}
+              onChange={(e) => onStrictPaceApplyChange(e.target.checked)}
+              className="accent-blue-500 w-3.5 h-3.5"
+            />
+            <span className="text-[10px] font-bold tracking-wider uppercase text-gray-400">
+              Strict Pace (No Stretch)
+            </span>
+          </label>
+          <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+            Excludes excess sites without pushing them to next week.
           </p>
         </div>
       </div>
