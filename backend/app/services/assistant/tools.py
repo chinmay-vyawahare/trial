@@ -38,6 +38,30 @@ API_REGISTRY = {
             "regional_dev_initiatives": "string | null — gate check, free-text ILIKE pattern",
         },
     },
+    "skip_prerequisite": {
+        "method": "POST",
+        "endpoint": "/api/v1/schedular/skip-prerequisites",
+        "description": "Skip a prerequisite milestone for a user. The milestone will be treated as instantly complete (zero duration) and downstream milestones recalculate.",
+        "params": {
+            "user_id": "string — required",
+            "milestone_key": "string — required, the key of the milestone to skip",
+        },
+    },
+    "unskip_prerequisite": {
+        "method": "DELETE",
+        "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}/{milestone_key}",
+        "description": "Un-skip a previously skipped prerequisite milestone for a user.",
+        "params": {
+            "user_id": "string — path param",
+            "milestone_key": "string — path param",
+        },
+    },
+    "unskip_all_prerequisites": {
+        "method": "DELETE",
+        "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}",
+        "description": "Un-skip all skipped prerequisites for a user.",
+        "params": {"user_id": "string — path param"},
+    },
 }
 
 # ── LLM TOOL DEFINITIONS (OpenAI function-calling format) ──────────────
@@ -106,6 +130,14 @@ FILTER_TOOLS = [
         "function": {
             "name": "get_geolocation_hierarchy",
             "description": "Fetch the complete geographic hierarchy (region → area → market) from the database. Returns a list of {region, area, market} mappings. ALWAYS call this when the user changes a geo filter (region, area, or market) and they already have other geo filters set — use it to check if the new value is consistent with the existing geo filters.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_available_prerequisites",
+            "description": "Fetch all prerequisite milestones with their skip status for the current user. Returns a list of {key, name, is_skipped} objects. Call this when the user asks about prerequisites, wants to skip/unskip a milestone, or asks which milestones are skipped.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },

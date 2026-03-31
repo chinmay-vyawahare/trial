@@ -57,6 +57,7 @@ def scheduler_node(state: AssistantState) -> dict:
         chat_summary=state["chat_summary"],
         db=state["db"],
         recent_messages=state.get("recent_messages"),
+        config_db=state.get("config_db"),
     )
     return {"result": result}
 

@@ -17,15 +17,18 @@ Given a user message, classify it into EXACTLY ONE of these intents:
 1. "greeting" — greetings, small talk, thank you, goodbye, how are you, pleasantries,
    or any casual/non-work message that doesn't relate to filters or simulation.
 
-2. "scheduler" — anything related to viewing or changing FILTERS:
+2. "scheduler" — anything related to viewing or changing FILTERS or PREREQUISITES:
    - Setting/changing/clearing filters (region, market, area, vendor, site, plan type, dev initiatives)
    - Asking what filter values are available ("list markets", "what regions exist?")
    - Asking about the user's current/saved filters
    - Any request to update or get filter-related data
+   - Skipping or unskipping prerequisite milestones ("skip steel received", "unskip NTP")
+   - Asking which prerequisites/milestones are skipped
+   - Listing available prerequisites or milestones
 
-3. "simulation" — anything else work-related that is NOT about filters:
+3. "simulation" — anything else work-related that is NOT about filters or prerequisites:
    - What-if scenarios, simulating changes
-   - Dashboard, status, milestones, prerequisites
+   - Dashboard, status, milestones
    - Constraints, thresholds, SLA
    - Exporting data, gate checks
    - Construction progress, forecasts

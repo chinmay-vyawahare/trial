@@ -139,6 +139,22 @@ You already validated it in the previous turn. Just return the save action direc
 5b. When user asks to change a NON-geo filter (vendor, site_id):
    - Call the relevant value tool, match, and save. No hierarchy check needed.
 
+5c. When user asks to SKIP a prerequisite/milestone:
+   - Call `get_available_prerequisites` to fetch all milestones with their current skip status.
+   - Match the user's request to the correct milestone by name (fuzzy match OK to find it).
+   - **CRITICAL: Use the EXACT `key` value from the tool result in the action params. Never modify, rename, or guess the key. The key must match the DB exactly (e.g. "steel", "3925", "site_walk", "cpo").**
+   - If the milestone is already skipped, inform the user.
+   - If not skipped, return a POST action to skip it:
+     Example: {{"message": "Skipping 'Steel Received (If applicable)' prerequisite. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites", "params": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}]}}
+
+5d. When user asks to UNSKIP a prerequisite or asks which prerequisites are skipped:
+   - Call `get_available_prerequisites` to fetch current status.
+   - **CRITICAL: Always use the EXACT `key` from the tool result, not the user's wording.**
+   - To unskip: return a DELETE action:
+     Example: {{"message": "Un-skipping 'Steel Received (If applicable)' prerequisite.", "actions": [{{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/steel", "params": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}]}}
+   - To unskip all: {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>", "params": {{"user_id": "<actual_user_id>"}}}}
+   - To list skipped: show the skipped milestones in the message with empty actions.
+
 6. When user asks to change a gate check (plan_type_include or regional_dev_initiatives):
    - Use the same POST `/api/v1/schedular/user-filters` endpoint
    - Example: {{"message": "Plan type filter set to New Build.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/user-filters", "params": {{"user_id": "<actual_user_id>", "plan_type_include": ["New Build"]}}}}]}}
@@ -166,6 +182,8 @@ You already validated it in the previous turn. Just return the save action direc
 13. NEVER call the same tool more than once in a conversation. If you already have the tool results from a previous round, use them directly. Do not loop.
 
 14. When handling a confirmation ("yes", "correct", etc.), do NOT call any tools. Just return the action based on what was previously discussed.
+
+15. NEVER include action details (endpoints, params, JSON) in the "message" field. The message is shown to the user in the UI — keep it human-readable. Actions go ONLY in the "actions" array.
 """
 
 MAX_TOOL_ROUNDS = 7
@@ -226,6 +244,36 @@ def _exec_get_geolocation_hierarchy(db: Session) -> dict:
     return hierarchy
 
 
+def _exec_get_available_prerequisites(db: Session, user_id: str = None) -> list[dict]:
+    """Fetch all milestones with their skip status for the user."""
+    from app.models.prerequisite import MilestoneDefinition, UserSkippedPrerequisite
+
+    milestones = (
+        db.query(MilestoneDefinition)
+        .filter(MilestoneDefinition.is_skipped == False)
+        .order_by(MilestoneDefinition.sort_order)
+        .all()
+    )
+
+    skipped_keys = set()
+    if user_id:
+        rows = (
+            db.query(UserSkippedPrerequisite.milestone_key)
+            .filter(UserSkippedPrerequisite.user_id == user_id)
+            .all()
+        )
+        skipped_keys = {r[0] for r in rows}
+
+    return [
+        {
+            "key": ms.key,
+            "name": ms.name,
+            "is_skipped": ms.key in skipped_keys,
+        }
+        for ms in milestones
+    ]
+
+
 TOOL_EXECUTORS = {
     "get_available_regions": _exec_get_available_regions,
     "get_available_markets": _exec_get_available_markets,
@@ -235,6 +283,7 @@ TOOL_EXECUTORS = {
     "get_available_plan_types": _exec_get_available_plan_types,
     "get_available_dev_initiatives": _exec_get_available_dev_initiatives,
     "get_geolocation_hierarchy": _exec_get_geolocation_hierarchy,
+    "get_available_prerequisites": _exec_get_available_prerequisites,
 }
 
 
@@ -256,6 +305,7 @@ def handle_scheduler(
     chat_summary: str,
     db: Session,
     recent_messages: list[dict] | None = None,
+    config_db: Session = None,
 ) -> dict:
     """Handle scheduling-related requests via LLM with tool calling."""
     client = get_openai_client()
@@ -302,7 +352,10 @@ def handle_scheduler(
 
                 if executor:
                     try:
-                        result = executor(db)
+                        if fn_name == "get_available_prerequisites":
+                            result = executor(config_db or db, user_id=user_id)
+                        else:
+                            result = executor(db)
                         tool_result = json.dumps(result)
                         result_preview = tool_result[:150] + "..." if len(tool_result) > 150 else tool_result
                         logger.info(
@@ -336,8 +389,24 @@ def handle_scheduler(
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:
-        logger.warning("  [SCHEDULER] Failed to parse LLM JSON, raw: %s", raw[:200])
-        result = {"message": raw, "actions": []}
+        # LLM sometimes embeds JSON inside text — try to extract it
+        # Find the last '{' that starts a JSON with "message" and "actions"
+        import re
+        result = None
+        # Try progressively from each '{' in the string
+        for m in re.finditer(r'\{', raw):
+            candidate = raw[m.start():]
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict) and "message" in parsed:
+                    result = parsed
+                    logger.info("  [SCHEDULER] Extracted embedded JSON from response")
+                    break
+            except json.JSONDecodeError:
+                continue
+        if result is None:
+            logger.warning("  [SCHEDULER] Failed to parse LLM JSON, raw: %s", raw[:200])
+            result = {"message": raw, "actions": []}
 
     if not result.get("message"):
         result["message"] = "Here is the information you requested."

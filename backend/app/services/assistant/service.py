@@ -140,6 +140,23 @@ def run_assistant(
     message = result.get("message", "")
     message = message.replace("\n", " ").replace("  ", " ").strip()
 
+    # If the LLM embedded action JSON inside the message text, extract the actions
+    # and clean the message
+    import re, json as _json
+    for m in re.finditer(r'\{', message):
+        candidate = message[m.start():]
+        try:
+            embedded = _json.loads(candidate)
+            if isinstance(embedded, dict) and "actions" in embedded and embedded["actions"]:
+                # Found embedded actions — merge them into result if result has none
+                if not result.get("actions"):
+                    result["actions"] = embedded["actions"]
+                # Clean the message: keep only the text before the embedded JSON
+                message = message[:m.start()].strip()
+                break
+        except (_json.JSONDecodeError, ValueError):
+            continue
+
     # Save this exchange to DB — store only the human-readable message,
     # not the full JSON with actions, so the chat summary stays clean
     _save_messages(config_db, user_id, thread_id, user_message, message)
