@@ -46,10 +46,10 @@ def _get_user_filters(config_db: Session, user_id: str) -> dict:
     return result
 
 
-def _get_recent_messages(config_db: Session, user_id: str, thread_id: str, limit: int = 10) -> list[dict]:
+def _get_recent_messages(config_db: Session, user_id: str, thread_id: str, limit: int = 12) -> list[dict]:
     """Load last N messages from chat_history table filtered by thread_id.
 
-    Default limit=10 (5 user + assistant pairs) so the LLM has enough
+    Default limit=12 (6 user + assistant pairs) so the LLM has enough
     conversational context for follow-ups like "yes" / "confirm".
     """
     rows = (
@@ -122,6 +122,7 @@ def run_assistant(
         "user_id": user_id,
         "thread_id": thread_id,
         "chat_summary": chat_summary,
+        "recent_messages": recent_messages,
         "user_filters": user_filters,
         "db": db,
         "config_db": config_db,

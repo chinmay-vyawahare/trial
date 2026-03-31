@@ -88,6 +88,14 @@ When the user asks to change region, area, or market, you MUST follow these step
 
 {chat_summary}
 
+## CRITICAL — CONFIRMATIONS:
+
+When the user says "yes", "confirm", "do it", "go ahead", "correct", or similar short
+confirmations, look at the PREVIOUS assistant message in the conversation history.
+If the previous assistant message proposed a specific filter change or asked the user to
+confirm, IMMEDIATELY execute that action WITHOUT re-validating or calling any tools again.
+You already validated it in the previous turn. Just return the save action directly.
+
 ## RULES:
 
 1. Always respond with a JSON object:
@@ -153,7 +161,11 @@ When the user asks to change region, area, or market, you MUST follow these step
 
 11. ONLY respond with valid JSON. No markdown, no code blocks.
 
-12. Use the RECENT CONVERSATION SUMMARY to maintain context from prior messages.
+12. Use the RECENT CONVERSATION SUMMARY and the conversation history messages to maintain context from prior messages.
+
+13. NEVER call the same tool more than once in a conversation. If you already have the tool results from a previous round, use them directly. Do not loop.
+
+14. When handling a confirmation ("yes", "correct", etc.), do NOT call any tools. Just return the action based on what was previously discussed.
 """
 
 MAX_TOOL_ROUNDS = 7
@@ -243,6 +255,7 @@ def handle_scheduler(
     user_filters: dict,
     chat_summary: str,
     db: Session,
+    recent_messages: list[dict] | None = None,
 ) -> dict:
     """Handle scheduling-related requests via LLM with tool calling."""
     client = get_openai_client()
@@ -254,8 +267,14 @@ def handle_scheduler(
     system_prompt = _build_scheduler_prompt(user_id, user_filters, chat_summary)
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
     ]
+
+    # Include last 6 messages as actual conversation turns for context
+    if recent_messages:
+        for msg in recent_messages[-6:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+    messages.append({"role": "user", "content": user_message})
 
     for round_num in range(MAX_TOOL_ROUNDS):
         logger.info("  [SCHEDULER] LLM call round %d/%d ...", round_num + 1, MAX_TOOL_ROUNDS)

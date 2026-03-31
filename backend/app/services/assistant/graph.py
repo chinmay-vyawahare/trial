@@ -25,6 +25,7 @@ class AssistantState(TypedDict):
     user_id: str
     thread_id: str
     chat_summary: str
+    recent_messages: list[dict]
     user_filters: dict
     db: Session
     config_db: Session
@@ -55,6 +56,7 @@ def scheduler_node(state: AssistantState) -> dict:
         user_filters=state["user_filters"],
         chat_summary=state["chat_summary"],
         db=state["db"],
+        recent_messages=state.get("recent_messages"),
     )
     return {"result": result}
 
