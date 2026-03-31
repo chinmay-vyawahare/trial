@@ -22,8 +22,10 @@ Given a user message, classify it into EXACTLY ONE of these intents:
    - Asking what filter values are available ("list markets", "what regions exist?")
    - Asking about the user's current/saved filters
    - Any request to update or get filter-related data
-   - Skipping or unskipping prerequisite milestones ("skip steel received", "unskip NTP")
-   - Asking which prerequisites/milestones are skipped
+   - Removing/disabling prerequisite milestones ("remove steel received", "disable NTP")
+   - Skipping/Unskipping prerequisite milestones ("skip steel received", "unskip NTP")
+   - Adding/enabling previously removed prerequisite milestones ("add NTP", "enable steel received")
+   - Asking which prerequisites/milestones are removed or disabled
    - Listing available prerequisites or milestones
 
 3. "simulation" — anything else work-related that is NOT about filters or prerequisites:

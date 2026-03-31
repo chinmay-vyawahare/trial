@@ -1,9 +1,12 @@
+
 """
 Simulation node — calls the external simulation agent via SSE.
 
-Two tools:
-  simulate_tool  — starts the SSE stream; returns when complete OR when HITL fires
-  resume_tool    — called after HITL with the same thread_id + user's answer
+Tools:
+  simulate_tool        — starts SSE stream; returns when complete OR when HITL fires
+  simulate_tool_stream — async generator that yields ALL SSE events to the frontend
+  resume_tool          — called after HITL; returns final result
+  resume_tool_stream   — async generator that yields ALL SSE events after HITL resume
 
 The external simulation agent base URL is configured via SIMULATION_BASE_URL.
 When HITL is required, the node returns a response with status="hitl_required"
@@ -60,6 +63,79 @@ def _get_main_loop() -> asyncio.AbstractEventLoop:
         )
 
 
+async def _run_stream_task(
+    query: str,
+    user_id: str,
+    tid: str,
+    result_queue: asyncio.Queue,
+    forward_all: bool = False,
+):
+    """
+    Background task that reads SSE events from the external simulation agent.
+
+    When forward_all=True, ALL events are put on the queue (for streaming to frontend).
+    When forward_all=False, only hitl/complete/error are put on the queue (original behavior).
+    """
+    event_name = None
+    resumed = False
+
+    try:
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream(
+                "GET",
+                f"{SIMULATION_BASE_URL}/simulate/stream",
+                params={"query": query, "user_id": user_id, "thread_id": tid},
+            ) as resp:
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+
+                    if line.startswith("event:"):
+                        event_name = line[6:].strip()
+
+                    elif line.startswith("data:") and event_name:
+                        data = json.loads(line[5:].strip())
+                        logger.info("  [SIMULATION] SSE event: %s", event_name)
+
+                        if event_name == "stream_started":
+                            tid = data.get("thread_id", tid)
+                            if forward_all:
+                                await result_queue.put((event_name, data, tid))
+
+                        elif event_name == "hitl_start":
+                            resume_event = asyncio.Event()
+                            _resume_events[tid] = resume_event
+                            _result_queues[tid] = result_queue
+
+                            await result_queue.put(("hitl", data, tid))
+
+                            # Block — SSE connection stays open until resume
+                            await resume_event.wait()
+                            resumed = True
+
+                        elif event_name == "complete":
+                            await result_queue.put(("complete", data.get("final_response", ""), tid))
+                            break
+
+                        elif event_name == "error":
+                            await result_queue.put(("error", data.get("message", "Unknown error"), tid))
+                            break
+
+                        else:
+                            # Forward all other events (step, progress, token, etc.)
+                            if forward_all or resumed:
+                                await result_queue.put((event_name, data, tid))
+
+    except httpx.ConnectError:
+        await result_queue.put(("error", "Could not connect to simulation agent", tid))
+    except Exception as e:
+        logger.exception(f"Simulation stream error: {e}")
+        await result_queue.put(("error", str(e), tid))
+
+
+# ── Original non-streaming tools (kept for backward compat) ──────────
+
+
 async def simulate_tool(
     query: str,
     user_id: str,
@@ -71,62 +147,11 @@ async def simulate_tool(
     Returns one of:
       {"status": "complete",       "thread_id": str, "final_response": str}
       {"status": "hitl_required",  "thread_id": str, "clarification": dict}
-
-    If "hitl_required" is returned, the frontend should call POST /schedular/resume.
     """
     tid = thread_id or str(uuid.uuid4())
     result_queue: asyncio.Queue = asyncio.Queue()
 
-    async def _stream_task():
-        nonlocal tid
-        event_name = None
-
-        try:
-            async with httpx.AsyncClient(timeout=None) as client:
-                async with client.stream(
-                    "GET",
-                    f"{SIMULATION_BASE_URL}/simulate/stream",
-                    params={"query": query, "user_id": user_id, "thread_id": tid},
-                ) as resp:
-                    async for line in resp.aiter_lines():
-                        if not line:
-                            continue
-
-                        if line.startswith("event:"):
-                            event_name = line[6:].strip()
-
-                        elif line.startswith("data:") and event_name:
-                            data = json.loads(line[5:].strip())
-                            logger.info("  [SIMULATION] SSE event: %s", event_name)
-
-                            if event_name == "stream_started":
-                                tid = data.get("thread_id", tid)
-
-                            elif event_name == "hitl_start":
-                                resume_event = asyncio.Event()
-                                _resume_events[tid] = resume_event
-                                _result_queues[tid] = result_queue
-
-                                await result_queue.put(("hitl", data, tid))
-
-                                # Block — SSE connection stays open until resume
-                                await resume_event.wait()
-
-                            elif event_name == "complete":
-                                await result_queue.put(("complete", data.get("final_response", ""), tid))
-                                break
-
-                            elif event_name == "error":
-                                await result_queue.put(("error", data.get("message", "Unknown error"), tid))
-                                break
-
-        except httpx.ConnectError:
-            await result_queue.put(("error", "Could not connect to simulation agent", tid))
-        except Exception as e:
-            logger.exception(f"Simulation stream error: {e}")
-            await result_queue.put(("error", str(e), tid))
-
-    asyncio.create_task(_stream_task())
+    asyncio.create_task(_run_stream_task(query, user_id, tid, result_queue, forward_all=False))
 
     event_type, data, tid = await result_queue.get()
 
@@ -141,12 +166,7 @@ async def simulate_tool(
 async def resume_tool(thread_id: str, answer: str) -> dict:
     """
     Resume a simulation that returned status="hitl_required".
-
-    Unblocks the background SSE task, signals the external agent,
-    and waits for the stream to deliver the final response.
-
-    Returns:
-      {"status": "complete", "thread_id": str, "final_response": str}
+    Returns the final result (non-streaming).
     """
     resume_event = _resume_events.get(thread_id)
     result_queue = _result_queues.get(thread_id)
@@ -157,6 +177,86 @@ async def resume_tool(thread_id: str, answer: str) -> dict:
             "thread_id": thread_id,
             "message": f"No active HITL session for thread_id='{thread_id}'",
         }
+
+    clarification = answer.strip() or "Accept stated assumptions"
+
+    resume_event.set()
+
+    async with httpx.AsyncClient(timeout=None) as client:
+        r = await client.post(
+            f"{SIMULATION_BASE_URL}/simulate/stream/resume",
+            json={"thread_id": thread_id, "clarification": clarification},
+        )
+        r.raise_for_status()
+
+    event_type, data, tid = await result_queue.get()
+
+    _resume_events.pop(thread_id, None)
+    _result_queues.pop(thread_id, None)
+
+    if event_type == "complete":
+        return {"status": "complete", "thread_id": tid, "final_response": data}
+    else:
+        return {"status": "error", "thread_id": tid, "message": data}
+
+
+# ── Streaming generators (yield SSE events to frontend) ──────────────
+
+
+async def simulate_tool_stream(
+    query: str,
+    user_id: str,
+    thread_id: str = None,
+):
+    """
+    Async generator that starts a simulation and yields ALL SSE events.
+
+    Yields SSE-formatted strings: "event: <name>\ndata: <json>\n\n"
+    Stops after 'complete', 'error', or 'hitl' event.
+    """
+    tid = thread_id or str(uuid.uuid4())
+    result_queue: asyncio.Queue = asyncio.Queue()
+
+    asyncio.create_task(_run_stream_task(query, user_id, tid, result_queue, forward_all=True))
+
+    while True:
+        event_type, data, tid = await result_queue.get()
+
+        if event_type == "hitl":
+            payload = {"status": "hitl_required", "thread_id": tid, "clarification": data}
+            yield f"event: hitl_required\ndata: {json.dumps(payload)}\n\n"
+            break
+        elif event_type == "complete":
+            payload = {"status": "complete", "thread_id": tid, "final_response": data}
+            yield f"event: complete\ndata: {json.dumps(payload)}\n\n"
+            break
+        elif event_type == "error":
+            payload = {"status": "error", "thread_id": tid, "message": data}
+            yield f"event: error\ndata: {json.dumps(payload)}\n\n"
+            break
+        else:
+            # Forward intermediate events (step, progress, token, stream_started, etc.)
+            payload = {"event": event_type, "thread_id": tid, "data": data}
+            yield f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+
+
+async def resume_tool_stream(thread_id: str, answer: str):
+    """
+    Async generator that resumes a HITL simulation and yields ALL SSE events.
+
+    Yields SSE-formatted strings until 'complete' or 'error'.
+    """
+    resume_event = _resume_events.get(thread_id)
+    result_queue = _result_queues.get(thread_id)
+
+    if resume_event is None or result_queue is None:
+        payload = {
+            "status": "error",
+            "thread_id": thread_id,
+            "message": f"No active HITL session for thread_id='{thread_id}'",
+        }
+        yield f"event: error\ndata: {json.dumps(payload)}\n\n"
+        return
 
     clarification = answer.strip() or "Accept stated assumptions"
 
@@ -171,17 +271,35 @@ async def resume_tool(thread_id: str, answer: str) -> dict:
         )
         r.raise_for_status()
 
-    # Wait for the background task to deliver the final result
-    event_type, data, tid = await result_queue.get()
+    # Yield all events from the queue until complete/error
+    while True:
+        event_type, data, tid = await result_queue.get()
 
-    # Cleanup
-    _resume_events.pop(thread_id, None)
-    _result_queues.pop(thread_id, None)
+        if event_type == "complete":
+            payload = {"status": "complete", "thread_id": tid, "final_response": data}
+            yield f"event: complete\ndata: {json.dumps(payload)}\n\n"
+            # Cleanup
+            _resume_events.pop(thread_id, None)
+            _result_queues.pop(thread_id, None)
+            break
+        elif event_type == "error":
+            payload = {"status": "error", "thread_id": tid, "message": data}
+            yield f"event: error\ndata: {json.dumps(payload)}\n\n"
+            _resume_events.pop(thread_id, None)
+            _result_queues.pop(thread_id, None)
+            break
+        elif event_type == "hitl":
+            # Another HITL in the same stream — forward it
+            payload = {"status": "hitl_required", "thread_id": tid, "clarification": data}
+            yield f"event: hitl_required\ndata: {json.dumps(payload)}\n\n"
+            break
+        else:
+            # Forward intermediate events
+            payload = {"event": event_type, "thread_id": tid, "data": data}
+            yield f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
 
-    if event_type == "complete":
-        return {"status": "complete", "thread_id": tid, "final_response": data}
-    else:
-        return {"status": "error", "thread_id": tid, "message": data}
+
+# ── Sync entry point for LangGraph ───────────────────────────────────
 
 
 def handle_simulation(user_message: str, chat_summary: str) -> dict:
@@ -205,14 +323,10 @@ def handle_simulation(user_message: str, chat_summary: str) -> dict:
         }
 
     try:
-        # Schedule simulate_tool on the main event loop (not a throwaway one).
-        # This keeps the background _stream_task alive after we return.
         future = asyncio.run_coroutine_threadsafe(
             simulate_tool(query=user_message, user_id="system", thread_id=None),
             loop,
         )
-        # Block the current (sync) thread until the coroutine completes.
-        # The background SSE task continues running on the main loop.
         result = future.result(timeout=120)
     except TimeoutError:
         logger.error("Simulation timed out after 120s")

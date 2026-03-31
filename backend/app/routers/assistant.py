@@ -1,3 +1,5 @@
+# Route
+
 """
 AI Assistant endpoints.
 
@@ -18,14 +20,17 @@ import uuid
 from typing import Optional
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func, distinct
 
-from app.core.database import get_db, get_config_db
+from app.core.database import get_db, get_config_db, ConfigSessionLocal
 from app.models.prerequisite import ChatHistory
 from app.schemas.gantt import ChatMessageOut, ChatThreadSummary, ChatThreadOut, ChatHistoryOut
 from app.services.assistant.service import run_assistant
-from app.services.assistant.nodes.simulation import resume_tool
+from app.services.assistant.nodes.simulation import resume_tool_stream, simulate_tool_stream
+from app.services.assistant.nodes.planner import classify_intent
+from app.services.assistant.service import _get_recent_messages, _summarize_history, _save_messages
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +50,13 @@ class CreateThreadRequest(BaseModel):
 
 class ResumeRequest(BaseModel):
     thread_id: str = Field(..., description="Thread ID from the simulation")
+    chat_thread_id: str = Field(..., description="Chat thread ID to save response to")
+    user_id: str = Field(..., description="User ID for chat history")
     clarification: str = Field(..., description="User's answer to the HITL question")
 
 
 @router.post("/assistant/chat")
-def chat(
+async def chat(
     body: ChatRequest,
     user_id: str = Query(..., description="User ID (required)"),
     thread_id: str = Query(..., description="Thread ID for conversation isolation"),
@@ -65,11 +72,52 @@ def chat(
     if not body.message or not body.message.strip():
         raise HTTPException(status_code=400, detail="message is required and cannot be empty.")
 
+    user_id = user_id.strip()
+    thread_id = thread_id.strip()
+    message = body.message.strip()
+
+    # Classify intent first — if simulation, stream SSE events directly
+    recent_messages = _get_recent_messages(config_db, user_id, thread_id)
+    chat_summary = _summarize_history(recent_messages)
+    intent = classify_intent(message, chat_summary)
+
+    if intent == "simulation":
+        # Save user message to chat history
+        _save_messages(config_db, user_id, thread_id, message, "")
+
+        async def _stream_and_save():
+            final_msg = ""
+            async for chunk in simulate_tool_stream(query=message, user_id=user_id, thread_id=None):
+                yield chunk
+                # Capture final response for chat history
+                if "event: complete" in chunk:
+                    try:
+                        data_line = chunk.split("data: ", 1)[1].strip()
+                        parsed = json.loads(data_line)
+                        final_msg = parsed.get("final_response", "")
+                    except (json.JSONDecodeError, IndexError):
+                        pass
+
+            # Save assistant response to chat history
+            if final_msg:
+                db_session = ConfigSessionLocal()
+                try:
+                    db_session.add(ChatHistory(
+                        user_id=user_id, thread_id=thread_id,
+                        role="assistant", content=final_msg,
+                    ))
+                    db_session.commit()
+                finally:
+                    db_session.close()
+
+        return StreamingResponse(_stream_and_save(), media_type="text/event-stream")
+
+    # Non-simulation: use the regular sync flow
     try:
         return run_assistant(
-            user_message=body.message.strip(),
-            user_id=user_id.strip(),
-            thread_id=thread_id.strip(),
+            user_message=message,
+            user_id=user_id,
+            thread_id=thread_id,
             db=db,
             config_db=config_db,
         )
@@ -110,26 +158,50 @@ async def resume_simulation(body: ResumeRequest):
     """
     Resume a simulation after HITL (human-in-the-loop).
 
-    When a simulation returns hitl_required, the frontend collects the user's
-    answer and calls this endpoint to resume the simulation stream.
+    Streams all SSE events from the external simulation agent to the frontend.
+    Saves the final response to the chat thread history.
     """
     if not body.thread_id or not body.thread_id.strip():
         raise HTTPException(status_code=400, detail="thread_id is required.")
     if not body.clarification or not body.clarification.strip():
         raise HTTPException(status_code=400, detail="clarification is required.")
 
-    try:
-        result = await resume_tool(
-            thread_id=body.thread_id.strip(),
-            answer=body.clarification.strip(),
-        )
-        return result
-    except Exception as e:
-        logger.exception(f"Resume error for thread '{body.thread_id}': {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to resume simulation. Please try again.",
-        )
+    sim_thread_id = body.thread_id.strip()
+    chat_thread_id = body.chat_thread_id.strip()
+    uid = body.user_id.strip()
+    clarification = body.clarification.strip()
+
+    async def _stream_and_save():
+        final_msg = ""
+        async for chunk in resume_tool_stream(thread_id=sim_thread_id, answer=clarification):
+            yield chunk
+            # Capture final response for chat history
+            if "event: complete" in chunk:
+                try:
+                    data_line = chunk.split("data: ", 1)[1].strip()
+                    parsed = json.loads(data_line)
+                    final_msg = parsed.get("final_response", "")
+                except (json.JSONDecodeError, IndexError):
+                    pass
+
+        # Save clarification + response to chat thread history
+        if chat_thread_id and uid:
+            db_session = ConfigSessionLocal()
+            try:
+                db_session.add(ChatHistory(
+                    user_id=uid, thread_id=chat_thread_id,
+                    role="user", content=clarification,
+                ))
+                if final_msg:
+                    db_session.add(ChatHistory(
+                        user_id=uid, thread_id=chat_thread_id,
+                        role="assistant", content=final_msg,
+                    ))
+                db_session.commit()
+            finally:
+                db_session.close()
+
+    return StreamingResponse(_stream_and_save(), media_type="text/event-stream")
 
 
 @router.get("/assistant/history", response_model=list[ChatHistoryOut])
@@ -305,3 +377,5 @@ def _build_threads_for_user(config_db: Session, user_id: str) -> list[ChatThread
 
     threads.sort(key=lambda t: t.last_message_at or "", reverse=True)
     return threads
+
+

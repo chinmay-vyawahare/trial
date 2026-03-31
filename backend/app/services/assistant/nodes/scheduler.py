@@ -139,21 +139,23 @@ You already validated it in the previous turn. Just return the save action direc
 5b. When user asks to change a NON-geo filter (vendor, site_id):
    - Call the relevant value tool, match, and save. No hierarchy check needed.
 
-5c. When user asks to SKIP a prerequisite/milestone:
-   - Call `get_available_prerequisites` to fetch all milestones with their current skip status.
+5c. When user asks to REMOVE or DISABLE a prerequisite/milestone:
+   - The user may say "remove", "disable", "skip", or similar words — all mean the same: remove/disable the milestone.
+   - Call `get_available_prerequisites` to fetch all milestones with their current status.
    - Match the user's request to the correct milestone by name (fuzzy match OK to find it).
    - **CRITICAL: Use the EXACT `key` value from the tool result in the action params. Never modify, rename, or guess the key. The key must match the DB exactly (e.g. "steel", "3925", "site_walk", "cpo").**
-   - If the milestone is already skipped, inform the user.
-   - If not skipped, return a POST action to skip it:
-     Example: {{"message": "Skipping 'Steel Received (If applicable)' prerequisite. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites", "params": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}]}}
+   - If the milestone is already removed/disabled, inform the user.
+   - If not removed, return a POST action to remove it:
+     Example: {{"message": "Removing 'Steel Received (If applicable)' prerequisite. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites", "params": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}]}}
 
-5d. When user asks to UNSKIP a prerequisite or asks which prerequisites are skipped:
+5d. When user asks to ADD or ENABLE a prerequisite, or asks which prerequisites are removed/disabled:
+   - The user may say "add", "enable", "unskip", or similar words — all mean the same: re-enable the milestone.
    - Call `get_available_prerequisites` to fetch current status.
    - **CRITICAL: Always use the EXACT `key` from the tool result, not the user's wording.**
-   - To unskip: return a DELETE action:
-     Example: {{"message": "Un-skipping 'Steel Received (If applicable)' prerequisite.", "actions": [{{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/steel", "params": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}]}}
-   - To unskip all: {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>", "params": {{"user_id": "<actual_user_id>"}}}}
-   - To list skipped: show the skipped milestones in the message with empty actions.
+   - To add/enable: return a DELETE action:
+     Example: {{"message": "Enabling 'Steel Received (If applicable)' prerequisite.", "actions": [{{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/steel", "params": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}]}}
+   - To enable all: {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>", "params": {{"user_id": "<actual_user_id>"}}}}
+   - To list removed/disabled: show the removed milestones in the message with empty actions.
 
 6. When user asks to change a gate check (plan_type_include or regional_dev_initiatives):
    - Use the same POST `/api/v1/schedular/user-filters` endpoint

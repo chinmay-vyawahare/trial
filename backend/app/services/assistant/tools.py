@@ -41,16 +41,16 @@ API_REGISTRY = {
     "skip_prerequisite": {
         "method": "POST",
         "endpoint": "/api/v1/schedular/skip-prerequisites",
-        "description": "Skip a prerequisite milestone for a user. The milestone will be treated as instantly complete (zero duration) and downstream milestones recalculate.",
+        "description": "Remove/disable a prerequisite milestone for a user. The milestone will be treated as instantly complete (zero duration) and downstream milestones recalculate.",
         "params": {
             "user_id": "string — required",
-            "milestone_key": "string — required, the key of the milestone to skip",
+            "milestone_key": "string — required, the key of the milestone to remove/disable",
         },
     },
     "unskip_prerequisite": {
         "method": "DELETE",
         "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}/{milestone_key}",
-        "description": "Un-skip a previously skipped prerequisite milestone for a user.",
+        "description": "Add/enable a previously removed prerequisite milestone for a user.",
         "params": {
             "user_id": "string — path param",
             "milestone_key": "string — path param",
@@ -59,7 +59,7 @@ API_REGISTRY = {
     "unskip_all_prerequisites": {
         "method": "DELETE",
         "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}",
-        "description": "Un-skip all skipped prerequisites for a user.",
+        "description": "Add/enable all removed prerequisites for a user.",
         "params": {"user_id": "string — path param"},
     },
 }
@@ -137,7 +137,7 @@ FILTER_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_available_prerequisites",
-            "description": "Fetch all prerequisite milestones with their skip status for the current user. Returns a list of {key, name, is_skipped} objects. Call this when the user asks about prerequisites, wants to skip/unskip a milestone, or asks which milestones are skipped.",
+            "description": "Fetch all prerequisite milestones with their status for the current user. Returns a list of {key, name, is_skipped} objects. Call this when the user asks about prerequisites, wants to remove/disable or add/enable a milestone, or asks which milestones are removed/disabled.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
