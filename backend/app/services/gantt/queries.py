@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import STAGING_TABLE
@@ -182,6 +184,83 @@ def _build_base_where():
         "pj_a_4225_construction_start_finish IS NULL",
     ]
     return " AND ".join(clauses), {}
+
+
+def _build_hierarchy_optimized(rows):
+    tree = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
+
+    for region, area, market, vendor in rows:
+        tree[region][area][market].add(vendor)
+
+    result = []
+
+    for region, areas in tree.items():
+        region_obj = {
+            "region": region,
+            "areas": []
+        }
+
+        region_areas = region_obj["areas"]
+
+        for area, markets in areas.items():
+            area_obj = {
+                "area": area,
+                "markets": []
+            }
+
+            area_markets = area_obj["markets"]
+
+            for market, vendors in markets.items():
+                area_markets.append({
+                    "market": market,
+                    "vendors": [{"vendor": v} for v in sorted(vendors)]
+                })
+
+            region_areas.append(area_obj)
+
+        result.append(region_obj)
+
+    return result
+
+
+def get_region_hierarchy(db: Session, region: str = None, area: str = None, market: str = None):
+    base_where, params = _build_base_where()
+
+    # build filters dynamically
+    filters = {
+        "region": region,
+        "m_area": area,
+        "m_market": market,
+    }
+
+    clauses = []
+
+    for col, value in filters.items():
+        if value:
+            clauses.append(f"{col} = :{col}")
+            params[col] = value
+
+    where_clause = base_where
+    if clauses:
+        where_clause += " AND " + " AND ".join(clauses)
+
+    query = text(f"""
+        SELECT
+            region,
+            m_area,
+            m_market,
+            construction_gc
+        FROM {STAGING_TABLE}
+        WHERE {where_clause}
+            AND region IS NOT NULL
+            AND m_area IS NOT NULL
+            AND m_market IS NOT NULL
+            AND construction_gc IS NOT NULL
+    """)
+
+    rows = db.execute(query, params).fetchall()
+
+    return _build_hierarchy_optimized(rows)
 
 
 def get_filter_options(db: Session):

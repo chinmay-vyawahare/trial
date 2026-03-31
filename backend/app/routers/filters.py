@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.services.gantt import get_filter_options
+from app.services.gantt import get_filter_options, get_region_hierarchy
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,16 @@ def _safe_get_filter_options(db: Session, key: str) -> list:
     except Exception as e:
         logger.exception(f"Failed to fetch filter options for '{key}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch {key} from database.")
+
+
+@router.get("/hierarchy")
+def get_hierarchy(
+    db: Session = Depends(get_db),
+    region: str = None,
+    area: str = None,
+    market: str = None,
+):
+    return get_region_hierarchy(db, region, area, market)
 
 
 @router.get("/regions")
