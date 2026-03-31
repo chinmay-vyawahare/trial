@@ -198,10 +198,9 @@ def _apply_vendor_capacity(sites: list[dict], db: Session) -> list[dict]:
     """
     Apply vendor capacity constraints from public.gc_capacity_market_trial table.
 
-    For each vendor+market combination, if the vendor has more sites than their
-    day_wise_gc_capacity, sort sites by forecasted_cx_start_date (earliest first)
-    and mark excess sites with excluded_due_to_crew_shortage=True.
-    Sites with earlier forecasted starts are prioritised (kept).
+    For each vendor+market+day combination, if the vendor has more sites starting
+    on that day than their day_wise_gc_capacity, keep the first N and mark the
+    rest as excluded_due_to_crew_shortage=True.
     """
     from app.models.prerequisite import GcCapacityMarketTrial
 
@@ -210,40 +209,33 @@ def _apply_vendor_capacity(sites: list[dict], db: Session) -> list[dict]:
     if not capacity_rows:
         return sites
 
-    # Build lookup: (gc_company_lower, market_lower) -> capacity
+    # Build lookup: (gc_company_lower, market_lower) -> day_wise_capacity
     cap_lookup = {}
     for r in capacity_rows:
         key = (r.gc_company.strip().lower(), r.market.strip().lower())
         cap_lookup[key] = r.day_wise_gc_capacity
 
-    # Group sites by (vendor, market)
-    groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+    # Group sites by (vendor, market, forecast_date)
+    groups: dict[tuple[str, str, str], list[int]] = defaultdict(list)
     for idx, site in enumerate(sites):
         vendor_name = (site.get("vendor_name") or "").strip().lower()
         market_name = (site.get("market") or "").strip().lower()
-        if vendor_name and market_name:
-            groups[(vendor_name, market_name)].append(idx)
+        forecast_date = site.get("forecasted_cx_start_date") or ""
+        if vendor_name and market_name and forecast_date:
+            groups[(vendor_name, market_name, forecast_date)].append(idx)
 
-    # For each group, check capacity and mark excess sites
+    # For each (vendor, market, day) group, check capacity
     excluded_indices = set()
-    for (vendor_key, market_key), indices in groups.items():
+    for (vendor_key, market_key, _), indices in groups.items():
         capacity = cap_lookup.get((vendor_key, market_key))
         if capacity is None or len(indices) <= capacity:
             continue
 
-        # Sort indices by forecasted_cx_start_date ascending (earliest first = keep)
-        # Sites without a forecast date go last (will be excluded first)
-        def sort_key(i):
-            d = sites[i].get("forecasted_cx_start_date")
-            return d if d else "9999-12-31"
-
-        sorted_indices = sorted(indices, key=sort_key)
-
-        # Keep first `capacity` sites, exclude the rest
-        for i in sorted_indices[capacity:]:
+        # More sites than capacity on this day — exclude excess
+        for i in indices[capacity:]:
             excluded_indices.add(i)
 
-    # Tag sites — excluded sites get a special overall_status
+    # Tag sites
     for idx, site in enumerate(sites):
         if idx in excluded_indices:
             site["excluded_due_to_crew_shortage"] = True
