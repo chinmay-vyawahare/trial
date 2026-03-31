@@ -1,5 +1,5 @@
 import json
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional
 from datetime import date, datetime
 
@@ -345,13 +345,29 @@ class UserFilterOut(BaseModel):
 
     id: int
     user_id: str
-    region: Optional[str] = None
-    market: Optional[str] = None
+    region: Optional[list[str]] = None
+    market: Optional[list[str]] = None
     vendor: Optional[str] = None
     site_id: Optional[str] = None
-    area: Optional[str] = None
-    plan_type_include: Optional[str] = None                 # stored as JSON string in DB
+    area: Optional[list[str]] = None
+    plan_type_include: Optional[list[str]] = None
     regional_dev_initiatives: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_json_fields(cls, data):
+        """Parse JSON string fields back into lists for the response."""
+        import json as _json
+        obj = data if isinstance(data, dict) else {k: getattr(data, k, None) for k in ("id", "user_id", "region", "market", "vendor", "site_id", "area", "plan_type_include", "regional_dev_initiatives")}
+        for field in ("region", "market", "area", "plan_type_include"):
+            val = obj.get(field)
+            if isinstance(val, str):
+                try:
+                    parsed = _json.loads(val)
+                    obj[field] = parsed if isinstance(parsed, list) else None
+                except (_json.JSONDecodeError, TypeError):
+                    obj[field] = None
+        return obj
 
 
 # ----------------------------------------------------------------

@@ -33,6 +33,7 @@ from app.services.assistant.nodes.simulation import set_main_loop
 from app.routers import history_sla_days
 from app.routers import cx_forecast_summary
 from app.routers import cx_actual_summary
+from app.routers import ahloa
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ app.include_router(pace_constraints.router)
 app.include_router(analytics.router)
 app.include_router(cx_forecast_summary.router)
 app.include_router(cx_actual_summary.router)
+app.include_router(ahloa.router)
 
 @app.on_event("startup")
 async def _capture_event_loop():
