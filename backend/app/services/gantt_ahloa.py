@@ -42,20 +42,17 @@ CX_START_SOURCE_COLUMNS = [
 # ----------------------------------------------------------------
 AHLOA_MILESTONES = [
     {"key": "cpo",              "name": "CPO For Site",                              "sort_order": 1,  "expected_days": 0,  "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "Pre-CX Phase"},
-    {"key": "survey_eligible",  "name": "Site Survey Scope Available (Y/N)",         "sort_order": 2,  "expected_days": 0,  "depends_on": "cpo",            "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "Survey Phase"},
-    {"key": "survey_spo",       "name": "Survey SPO Creation",                       "sort_order": 3,  "expected_days": 0,  "depends_on": "survey_eligible","start_gap_days": 0, "task_owner": "PDM",    "phase_type": "Survey Phase"},
-    {"key": "survey_complete",  "name": "Survey Completion",                         "sort_order": 4,  "expected_days": 14, "depends_on": "survey_spo",     "start_gap_days": 0, "task_owner": "Vendor", "phase_type": "Survey Phase"},
-    {"key": "3850",             "name": "BOM Ready (MS 3850)",                       "sort_order": 5,  "expected_days": 28, "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "Material Phase"},
-    {"key": "3875",             "name": "BOM Material Available in MSL (MS 3875)",   "sort_order": 6,  "expected_days": 7,  "depends_on": "3850",           "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "Material Phase"},
-    {"key": "3925",             "name": "Material Pickup by GC (MS 3925)",           "sort_order": 7,  "expected_days": 7,  "depends_on": "3875",           "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Material Phase"},
-    {"key": "4000",             "name": "LL NTP Ready (MS 4000)",                    "sort_order": 8,  "expected_days": 28, "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "NTP Phase"},
-    {"key": "4075",             "name": "Overall NTP Ready (MS 4075)",               "sort_order": 9,  "expected_days": 28, "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "NTP Phase"},
-    {"key": "4100",             "name": "Final NTP Ready (MS 4100)",                 "sort_order": 10, "expected_days": 28, "depends_on": "4075",           "start_gap_days": 0, "task_owner": "GC",     "phase_type": "NTP Phase"},
-    {"key": "spo_gc_cx",        "name": "SPO to GC for CX",                         "sort_order": 11, "expected_days": 42, "depends_on": None,             "start_gap_days": 0, "task_owner": "PDM",    "phase_type": "Pre-CX Phase"},
-    {"key": "crane",            "name": "Crane",                                     "sort_order": 12, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "GC",     "phase_type": "CX Readiness Phase"},
-    {"key": "talon_scoping",    "name": "Talon Session for Scoping",                 "sort_order": 13, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "SE-CoE", "phase_type": "CX Readiness Phase"},
-    {"key": "talon_scop",       "name": "Talon Session for SCOP",                    "sort_order": 14, "expected_days": 14, "depends_on": "talon_scoping",  "start_gap_days": 0, "task_owner": "SE-CoE", "phase_type": "CX Readiness Phase"},
-    {"key": "nas_upload",       "name": "Planned Activity Upload Status in NAS",     "sort_order": 15, "expected_days": 7,  "depends_on": None,             "start_gap_days": 0, "task_owner": "PM",     "phase_type": "CX Readiness Phase"},
+    {"key": "3850",             "name": "BOM Ready (MS 3850)",                       "sort_order": 2,  "expected_days": 42, "depends_on": None,             "start_gap_days": 0, "task_owner": "CM",    "phase_type": "Material Phase"},
+    {"key": "3875",             "name": "BOM Material Available in MSL (MS 3875)",   "sort_order": 3,  "expected_days": 10,  "depends_on": None,           "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "Material Phase"},
+    {"key": "3925",             "name": "Material Pickup by GC (MS 3925)",           "sort_order": 4,  "expected_days": 7,  "depends_on": None,           "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Material Phase"},
+    {"key": "4000",             "name": "LL NTP Ready (MS 4000)",                    "sort_order": 5,  "expected_days": 28, "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "NTP Phase"},
+    {"key": "4075",             "name": "Overall NTP Ready (MS 4075)",               "sort_order": 6,  "expected_days": 28, "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "NTP Phase"},
+    {"key": "4100",             "name": "Final NTP Ready (MS 4100)",                 "sort_order": 7, "expected_days": 28, "depends_on": None,           "start_gap_days": 0, "task_owner": "PDM",     "phase_type": "NTP Phase"},
+    {"key": "spo_gc_cx",        "name": "SPO to GC for CX",                          "sort_order": 8, "expected_days": 42, "depends_on": None,             "start_gap_days": 0, "task_owner": "PROJECT-OPS",    "phase_type": "SPO Phase"},
+    {"key": "crane",            "name": "Crane",                                     "sort_order": 9, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Crane Readiness Phase"},
+    {"key": "talon_scoping",    "name": "Talon Session for Scoping",                 "sort_order": 10, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "SE-CoE", "phase_type": "Scoping Phase"},
+    {"key": "talon_scop",       "name": "Talon Session for SCOP",                    "sort_order": 11, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "SE-CoE", "phase_type": "SCOP Phase"},
+    {"key": "nas_upload",       "name": "Planned Activity Upload Status in NAS",     "sort_order": 12, "expected_days": 7,  "depends_on": None,             "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Outage Readiness Phase"},
 ]
 
 # ----------------------------------------------------------------
@@ -65,9 +62,6 @@ AHLOA_MILESTONES = [
 # ----------------------------------------------------------------
 AHLOA_COLUMN_MAP = {
     "cpo":              {"column_name": "ms_1555_construction_complete_cpo_custom_field", "column_role": "text", "logic": None},
-    "survey_eligible":  {"column_name": "ms_1321_talon_view_drone_svcs_cpo_custom_field", "column_role": "text", "logic": None},
-    "survey_spo":       {"column_name": "ms_1321_talon_view_drone_svcs_spo_issued_date", "column_role": "date", "logic": None},
-    "survey_complete":  {"column_name": "ms_1321_talon_view_drone_svcs_actual", "column_role": "date", "logic": None},
     "3850":             {"column_name": "pj_a_3850_bom_submitted_bom_in_bat_finish", "column_role": "date", "logic": None},
     "3875":             {"column_name": "pj_a_3875_bom_received_bom_in_aims_finish", "column_role": "date", "logic": None},
     "3925":             {"column_name": "pj_a_3925_msl_pickup_date_finish", "column_role": "date", "logic": None},
@@ -75,7 +69,7 @@ AHLOA_COLUMN_MAP = {
     "4075":             {"column_name": "pj_a_4075_construction_ntp_submitted_to_gc_finish", "column_role": "date", "logic": None},
     "4100":             {"column_name": "pj_a_4100_construction_ntp_accepted_by_gc_finish", "column_role": "date", "logic": None},
     "spo_gc_cx":        {"column_name": "ms1555_construction_complete_spo_issued_date", "column_role": "date", "logic": None},
-    "crane":            {"column_name": "scoping_package_crane_required", "column_role": "status", "logic": {"on_track": ["Yes"], "delayed": ["No", "", None]}},
+    "crane":            {"column_name": "scoping_package_crane_required", "column_role": "status", "logic": {"on_track": ["Yes","No"], "delayed": ["null", "", None]}},
     "talon_scoping":    {"column_name": "scoping_package_create_date", "column_role": "date", "logic": None},
     "talon_scop":       {"column_name": "ms_1557_punch_checklist_reviewed_and_submitted_to_tmobile_atl", "column_role": "date", "logic": None},
     "nas_upload":       {"column_name": "nas_activity_end_date", "column_role": "date", "logic": {"source_table": "nas_planned_outage_activity", "join_column": "nas_site_id", "filter": {"nas_project_category": "AHLOB"}}},
@@ -159,7 +153,6 @@ def _compute_milestone_status(
     status_val: Optional[str],
     cx_start: Optional[date],
     today: date,
-    spo_date: Optional[date] = None,
 ) -> tuple[str, int, Optional[str]]:
     """
     Compute status for a single AHLOA milestone.
@@ -187,11 +180,8 @@ def _compute_milestone_status(
 
     # --- Date milestones with expected_days offset from CX start ---
     if expected_days > 0 and cx_start:
-        # Special case: survey_complete expected = SPO date + expected_days
-        if key == "survey_complete" and spo_date:
-            expected = spo_date + timedelta(days=expected_days)
-        else:
-            expected = cx_start - timedelta(days=expected_days)
+        
+        expected = cx_start - timedelta(days=expected_days)
 
         expected_str = str(expected)
 
@@ -225,7 +215,6 @@ def _build_ahloa_query(
 ):
     """Build the SQL query for AHLOA sites from the staging table."""
     where_clauses = [
-        "smp_name = 'AHLOB Modernization'",
         "pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%'",
         "por_release_version = 'Radio Upgrade NR'",
         "por_plan_added_date > '2025-03-28'",
@@ -292,16 +281,15 @@ def _fetch_nas_data(db: Session, site_ids: list[str]) -> dict[str, str]:
     if not site_ids:
         return {}
 
-    placeholders = ", ".join(f":sid_{i}" for i in range(len(site_ids)))
-    params = {f"sid_{i}": sid for i, sid in enumerate(site_ids)}
-
-    query = text(f"""
+    query = text("""
         SELECT nas_site_id, nas_activity_end_date
-        FROM nas_planned_outage_activity
+        FROM pwc_macro_staging_schema.nas_planned_outage_activity
         WHERE nas_project_category = 'AHLOB'
-          AND nas_site_id IN ({placeholders})
+          AND nas_site_id = ANY(:site_ids)
           AND nas_activity_end_date IS NOT NULL
     """)
+    
+    params = {"site_ids": site_ids}
 
     try:
         rows = db.execute(query, params).fetchall()
@@ -356,40 +344,15 @@ def get_ahloa_gantt(
     for row in rows:
         cx_start = _compute_cx_start(row)
 
-        # Get SPO date for survey_complete expected date calculation
-        spo_date = parse_date(row.get("ms_1321_talon_view_drone_svcs_spo_issued_date"))
-
-        # Check survey eligibility — if not eligible, survey_spo and survey_complete are NOT APPLICABLE
-        survey_elig_val = (str(row.get("ms_1321_talon_view_drone_svcs_cpo_custom_field") or "")).strip()
-        survey_eligible = bool(survey_elig_val)
-
         milestones_out = []
         on_track_count = 0
         delayed_count = 0
         in_progress_count = 0
-        not_applicable_count = 0
         total_ms = 0
 
         for ms in AHLOA_MILESTONES:
             ms_key = ms["key"]
             total_ms += 1
-
-            # survey_spo and survey_complete are NOT APPLICABLE if site is not survey eligible
-            if ms_key in ("survey_spo", "survey_complete") and not survey_eligible:
-                not_applicable_count += 1
-                milestones_out.append({
-                    "key": ms_key,
-                    "name": ms["name"],
-                    "sort_order": ms["sort_order"],
-                    "expected_days": ms.get("expected_days", 0),
-                    "task_owner": ms.get("task_owner"),
-                    "phase_type": ms.get("phase_type"),
-                    "expected_date": None,
-                    "actual_finish": None,
-                    "status": "Not Applicable",
-                    "delay_days": 0,
-                })
-                continue
 
             actual_date, is_text, text_val, is_status, status_val = _get_milestone_actual(
                 row, ms_key, nas_data=nas_data,
@@ -404,7 +367,6 @@ def get_ahloa_gantt(
                 status_val=status_val,
                 cx_start=cx_start,
                 today=today,
-                spo_date=spo_date,
             )
 
             if status == "On Track":
@@ -431,10 +393,9 @@ def get_ahloa_gantt(
                 "delay_days": delay,
             })
 
-        # Compute overall status (exclude NOT APPLICABLE from total)
-        countable_ms = total_ms - not_applicable_count
-        if countable_ms > 0:
-            on_track_pct = round((on_track_count / countable_ms) * 100, 2)
+        # Compute overall status
+        if total_ms > 0:
+            on_track_pct = round((on_track_count / total_ms) * 100, 2)
         else:
             on_track_pct = 0
 
@@ -458,11 +419,10 @@ def get_ahloa_gantt(
             "overall_status": overall_status,
             "on_track_pct": on_track_pct,
             "milestone_status_summary": {
-                "total": countable_ms,
+                "total": total_ms,
                 "on_track": on_track_count,
                 "in_progress": in_progress_count,
                 "delayed": delayed_count,
-                "not_applicable": not_applicable_count,
             },
         })
 

@@ -294,6 +294,27 @@ class PaceConstraint(ConfigBase):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class MacroUploadedData(ConfigBase):
+    """
+    Uploaded planned CX start dates for Macro sites.
+
+    Stores data from CSV/Excel uploads: site_id, region, market,
+    project_id, and pj_p_4225_construction_start_finish.
+    """
+    __tablename__ = "macro_uploaded_data"
+    __table_args__ = {"schema": _S}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    site_id = Column(String(100), nullable=False, index=True)
+    region = Column(String(200), nullable=True)
+    market = Column(String(200), nullable=True)
+    project_id = Column(String(200), nullable=True)
+    pj_p_4225_construction_start_finish = Column(DateTime, nullable=True)
+    uploaded_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class ChatHistory(ConfigBase):
     """
     Per-user, per-thread chat history for the AI assistant.

@@ -16,7 +16,7 @@ import logging
 from sqlalchemy.orm import Session
 from app.core.database import config_engine, ConfigBase, ConfigSessionLocal
 from app.models.prerequisite import (
-    MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig,
+    MacroUploadedData, MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig,
     ConstraintThreshold, UserHistoryExpectedDays,
 )
 
@@ -380,6 +380,7 @@ def init_milestone_data():
         GanttConfig.__table__,
         ConstraintThreshold.__table__,
         UserHistoryExpectedDays.__table__,
+        MacroUploadedData.__table__,
     ])
 
     db: Session = ConfigSessionLocal()

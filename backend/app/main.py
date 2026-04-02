@@ -34,6 +34,8 @@ from app.routers import history_sla_days
 from app.routers import cx_forecast_summary
 from app.routers import cx_actual_summary
 from app.routers import ahloa
+from app.routers import macro_upload
+from app.models.prerequisite import MacroUploadedData
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,7 @@ ConfigBase.metadata.create_all(bind=config_engine, tables=[
     ChatHistory.__table__,
     UserExpectedDays.__table__,
     PaceConstraint.__table__,
+    MacroUploadedData.__table__,
 ])
 
 init_milestone_data()
@@ -80,6 +83,7 @@ app.include_router(analytics.router)
 app.include_router(cx_forecast_summary.router)
 app.include_router(cx_actual_summary.router)
 app.include_router(ahloa.router)
+app.include_router(macro_upload.router)
 
 @app.on_event("startup")
 async def _capture_event_loop():
