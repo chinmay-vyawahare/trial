@@ -1,429 +1,908 @@
-"""
-AHLOA Gantt Chart Service
-
-CX Start Date per site = Max(pj_p_3710_ran_entitlement_complete_finish,
-                             pj_p_4075_construction_ntp_submitted_to_gc_finish) + 50 days
-
-Each milestone's expected date = CX Start + (offset_weeks * 7 days)
-Status: compare actual date/value against expected date.
-
-Milestone definitions and column mappings are loaded from
-ahloa_milestone_seed_data.py (will move to DB later).
-"""
-
-import logging
+import math
+from collections import defaultdict
 from datetime import date, timedelta
-from typing import Optional
-
-from sqlalchemy import text
 from sqlalchemy.orm import Session
+from .queries import build_gantt_query
+from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, get_milestone_range_for_status, is_site_blocked
+from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides, get_history_expected_days_by_user, save_user_history_expected_days
+from .utils import parse_date
 
-from app.core.database import STAGING_TABLE
-from app.core.filters import apply_geo_filters
-from app.services.gantt.utils import parse_date
-
-logger = logging.getLogger(__name__)
-
-# ----------------------------------------------------------------
-# CX Start config
-# ----------------------------------------------------------------
-CX_START_OFFSET_DAYS = 50
-CX_START_SOURCE_COLUMNS = [
-    "pj_p_3710_ran_entitlement_complete_finish",
-    "pj_p_4075_construction_ntp_submitted_to_gc_finish",
-]
-
-# ----------------------------------------------------------------
-# Milestone definitions — matches existing DB schema (no extra cols)
-#
-# These go into milestone_definitions / milestone_columns tables as-is.
-# Fields: key, name, sort_order, expected_days, depends_on,
-#         start_gap_days, task_owner, phase_type
-# ----------------------------------------------------------------
-AHLOA_MILESTONES = [
-    {"key": "cpo",              "name": "CPO For Site",                              "sort_order": 1,  "expected_days": 0,  "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "Pre-CX Phase"},
-    {"key": "3850",             "name": "BOM Ready (MS 3850)",                       "sort_order": 2,  "expected_days": 42, "depends_on": None,             "start_gap_days": 0, "task_owner": "CM",    "phase_type": "Material Phase"},
-    {"key": "3875",             "name": "BOM Material Available in MSL (MS 3875)",   "sort_order": 3,  "expected_days": 10,  "depends_on": None,           "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "Material Phase"},
-    {"key": "3925",             "name": "Material Pickup by GC (MS 3925)",           "sort_order": 4,  "expected_days": 7,  "depends_on": None,           "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Material Phase"},
-    {"key": "4000",             "name": "LL NTP Ready (MS 4000)",                    "sort_order": 5,  "expected_days": 28, "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "NTP Phase"},
-    {"key": "4075",             "name": "Overall NTP Ready (MS 4075)",               "sort_order": 6,  "expected_days": 28, "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "NTP Phase"},
-    {"key": "4100",             "name": "Final NTP Ready (MS 4100)",                 "sort_order": 7, "expected_days": 28, "depends_on": None,           "start_gap_days": 0, "task_owner": "PDM",     "phase_type": "NTP Phase"},
-    {"key": "spo_gc_cx",        "name": "SPO to GC for CX",                          "sort_order": 8, "expected_days": 42, "depends_on": None,             "start_gap_days": 0, "task_owner": "PROJECT-OPS",    "phase_type": "SPO Phase"},
-    {"key": "crane",            "name": "Crane",                                     "sort_order": 9, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Crane Readiness Phase"},
-    {"key": "talon_scoping",    "name": "Talon Session for Scoping",                 "sort_order": 10, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "SE-CoE", "phase_type": "Scoping Phase"},
-    {"key": "talon_scop",       "name": "Talon Session for SCOP",                    "sort_order": 11, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "SE-CoE", "phase_type": "SCOP Phase"},
-    {"key": "nas_upload",       "name": "Planned Activity Upload Status in NAS",     "sort_order": 12, "expected_days": 7,  "depends_on": None,             "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Outage Readiness Phase"},
-]
-
-# ----------------------------------------------------------------
-# Column mapping — matches existing milestone_columns table schema
-#
-# Fields: milestone_key, column_name, column_role, logic
-# ----------------------------------------------------------------
-AHLOA_COLUMN_MAP = {
-    "cpo":              {"column_name": "ms_1555_construction_complete_cpo_custom_field", "column_role": "text", "logic": None},
-    "3850":             {"column_name": "pj_a_3850_bom_submitted_bom_in_bat_finish", "column_role": "date", "logic": None},
-    "3875":             {"column_name": "pj_a_3875_bom_received_bom_in_aims_finish", "column_role": "date", "logic": None},
-    "3925":             {"column_name": "pj_a_3925_msl_pickup_date_finish", "column_role": "date", "logic": None},
-    "4000":             {"column_name": "pj_a_4000_ll_ntp_received", "column_role": "text", "logic": None},
-    "4075":             {"column_name": "pj_a_4075_construction_ntp_submitted_to_gc_finish", "column_role": "date", "logic": None},
-    "4100":             {"column_name": "pj_a_4100_construction_ntp_accepted_by_gc_finish", "column_role": "date", "logic": None},
-    "spo_gc_cx":        {"column_name": "ms1555_construction_complete_spo_issued_date", "column_role": "date", "logic": None},
-    "crane":            {"column_name": "scoping_package_crane_required", "column_role": "status", "logic": {"on_track": ["Yes","No"], "delayed": ["null", "", None]}},
-    "talon_scoping":    {"column_name": "scoping_package_create_date", "column_role": "date", "logic": None},
-    "talon_scop":       {"column_name": "ms_1557_punch_checklist_reviewed_and_submitted_to_tmobile_atl", "column_role": "date", "logic": None},
-    "nas_upload":       {"column_name": "nas_activity_end_date", "column_role": "date", "logic": {"source_table": "nas_planned_outage_activity", "join_column": "nas_site_id", "filter": {"nas_project_category": "AHLOB"}}},
-}
-
-
-
-def _get_all_staging_columns() -> list[str]:
-    """Collect all staging table columns needed for AHLOA milestones."""
-    cols = set()
-    # CX start source columns
-    for c in CX_START_SOURCE_COLUMNS:
-        cols.add(c)
-    # Milestone columns (skip NAS — separate table)
-    for key, col_entry in AHLOA_COLUMN_MAP.items():
-        logic = col_entry.get("logic")
-        if logic and isinstance(logic, dict) and "source_table" in logic:
-            continue  # skip external table columns
-        cols.add(col_entry["column_name"])
-    return sorted(cols)
-
-
-def _compute_cx_start(row: dict) -> Optional[date]:
+def _apply_pace_constraint(
+    sites: list[dict],
+    config_db: Session,
+    pace_constraint_flag: bool,
+    user_id: str,
+    strict_pace_apply: bool = False,
+) -> list[dict]:
     """
-    CX Start = Max(pj_p_3710, pj_p_4075) + 50 days.
-    Returns None if neither source column has a valid date.
+    Apply pace constraints to sites for a specific user_id.
+
+    When strict_pace_apply=False (default — cascading mode):
+        1. Collect all geo-matching sites in that week.
+        2. Sort by forecasted_cx_start_date (earliest first) — keep up to max_sites.
+        3. Push excess sites to the next week by advancing their forecasted_cx_start_date.
+        4. Repeat for subsequent weeks until no week overflows.
+
+    When strict_pace_apply=True (strict mode):
+        1. For each week, keep up to max_sites (earliest forecast first).
+        2. Exclude the rest — mark them but do NOT move them to the next week.
     """
-    dates = []
-    for col in CX_START_SOURCE_COLUMNS:
-        d = parse_date(row.get(col))
-        if d:
-            dates.append(d)
-    if not dates:
-        return None
-    return max(dates) + timedelta(days=CX_START_OFFSET_DAYS)
+    from app.models.prerequisite import PaceConstraint
+
+    if (not pace_constraint_flag and not strict_pace_apply) or not user_id:
+        return sites
+
+    constraints = config_db.query(PaceConstraint).filter(
+        PaceConstraint.user_id == user_id
+    ).all()
+
+    if not constraints:
+        return sites
+
+    # --------------------------------
+    # Preprocess sites: parse forecast date & normalize geo
+    # --------------------------------
+    for site in sites:
+        forecast = site.get("forecasted_cx_start_date")
+        try:
+            site["_forecast_date"] = date.fromisoformat(str(forecast)) if forecast else None
+        except Exception:
+            site["_forecast_date"] = None
+
+        site["excluded_due_to_pace_constraint"] = False
+        site.setdefault("note", "")
+
+        site["_market"] = (site.get("market") or "").strip().lower()
+        site["_area"] = (site.get("area") or "").strip().lower()
+        site["_region"] = (site.get("region") or "").strip().lower()
+
+    # --------------------------------
+    # Helper: get Monday of a given date's ISO week
+    # --------------------------------
+    def week_monday(d: date) -> date:
+        return d - timedelta(days=d.weekday())
+
+    def next_week_start() -> date:
+        today = date.today()
+        return today - timedelta(days=today.weekday()) + timedelta(weeks=1)
+
+    # --------------------------------
+    # Process each constraint
+    # --------------------------------
+    for c in constraints:
+        # Determine the starting week
+        if getattr(c, "start_date", None):
+            start_monday = week_monday(c.start_date.date())
+        else:
+            start_monday = next_week_start()
+
+        c_market = (c.market or "").strip().lower()
+        c_area = (c.area or "").strip().lower()
+        c_region = (c.region or "").strip().lower()
+        max_sites = c.max_sites
+
+        # Collect all geo-matching site indices with valid forecast dates
+        # that fall on or after the constraint start week
+        geo_indices: list[int] = []
+        for idx, site in enumerate(sites):
+            fd = site.get("_forecast_date")
+            if not fd:
+                continue
+            if c_market and site["_market"] != c_market:
+                continue
+            if c_area and site["_area"] != c_area:
+                continue
+            if c_region and site["_region"] != c_region:
+                continue
+            if fd < start_monday:
+                continue
+            geo_indices.append(idx)
+
+        if not geo_indices:
+            continue
+
+        # Group geo-matching sites by their ISO week Monday
+        week_groups: dict[date, list[int]] = defaultdict(list)
+        for idx in geo_indices:
+            fd = sites[idx]["_forecast_date"]
+            monday = week_monday(fd)
+            week_groups[monday].append(idx)
+
+        # Process weeks in chronological order
+        processed_weeks = sorted(week_groups.keys())
+
+        week_idx = 0
+        while week_idx < len(processed_weeks):
+            current_monday = processed_weeks[week_idx]
+            indices_in_week = week_groups[current_monday]
+
+            if len(indices_in_week) > max_sites:
+                # ── Too many sites: overflow handling ──
+                indices_in_week.sort(key=lambda i: sites[i]["_forecast_date"])
+                keep = indices_in_week[:max_sites]
+                overflow = indices_in_week[max_sites:]
+
+                week_groups[current_monday] = keep
+
+                if pace_constraint_flag:
+                    # Cascading mode: push overflow to next week (takes priority when both flags are true)
+                    next_monday = current_monday + timedelta(weeks=1)
+                    for i in overflow:
+                        sites[i]["excluded_due_to_pace_constraint"] = True
+                        sites[i]["exclude_reason"] = "Excluded - Pace Constraint"
+
+                        sites[i]["_forecast_date"] = next_monday
+                        sites[i]["forecasted_cx_start_date"] = str(next_monday)
+
+                        week_groups[next_monday].append(i)
+
+                    if next_monday not in set(processed_weeks):
+                        processed_weeks.append(next_monday)
+                        processed_weeks.sort()
+
+                elif strict_pace_apply:
+                    # Strict mode: mark for removal (dropped from results entirely)
+                    for i in overflow:
+                        sites[i]["_remove"] = True
+
+            elif len(indices_in_week) < max_sites and pace_constraint_flag:
+                # ── Too few sites: pull earliest from future weeks ──
+                needed = max_sites - len(indices_in_week)
+                # Gather all sites from future weeks, sorted by forecast date
+                future_candidates = []
+                for future_monday in processed_weeks[week_idx + 1:]:
+                    for i in week_groups[future_monday]:
+                        future_candidates.append((i, sites[i]["_forecast_date"]))
+                future_candidates.sort(key=lambda x: x[1])
+
+                pulled = 0
+                for i, _ in future_candidates:
+                    if pulled >= needed:
+                        break
+                    # Remove from its current future week
+                    for fm in processed_weeks[week_idx + 1:]:
+                        if i in week_groups[fm]:
+                            week_groups[fm].remove(i)
+                            break
+
+                    # Move site to current week
+                    original_date = sites[i]["forecasted_cx_start_date"]
+                    sites[i]["_forecast_date"] = current_monday
+                    sites[i]["forecasted_cx_start_date"] = str(current_monday)
+                    sites[i]["note"] = f"Pulled from {original_date} to fill pace constraint"
+                    week_groups[current_monday].append(i)
+                    pulled += 1
+
+            week_idx += 1
+
+    # --------------------------------
+    # Final: remove strict-excluded sites, set flags & cleanup
+    # --------------------------------
+    if strict_pace_apply:
+        sites = [s for s in sites if not s.get("_remove")]
+
+    for site in sites:
+        if not site.get("excluded_due_to_pace_constraint"):
+            site["excluded_due_to_pace_constraint"] = False
+
+        site.pop("_forecast_date", None)
+        site.pop("_market", None)
+        site.pop("_area", None)
+        site.pop("_region", None)
+        site.pop("_remove", None)
+
+    return sites
 
 
-def _get_milestone_actual(row: dict, milestone_key: str, nas_data: dict | None = None):
+def _apply_vendor_capacity(sites: list[dict], db: Session) -> list[dict]:
     """
-    Extract actual value for a milestone from the row.
+    Apply vendor capacity constraints from public.gc_capacity_market_trial table.
 
-    Returns (actual_date, is_text, text_val, is_status, status_val)
+    For each vendor+market+day combination, if the vendor has more sites starting
+    on that day than their day_wise_gc_capacity, keep the first N and cascade
+    excess sites to the next day. Repeat until no day overflows.
+
+    Updates forecasted_cx_start_date for pushed sites.
     """
-    col_entry = AHLOA_COLUMN_MAP.get(milestone_key)
-    if not col_entry:
-        return None, False, None, False, None
+    from app.models.prerequisite import GcCapacityMarketTrial
 
-    col_name = col_entry["column_name"]
-    col_role = col_entry["column_role"]
-    logic = col_entry.get("logic")
+    # Load all capacity rules from public schema (pre-populated, read-only)
+    capacity_rows = db.query(GcCapacityMarketTrial).all()
+    if not capacity_rows:
+        return sites
 
-    # Handle external table (NAS)
-    if logic and isinstance(logic, dict) and "source_table" in logic:
-        site_id = row.get("s_site_id")
-        if nas_data and site_id:
-            nas_val = nas_data.get(site_id)
-            if nas_val:
-                return parse_date(nas_val), False, None, False, None
-        return None, False, None, False, None
+    # Build lookup: (gc_company_lower, market_lower) -> day_wise_capacity
+    cap_lookup = {}
+    for r in capacity_rows:
+        key = (r.gc_company.strip().lower(), r.market.strip().lower())
+        cap_lookup[key] = r.day_wise_gc_capacity
 
-    raw_val = row.get(col_name)
+    # Parse forecast dates and normalize vendor/market
+    for site in sites:
+        forecast = site.get("forecasted_cx_start_date")
+        try:
+            site["_vc_date"] = date.fromisoformat(str(forecast)) if forecast else None
+        except Exception:
+            site["_vc_date"] = None
+        site["_vc_vendor"] = (site.get("vendor_name") or "").strip().lower()
+        site["_vc_market"] = (site.get("market") or "").strip().lower()
 
-    if col_role == "text":
-        text_val = (str(raw_val) if raw_val else "").strip()
-        return None, True, text_val, False, None
+    # Collect unique (vendor, market) pairs that have capacity rules
+    vm_pairs = set()
+    for idx, site in enumerate(sites):
+        if site["_vc_date"] and site["_vc_vendor"] and site["_vc_market"]:
+            key = (site["_vc_vendor"], site["_vc_market"])
+            if key in cap_lookup:
+                vm_pairs.add(key)
 
-    if col_role == "status":
-        status_val = (str(raw_val) if raw_val else "").strip()
-        return None, False, None, True, status_val
+    # Process each (vendor, market) pair independently
+    for vendor_key, market_key in vm_pairs:
+        capacity = cap_lookup[(vendor_key, market_key)]
 
-    # date role
-    return parse_date(raw_val), False, None, False, None
+        # Collect site indices matching this vendor+market with valid dates
+        matching = [
+            idx for idx, site in enumerate(sites)
+            if site["_vc_vendor"] == vendor_key
+            and site["_vc_market"] == market_key
+            and site["_vc_date"] is not None
+        ]
+        if not matching:
+            continue
+
+        # Group by date
+        day_groups: dict[date, list[int]] = defaultdict(list)
+        for idx in matching:
+            day_groups[sites[idx]["_vc_date"]].append(idx)
+
+        # Process days in chronological order, cascading overflow to next day
+        process_days = sorted(day_groups.keys())
+        day_idx = 0
+        while day_idx < len(process_days):
+            current_day = process_days[day_idx]
+            indices = day_groups[current_day]
+
+            if len(indices) > capacity:
+                # Sort by forecast date (stable for same-day)
+                indices.sort(key=lambda i: sites[i]["_vc_date"])
+                keep = indices[:capacity]
+                overflow = indices[capacity:]
+
+                day_groups[current_day] = keep
+
+                # Push overflow to next day
+                next_day = current_day + timedelta(days=1)
+                for i in overflow:
+                    original_date = sites[i]["forecasted_cx_start_date"]
+                    sites[i]["_vc_date"] = next_day
+                    sites[i]["forecasted_cx_start_date"] = str(next_day)
+                    sites[i]["excluded_due_to_crew_shortage"] = True
+                    sites[i]["exclude_reason"] = "Excluded - Crew Shortage"
+                    sites[i]["note"] = f"Pushed from {original_date} due to vendor capacity"
+
+                    day_groups[next_day].append(i)
+
+                # Ensure next day is in the processing list
+                if next_day not in set(process_days):
+                    process_days.append(next_day)
+                    process_days.sort()
+
+            day_idx += 1
+
+    # Set default flag for sites not excluded
+    for site in sites:
+        if not site.get("excluded_due_to_crew_shortage"):
+            site["excluded_due_to_crew_shortage"] = False
+
+        site.pop("_vc_date", None)
+        site.pop("_vc_vendor", None)
+        site.pop("_vc_market", None)
+
+    return sites
 
 
-def _compute_milestone_status(
-    milestone: dict,
-    actual_date: Optional[date],
-    is_text: bool,
-    text_val: Optional[str],
-    is_status: bool,
-    status_val: Optional[str],
-    cx_start: Optional[date],
-    today: date,
-) -> tuple[str, int, Optional[str]]:
+def _apply_uploaded_overrides(sites: list[dict], config_db: Session, user_id: str) -> list[dict]:
     """
-    Compute status for a single AHLOA milestone.
+    Override forecasted_cx_start_date with user-uploaded data from macro_uploaded_data.
 
-    Returns (status, delay_days, expected_date_str)
+    Matches by (site_id, project_id). If a match is found and the uploaded row
+    has a valid pj_p_4225_construction_start_finish date, it replaces the forecasted date.
     """
-    key = milestone["key"]
-    expected_days = milestone.get("expected_days", 0)
+    from app.models.prerequisite import MacroUploadedData
 
-    # --- Status check milestones (crane) ---
-    if is_status:
-        col_entry = AHLOA_COLUMN_MAP.get(key)
-        logic = col_entry.get("logic") if col_entry else None
-
-        on_track_values = (logic or {}).get("on_track", [])
-        if status_val and status_val in on_track_values:
-            return "On Track", 0, None
-        return "Delayed", 0, None
-
-    # --- Text presence milestones (cpo, survey_eligible, 4000) ---
-    if is_text:
-        if text_val and text_val.strip():
-            return "On Track", 0, None
-        return "Delayed", 0, None
-
-    # --- Date milestones with expected_days offset from CX start ---
-    if expected_days > 0 and cx_start:
-        
-        expected = cx_start - timedelta(days=expected_days)
-
-        expected_str = str(expected)
-
-        if actual_date:
-            delay = (actual_date - expected).days
-            if delay <= 0:
-                return "On Track", 0, expected_str
-            return "Delayed", delay, expected_str
-
-        # No actual date yet
-        remaining = (expected - today).days
-        if remaining >= 0:
-            return "In Progress", 0, expected_str
-        return "Delayed", abs(remaining), expected_str
-
-    # --- Date presence milestones (survey_spo, etc. — no offset) ---
-    if actual_date:
-        return "On Track", 0, None
-    return "Delayed", 0, None
-
-
-def _build_ahloa_query(
-    staging_columns: list[str],
-    region: list[str] | None = None,
-    market: list[str] | None = None,
-    site_id: str = None,
-    vendor: str = None,
-    area: list[str] | None = None,
-    limit: int = None,
-    offset: int = None,
-):
-    """Build the SQL query for AHLOA sites from the staging table."""
-    where_clauses = [
-        "pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%'",
-        "por_release_version = 'Radio Upgrade NR'",
-        "por_plan_added_date > '2025-03-28'",
-        "pj_a_4225_construction_start_finish IS NULL",
-    ]
-    params = {}
-
-    apply_geo_filters(
-        where_clauses, params,
-        region=region, market=market, area=area,
-        site_id=site_id, vendor=vendor,
+    rows = (
+        config_db.query(MacroUploadedData)
+        .filter(MacroUploadedData.uploaded_by == user_id)
+        .all()
     )
+    if not rows:
+        return sites
 
-    where_sql = " AND ".join(where_clauses)
+    # Build lookup: (site_id, project_id) -> uploaded date
+    upload_lookup: dict[tuple[str, str], date] = {}
+    for r in rows:
+        if r.pj_p_4225_construction_start_finish:
+            d = r.pj_p_4225_construction_start_finish
+            key = (r.site_id.strip(), (r.project_id or "").strip())
+            upload_lookup[key] = d.date() if hasattr(d, "date") else d
 
-    pagination_sql = ""
-    if limit is not None:
-        pagination_sql += f" LIMIT {int(limit)}"
-    if offset is not None:
-        pagination_sql += f" OFFSET {int(offset)}"
+    if not upload_lookup:
+        return sites
 
-    fixed_columns = [
-        "s_site_id",
-        "pj_project_id",
-        "pj_project_name",
-        "m_market",
-        "m_area",
-        "region",
-        "construction_gc",
-    ]
+    for site in sites:
+        site_id = (site.get("site_id") or "").strip()
+        project_id = (site.get("project_id") or "").strip()
+        key = (site_id, project_id)
+        if key in upload_lookup:
+            uploaded_date = upload_lookup[key]
+            site["forecasted_cx_start_date"] = str(uploaded_date)
+            site["forecasted_cx_source"] = "uploaded"
 
-    all_columns = list(fixed_columns)
-    seen = set(fixed_columns)
-    for col in staging_columns:
-        if col not in seen:
-            all_columns.append(col)
-            seen.add(col)
-
-    columns_sql = ",\n            ".join(all_columns)
-
-    query = text(f"""
-    WITH filtered_records AS (
-        SELECT DISTINCT ON (pj_project_id, s_site_id)
-            {columns_sql}
-        FROM {STAGING_TABLE}
-        WHERE {where_sql}
-        ORDER BY pj_project_id, s_site_id
-    )
-    SELECT *, COUNT(*) OVER () AS total_count
-    FROM filtered_records
-    ORDER BY s_site_id
-    {pagination_sql}
-    """)
-
-    return query, params
+    return sites
 
 
-def _fetch_nas_data(db: Session, site_ids: list[str]) -> dict[str, str]:
-    """
-    Fetch NAS activity end dates for AHLOB project category.
-
-    Returns {site_id: nas_activity_end_date} mapping.
-    """
-    if not site_ids:
-        return {}
-
-    query = text("""
-        SELECT nas_site_id, nas_activity_end_date
-        FROM pwc_macro_staging_schema.nas_planned_outage_activity
-        WHERE nas_project_category = 'AHLOB'
-          AND nas_site_id = ANY(:site_ids)
-          AND nas_activity_end_date IS NOT NULL
-    """)
-    
-    params = {"site_ids": site_ids}
-
-    try:
-        rows = db.execute(query, params).fetchall()
-        return {str(r[0]): r[1] for r in rows}
-    except Exception as e:
-        logger.warning("Failed to fetch NAS data: %s", e)
-        return {}
-
-
-def get_ahloa_gantt(
+def get_all_sites_gantt(
     db: Session,
+    config_db: Session,
     region: list[str] | None = None,
     market: list[str] | None = None,
     site_id: str = None,
     vendor: str = None,
     area: list[str] | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
     limit: int = None,
     offset: int = None,
+    skipped_keys: set[str] | None = None,
+    user_expected_days_overrides: dict[str, int] | None = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_flag: bool = False,
+    user_id: str | None = None,
+    strict_pace_apply: bool = False,
 ):
-    """
-    Main AHLOA gantt endpoint — returns site-wise milestone-wise data.
+    # Load milestone config from config DB
+    milestones_config = get_milestones(config_db)
+    milestone_columns = get_all_actual_columns(milestones_config)
+    planned_start_col = get_planned_start_column(config_db)
+    ms_thresholds = get_milestone_thresholds(config_db)
 
-    For each site:
-      1. Calculate CX Start = Max(3710, 4075) + 50 days
-      2. For each milestone, compute expected date = CX Start + offset_weeks
-      3. Compare actual vs expected → On Track / In Progress / Delayed
-    """
-    today = date.today()
-
-    staging_columns = _get_all_staging_columns()
-
-    query, params = _build_ahloa_query(
-        staging_columns=staging_columns,
-        region=region, market=market, site_id=site_id,
-        vendor=vendor, area=area,
-        limit=limit, offset=offset,
+    # Query staging data from staging DB
+    query, params = build_gantt_query(
+        milestone_columns=milestone_columns,
+        planned_start_column=planned_start_col,
+        region=region,
+        market=market,
+        site_id=site_id,
+        vendor=vendor,
+        area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+        limit=limit,
+        offset=offset,
     )
     result = db.execute(query, params)
     rows = [dict(r._mapping) for r in result]
 
+    sites = []
     total_count = 0
     count = 0
     if rows:
-        total_count = rows[0].get("total_count", 0)
+        total_count = rows[0]["total_count"]
         count = len(rows)
 
-    # Fetch NAS data for all sites in one query
-    site_ids = [row["s_site_id"] for row in rows]
-    nas_data = _fetch_nas_data(db, site_ids)
-
-    sites = []
     for row in rows:
-        cx_start = _compute_cx_start(row)
+        milestones, forecasted_cx_start = compute_milestones_for_site(
+            row, config_db, skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_expected_days_overrides,
+        )
+        if not milestones:
+            continue
 
-        milestones_out = []
-        on_track_count = 0
-        delayed_count = 0
-        in_progress_count = 0
-        total_ms = 0
+        # Exclude virtual milestones from status counting (skipped are already omitted)
+        countable = [m for m in milestones if not m.get("is_virtual", False)]
+        total = len(countable)
+        on_track_count = sum(1 for m in countable if m["status"] == "On Track")
+        in_progress_count = sum(1 for m in countable if m["status"] == "In Progress")
+        delayed_count = sum(1 for m in countable if m["status"] == "Delayed")
 
-        for ms in AHLOA_MILESTONES:
-            ms_key = ms["key"]
-            total_ms += 1
-
-            actual_date, is_text, text_val, is_status, status_val = _get_milestone_actual(
-                row, ms_key, nas_data=nas_data,
-            )
-
-            status, delay, expected_date_str = _compute_milestone_status(
-                milestone=ms,
-                actual_date=actual_date,
-                is_text=is_text,
-                text_val=text_val,
-                is_status=is_status,
-                status_val=status_val,
-                cx_start=cx_start,
-                today=today,
-            )
-
-            if status == "On Track":
-                on_track_count += 1
-            elif status == "Delayed":
-                delayed_count += 1
-            else:
-                in_progress_count += 1
-
-            milestones_out.append({
-                "key": ms_key,
-                "name": ms["name"],
-                "sort_order": ms["sort_order"],
-                "expected_days": ms.get("expected_days", 0),
-                "task_owner": ms.get("task_owner"),
-                "phase_type": ms.get("phase_type"),
-                "expected_date": expected_date_str,
-                "actual_finish": (
-                    str(actual_date) if actual_date
-                    else (text_val if is_text and text_val else
-                          (status_val if is_status else None))
-                ),
-                "status": status,
-                "delay_days": delay,
-            })
-
-        # Compute overall status
-        if total_ms > 0:
-            on_track_pct = round((on_track_count / total_ms) * 100, 2)
-        else:
+        # Check if site is blocked (delay comments or delay code present)
+        blocked = is_site_blocked(row)
+        if blocked:
+            overall = "Blocked"
             on_track_pct = 0
-
-        if on_track_pct >= 60:
-            overall_status = "ON TRACK"
-        elif on_track_pct >= 30:
-            overall_status = "IN PROGRESS"
+            milestone_range = f"0-{total}/{total}"
         else:
-            overall_status = "CRITICAL"
+            overall = compute_overall_status(on_track_count, total, ms_thresholds)
+            on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
+            milestone_range = get_milestone_range_for_status(overall, total, ms_thresholds) if ms_thresholds else f"{on_track_count}/{total}"
 
-        sites.append({
-            "site_id": row["s_site_id"],
-            "project_id": row.get("pj_project_id") or "",
-            "project_name": row.get("pj_project_name") or "",
-            "market": row.get("m_market") or "",
-            "area": row.get("m_area") or "",
-            "region": row.get("region") or "",
-            "vendor_name": row.get("construction_gc") or "",
-            "forecasted_cx_start_date": str(cx_start) if cx_start else None,
-            "milestones": milestones_out,
-            "overall_status": overall_status,
-            "on_track_pct": on_track_pct,
-            "milestone_status_summary": {
-                "total": total_ms,
-                "on_track": on_track_count,
-                "in_progress": in_progress_count,
-                "delayed": delayed_count,
-            },
-        })
+        # ── Reschedule logic when forecasted_cx_start is in the past ──
+        note = None
+        today = date.today()
+        if forecasted_cx_start and forecasted_cx_start < today:
+            # Check non-virtual milestones for missing actual_finish
+            missing = [
+                m for m in countable
+                if not m.get("actual_finish")
+            ]
+            if not missing:
+                # All milestones have actual_finish → ready for schedule
+                forecasted_cx_start = today + timedelta(days=7)
+                note = "Ready for schedule"
+            else:
+                # At least one milestone missing actual_finish
+                # Pick the earliest (min sort_order) milestone without actual_finish
+                missing_sorted = sorted(missing, key=lambda m: m.get("sort_order", 999))
+                blocker = missing_sorted[0]
+                delay_days = (today - forecasted_cx_start).days
+                forecasted_cx_start = today + timedelta(days=7)
+                note = f"Delayed due to {blocker['name']} by {delay_days} days"
+
+        sites.append(
+            {
+                "vendor_name": row.get("construction_gc") or "",
+                "site_id": row["s_site_id"],
+                "project_id": row["pj_project_id"],
+                "project_name": row["pj_project_name"],
+                "market": row["m_market"],
+                "area": row.get("m_area") or "",
+                "region": row.get("region") or "",
+                "delay_comments": row.get("pj_construction_start_delay_comments") or "",
+                "delay_code": row.get("pj_construction_complete_delay_code") or "",
+                "forecasted_cx_start_date": (
+                    str(forecasted_cx_start) if forecasted_cx_start else None
+                ),
+                "note": note,
+                "milestones": [
+                    {k: v for k, v in m.items() if k != "is_virtual"}
+                    for m in milestones
+                ],
+                "overall_status": overall,
+                "on_track_pct": on_track_pct,
+                "milestone_range": milestone_range,
+                "milestone_status_summary": {
+                    "total": total,
+                    "on_track": on_track_count,
+                    "in_progress": in_progress_count,
+                    "delayed": delayed_count,
+                },
+            }
+        )
+
+    # Apply vendor capacity constraints if requested
+    if consider_vendor_capacity:
+        sites = _apply_vendor_capacity(sites, db)
+    else:
+        for site in sites:
+            site["excluded_due_to_crew_shortage"] = False
+
+    # Apply pace constraints for user if enabled
+    if (pace_constraint_flag or strict_pace_apply) and user_id:
+        sites = _apply_pace_constraint(sites, config_db, pace_constraint_flag, user_id, strict_pace_apply=strict_pace_apply)
+    else:
+        for site in sites:
+            site["excluded_due_to_pace_constraint"] = False
+
+    # Override forecasted_cx_start_date from user-uploaded data if available
+    if user_id:
+        sites = _apply_uploaded_overrides(sites, config_db, user_id)
+
+    # Sort by forecasted_cx_start_date descending (latest first, nulls at bottom)
+    sites.sort(
+        key=lambda s: s.get("forecasted_cx_start_date") or "",
+        reverse=True,
+    )
 
     return sites, total_count, count
+
+def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipped_keys, user_expected_days_overrides=None):
+    """Compute overall status for one row — only dates, no full milestone dicts."""
+    # Blocked sites get their own status — excluded from on_track/in_progress/critical counts
+    if is_site_blocked(row):
+        return "BLOCKED"
+
+    origin_date = parse_date(row.get(planned_start_col))
+    if origin_date is None:
+        return None
+
+    today = date.today()
+    skipped = skipped_keys or set()
+    overrides = user_expected_days_overrides or {}
+    expected_by_key = {
+        m["key"]: overrides.get(m["key"], m["expected_days"])
+        for m in milestones_config
+    }
+
+    # Compute planned finish dates
+    dates = {}
+    for ms in milestones_config:
+        key = ms["key"]
+        dep = ms["depends_on"]
+        gap = ms.get("start_gap_days", 1)
+
+        if key in skipped:
+            expected = 0
+        elif dep is not None and isinstance(dep, list) and len(dep) > 1:
+            expected = max(expected_by_key.get(d, 0) for d in dep)
+        else:
+            expected = expected_by_key.get(key, ms["expected_days"])
+
+        if dep is None:
+            pf = origin_date + timedelta(days=expected) if expected > 0 else origin_date
+            dates[key] = pf
+            continue
+
+        dep_list = dep if isinstance(dep, list) else [dep]
+        dep_finishes = [dates[d] for d in dep_list if d in dates]
+        if not dep_finishes:
+            continue
+        ps = max(dep_finishes) + timedelta(days=gap)
+        dates[key] = ps + timedelta(days=expected)
+
+    # Count on-track milestones (exclude user-skipped from counting entirely)
+    on_track = 0
+    total = 0
+    for ms in milestones_config:
+        key = ms["key"]
+        if key not in dates:
+            continue
+
+        if key in skipped:
+            continue  # exclude skipped milestones from counting
+
+        total += 1
+
+        actual, is_text, text_val, skip_flag = _get_actual_date(row, ms)
+        if skip_flag:
+            on_track += 1
+            continue
+
+        status, _ = compute_status(actual, dates[key], today, is_text, text_val)
+        if status == "On Track":
+            on_track += 1
+
+    if total == 0:
+        return None
+    return compute_overall_status(on_track, total, ms_thresholds)
+
+
+def _normalize_geo_filter(value) -> list[str]:
+    """Normalize a geo filter value (str, list, or None) to a list of lowercase strings."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value.strip().lower()]
+    return [v.strip().lower() for v in value if v]
+
+
+def _get_pace_constraint(config_db: Session, user_id: str | None, region=None, area=None, market=None) -> list[dict]:
+    """
+    Fetch pace constraints for a user that match the geo filters.
+
+    Returns a list of constraint dicts with region, area, market, max_sites.
+    """
+    if not user_id:
+        return []
+
+    from app.models.prerequisite import PaceConstraint
+
+    constraints = (
+        config_db.query(PaceConstraint)
+        .filter(PaceConstraint.user_id == user_id)
+        .all()
+    )
+    if not constraints:
+        return []
+
+    f_regions = _normalize_geo_filter(region)
+    f_areas = _normalize_geo_filter(area)
+    f_markets = _normalize_geo_filter(market)
+
+    result = []
+    for c in constraints:
+        c_region = (c.region or "").strip().lower()
+        c_area = (c.area or "").strip().lower()
+        c_market = (c.market or "").strip().lower()
+
+        # Match: constraint geo must align with the filter geo
+        if c_region:
+            if f_regions and c_region not in f_regions:
+                continue
+        if c_area:
+            if f_areas and c_area not in f_areas:
+                continue
+        if c_market:
+            if f_markets and c_market not in f_markets:
+                continue
+
+        result.append({
+            "region": c.region,
+            "area": c.area,
+            "market": c.market,
+            "max_sites": c.max_sites,
+        })
+
+    return result
+
+
+def get_dashboard_summary(
+    db: Session,
+    config_db: Session,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
+    site_id: str = None,
+    vendor: str = None,
+    area: list[str] | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
+    skipped_keys: set[str] | None = None,
+    user_expected_days_overrides: dict[str, int] | None = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_flag: bool = False,
+    status: str | None = None,
+    user_id: str | None = None,
+    strict_pace_apply: bool = False,
+):
+    """Dashboard summary using the same query and logic as the gantt chart."""
+    sites, total_count, _ = get_all_sites_gantt(
+        db=db,
+        config_db=config_db,
+        region=region,
+        market=market,
+        site_id=site_id,
+        vendor=vendor,
+        area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+        skipped_keys=skipped_keys,
+        user_expected_days_overrides=user_expected_days_overrides,
+        consider_vendor_capacity=consider_vendor_capacity,
+        pace_constraint_flag=pace_constraint_flag,
+        strict_pace_apply=strict_pace_apply,
+        user_id=user_id,
+    )
+
+    result = _get_pace_constraint(config_db, user_id, region=region, area=area, market=market)
+    print(result,"Result")
+    pace_max = sum(item.get("max_sites", 0) for item in (result or []))
+    print(pace_max,"Pace Max")
+    _empty_detail = {"site_count": 0, "total_milestones": 0, "on_track_milestones": 0, "in_progress_milestones": 0, "delayed_milestones": 0, "on_track_pct": 0, "in_progress_pct": 0, "delayed_pct": 0}
+    _empty_threshold = {"min_pct": 0, "max_pct": None, "milestone_range": "0-0/0", "description": ""}
+    empty = {
+        "dashboard_status": "ON TRACK",
+        "on_track_pct": 0,
+        "total_sites": 0,
+        "in_progress_sites": 0,
+        "critical_sites": 0,
+        "on_track_sites": 0,
+        "blocked_sites": 0,
+        "excluded_crew_shortage_sites": 0,
+        "excluded_pace_constraint_sites": 0,
+        "pace_constraint_max_sites": pace_max,
+        "status_details": {
+            "ON TRACK": {**_empty_detail, "threshold": {**_empty_threshold}},
+            "IN PROGRESS": {**_empty_detail, "threshold": {**_empty_threshold}},
+            "CRITICAL": {**_empty_detail, "threshold": {**_empty_threshold}},
+            "Blocked": {**_empty_detail},
+        },
+    }
+    
+    if not sites:
+        return empty
+
+    # Pace constraint already applied inside get_all_sites_gantt — no need to reapply
+
+    # Apply status filter if provided
+    if status:
+        sites = [s for s in sites if s.get("overall_status") == status]
+
+    total = len(sites)
+    if total == 0:
+        return empty
+
+    blocked = sum(1 for s in sites if s["overall_status"] == "Blocked")
+    excluded_crew = sum(1 for s in sites if s.get("exclude_reason") == "Excluded - Crew Shortage")
+    excluded_pace = sum(1 for s in sites if s.get("exclude_reason") == "Excluded - Pace Constraint")
+
+    # Count statuses excluding blocked
+    countable = [s for s in sites if s["overall_status"] not in ("Blocked")]
+    on_track = sum(1 for s in countable if s["overall_status"] == "ON TRACK")
+    in_progress = sum(1 for s in countable if s["overall_status"] == "IN PROGRESS")
+    critical = sum(1 for s in countable if s["overall_status"] == "CRITICAL")
+
+    non_blocked_total = len(countable)
+    on_track_pct = (on_track / non_blocked_total * 100) if non_blocked_total > 0 else 0
+
+    overall_thresholds = get_overall_thresholds(config_db)
+    if overall_thresholds:
+        dashboard_status, _ = _match_pct_threshold(on_track_pct, overall_thresholds)
+    elif on_track_pct >= 60:
+        dashboard_status = "ON TRACK"
+    elif on_track_pct >= 30:
+        dashboard_status = "IN PROGRESS"
+    else:
+        dashboard_status = "CRITICAL"
+
+    # Build milestone-level detail per status category
+    # (skipped milestones are already excluded from milestone_status_summary)
+    def _aggregate_milestone_detail(site_list):
+        total_ms = 0
+        on_track_ms = 0
+        in_progress_ms = 0
+        delayed_ms = 0
+        for s in site_list:
+            ms_summary = s.get("milestone_status_summary", {})
+            total_ms += ms_summary.get("total", 0)
+            on_track_ms += ms_summary.get("on_track", 0)
+            in_progress_ms += ms_summary.get("in_progress", 0)
+            delayed_ms += ms_summary.get("delayed", 0)
+        return {
+            "total_milestones": total_ms,
+            "on_track_milestones": on_track_ms,
+            "in_progress_milestones": in_progress_ms,
+            "delayed_milestones": delayed_ms,
+            "on_track_pct": round((on_track_ms / total_ms * 100), 2) if total_ms > 0 else 0,
+            "in_progress_pct": round((in_progress_ms / total_ms * 100), 2) if total_ms > 0 else 0,
+            "delayed_pct": round((delayed_ms / total_ms * 100), 2) if total_ms > 0 else 0,
+        }
+
+    on_track_sites_list = [s for s in countable if s["overall_status"] == "ON TRACK"]
+    in_progress_sites_list = [s for s in countable if s["overall_status"] == "IN PROGRESS"]
+    critical_sites_list = [s for s in countable if s["overall_status"] == "CRITICAL"]
+    blocked_sites_list = [s for s in sites if s["overall_status"] == "Blocked"]
+
+    # Build threshold definitions for UI display
+    # Get typical total milestones per site (from first non-blocked site)
+    typical_total_ms = 0
+    for s in countable:
+        ms_summary = s.get("milestone_status_summary", {})
+        if ms_summary.get("total", 0) > 0:
+            typical_total_ms = ms_summary["total"]
+            break
+
+    ms_thresholds = get_milestone_thresholds(config_db)
+    threshold_defs = {}
+    for t in ms_thresholds:
+        min_count = math.ceil(t["min_pct"] / 100 * typical_total_ms) if typical_total_ms > 0 else 0
+        max_count = math.floor(t["max_pct"] / 100 * typical_total_ms) if (t["max_pct"] is not None and typical_total_ms > 0) else typical_total_ms
+        threshold_defs[t["status_label"]] = {
+            "min_pct": t["min_pct"],
+            "max_pct": t["max_pct"],
+            "milestone_range": f"{min_count}-{max_count}/{typical_total_ms}",
+            "description": (
+                f"{t['min_pct']}%+ milestones on track ({min_count}-{max_count}/{typical_total_ms})"
+                if t["max_pct"] is None
+                else f"{t['min_pct']}%-{t['max_pct']}% milestones on track ({min_count}-{max_count}/{typical_total_ms})"
+            ),
+        }
+    # Fallback if no DB thresholds
+    if not threshold_defs:
+        min_ot = math.ceil(60 / 100 * typical_total_ms) if typical_total_ms > 0 else 0
+        min_ip = math.ceil(30 / 100 * typical_total_ms) if typical_total_ms > 0 else 0
+        max_ip = math.floor(59.99 / 100 * typical_total_ms) if typical_total_ms > 0 else 0
+        max_cr = math.floor(29.99 / 100 * typical_total_ms) if typical_total_ms > 0 else 0
+        threshold_defs = {
+            "ON TRACK": {"min_pct": 60, "max_pct": None, "milestone_range": f"{min_ot}-{typical_total_ms}/{typical_total_ms}", "description": f"60%+ milestones on track ({min_ot}-{typical_total_ms}/{typical_total_ms})"},
+            "IN PROGRESS": {"min_pct": 30, "max_pct": 59.99, "milestone_range": f"{min_ip}-{max_ip}/{typical_total_ms}", "description": f"30%-59.99% milestones on track ({min_ip}-{max_ip}/{typical_total_ms})"},
+            "CRITICAL": {"min_pct": 0, "max_pct": 29.99, "milestone_range": f"0-{max_cr}/{typical_total_ms}", "description": f"0%-29.99% milestones on track (0-{max_cr}/{typical_total_ms})"},
+        }
+
+    return {
+        "dashboard_status": dashboard_status,
+        "on_track_pct": round(on_track_pct, 2),
+        "total_sites": total,
+        "in_progress_sites": in_progress,
+        "critical_sites": critical,
+        "on_track_sites": on_track,
+        "blocked_sites": blocked,
+        "excluded_crew_shortage_sites": excluded_crew,
+        "excluded_pace_constraint_sites": excluded_pace,
+        "pace_constraint_max_sites": pace_max,
+        "status_details": {
+            "ON TRACK": {
+                "site_count": on_track,
+                "threshold": threshold_defs.get("ON TRACK", {}),
+                **_aggregate_milestone_detail(on_track_sites_list),
+            },
+            "IN PROGRESS": {
+                "site_count": in_progress,
+                "threshold": threshold_defs.get("IN PROGRESS", {}),
+                **_aggregate_milestone_detail(in_progress_sites_list),
+            },
+            "CRITICAL": {
+                "site_count": critical,
+                "threshold": threshold_defs.get("CRITICAL", {}),
+                **_aggregate_milestone_detail(critical_sites_list),
+            },
+            "Blocked": {
+                "site_count": blocked,
+                **_aggregate_milestone_detail(blocked_sites_list),
+            },
+        },
+    }
+
+
+def get_history_gantt(
+    db: Session,
+    config_db: Session,
+    date_from: date,
+    date_to: date,
+    region: list[str] | None = None,
+    market: list[str] | None = None,
+    site_id: str = None,
+    vendor: str = None,
+    area: list[str] | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
+    limit: int = None,
+    offset: int = None,
+    skipped_keys: set[str] | None = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_flag: bool = False,
+    user_id: str | None = None,
+    strict_pace_apply: bool = False,
+):
+    """
+    Gantt chart using history-based SLA.
+
+    Computes history_expected_days from the given date range, saves them
+    per-user into user_history_expected_days, then runs the gantt
+    logic using those values as expected_days overrides.
+    """
+    from app.services.sla_history import compute_history_expected_days
+    from app.models.prerequisite import UserHistoryExpectedDays
+
+    # Compute history-based expected_days from actual dates
+    history_results = compute_history_expected_days(
+        db, config_db, date_from, date_to,
+        region=region, market=market, site_id=site_id,
+        vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+    )
+
+    # Build overrides dict.
+    # In history mode, ALL milestones use computed history values.
+    # If no historical data exists (None), use 0 — never fall back to defaults.
+    history_overrides = {}
+    for item in history_results:
+        computed = item["history_expected_days"]
+        effective = computed if computed is not None else 0
+        history_overrides[item["milestone_key"]] = effective
+
+    # Save per-user history expected days
+    if user_id:
+        save_user_history_expected_days(config_db, user_id, history_results, date_from, date_to)
+
+    # Get the latest updated_at timestamp for this user's history SLA
+    from sqlalchemy import func as sa_func
+    last_updated_row = None
+    if user_id:
+        last_updated_row = (
+            config_db.query(sa_func.max(UserHistoryExpectedDays.updated_at))
+            .filter(UserHistoryExpectedDays.user_id == user_id)
+            .scalar()
+        )
+    sla_last_updated = str(last_updated_row) if last_updated_row else None
+
+    # Reuse the standard gantt function with history overrides
+    sites, total_count, count = get_all_sites_gantt(
+        db=db,
+        config_db=config_db,
+        region=region,
+        market=market,
+        site_id=site_id,
+        vendor=vendor,
+        area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+        limit=limit,
+        offset=offset,
+        skipped_keys=skipped_keys,
+        user_expected_days_overrides=history_overrides,
+        consider_vendor_capacity=consider_vendor_capacity,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
+        strict_pace_apply=strict_pace_apply,
+    )
+
+    return sites, total_count, count, sla_last_updated
