@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/schedular/filters", tags=["filters"])
 
 
-def _safe_get_filter_options(db: Session, key: str) -> list:
+def _safe_get_filter_options(db: Session, key: str, project_type: str = "macro") -> list:
     """Fetch filter options with error handling."""
     try:
-        filters = get_filter_options(db)
+        filters = get_filter_options(db, project_type=project_type)
         return filters.get(key, [])
     except Exception as e:
         logger.exception(f"Failed to fetch filter options for '{key}': {e}")
@@ -45,8 +45,8 @@ def get_areas(db: Session = Depends(get_db)):
 
 
 @router.get("/sites")
-def get_sites(db: Session = Depends(get_db)):
-    return _safe_get_filter_options(db, "site_ids")
+def get_sites(db: Session = Depends(get_db), project_type: str = "macro"):
+    return _safe_get_filter_options(db, "site_ids", project_type=project_type)
 
 
 @router.get("/vendors")

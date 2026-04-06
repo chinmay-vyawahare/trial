@@ -176,13 +176,21 @@ def get_geo_hierarchy(db: Session) -> list[dict]:
     return [{"region": r[0], "area": r[1], "market": r[2]} for r in rows]
 
 
-def _build_base_where():
-    """Build the base WHERE clause for filter options (always empty/constant)."""
-    clauses = [
-        "smp_name = 'NTM'",
-        "COALESCE(TRIM(construction_gc), '') != ''",
-        "pj_a_4225_construction_start_finish IS NULL",
-    ]
+def _build_base_where(project_type: str = "macro"):
+    """Build the base WHERE clause for filter options based on project_type."""
+    if project_type == "ahloa":
+        clauses = [
+            "pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%'",
+            "por_release_version = 'Radio Upgrade NR'",
+            "por_plan_added_date > '2025-03-28'",
+            "pj_a_4225_construction_start_finish IS NULL",
+        ]
+    else:
+        clauses = [
+            "smp_name = 'NTM'",
+            "COALESCE(TRIM(construction_gc), '') != ''",
+            "pj_a_4225_construction_start_finish IS NULL",
+        ]
     return " AND ".join(clauses), {}
 
 
@@ -263,9 +271,9 @@ def get_region_hierarchy(db: Session, region: str = None, area: str = None, mark
     return _build_hierarchy_optimized(rows)
 
 
-def get_filter_options(db: Session):
+def get_filter_options(db: Session, project_type: str = "macro"):
     """Get all distinct filter values: regions, markets, areas, site_ids, vendors."""
-    base_where, params = _build_base_where()
+    base_where, params = _build_base_where(project_type)
 
     regions_q = text(
         f"""
