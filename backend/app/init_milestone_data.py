@@ -38,6 +38,7 @@ SEED_MILESTONES = [
         "phase_type": "Pre-Con Phase",
         "preceding_milestones": json.dumps([]),
         "following_milestones": json.dumps(["Pre-NTP Document Received", "BOM in BAT (MS 3850)"]),
+        "project_type": "macro",
     },
     {
         "key": "1310",
@@ -50,6 +51,7 @@ SEED_MILESTONES = [
         "phase_type": "Pre-Con Phase",
         "preceding_milestones": json.dumps(["Entitlement Complete (MS 3710)"]),
         "following_milestones": json.dumps(["Site Walk Performed"]),
+        "project_type": "macro",
     },
     {
         "key": "site_walk",
@@ -62,6 +64,7 @@ SEED_MILESTONES = [
         "phase_type": "Pre-Con Phase",
         "preceding_milestones": json.dumps(["Pre-NTP Document Received"]),
         "following_milestones": json.dumps(["Ready for Scoping (MS 1323)"]),
+        "project_type": "macro",
     },
     {
         "key": "1323",
@@ -74,6 +77,7 @@ SEED_MILESTONES = [
         "phase_type": "Pre-Con Phase",
         "preceding_milestones": json.dumps(["Site Walk Performed"]),
         "following_milestones": json.dumps(["Scoping Validated by GC (MS 1327)"]),
+        "project_type": "macro",
     },
     {
         "key": "1327",
@@ -92,6 +96,7 @@ SEED_MILESTONES = [
             "NTP Received",
             "Access Confirmation",
         ]),
+        "project_type": "macro",
     },
     {
         "key": "3850",
@@ -104,6 +109,7 @@ SEED_MILESTONES = [
         "phase_type": "Scoping Phase",
         "preceding_milestones": json.dumps(["Entitlement Complete (MS 3710)", "Scoping Validated by GC (MS 1327)"]),
         "following_milestones": json.dumps(["BOM Received in AIMS (MS 3875)"]),
+        "project_type": "macro",
     },
     {
         "key": "quote",
@@ -116,6 +122,7 @@ SEED_MILESTONES = [
         "phase_type": "Scoping Phase",
         "preceding_milestones": json.dumps(["Scoping Validated by GC (MS 1327)"]),
         "following_milestones": json.dumps(["CPO Available"]),
+        "project_type": "macro",
     },
     {
         "key": "3875",
@@ -128,6 +135,7 @@ SEED_MILESTONES = [
         "phase_type": "Material & NTP Phase",
         "preceding_milestones": json.dumps(["BOM in BAT (MS 3850)"]),
         "following_milestones": json.dumps([]),
+        "project_type": "macro",
     },
     {
         "key": "cpo",
@@ -140,6 +148,7 @@ SEED_MILESTONES = [
         "phase_type": "Material & NTP Phase",
         "preceding_milestones": json.dumps(["Quote Submitted to Customer"]),
         "following_milestones": json.dumps(["SPO Issued"]),
+        "project_type": "macro",
     },
     {
         "key": "1555",
@@ -152,6 +161,7 @@ SEED_MILESTONES = [
         "phase_type": "Material & NTP Phase",
         "preceding_milestones": json.dumps(["CPO Available"]),
         "following_milestones": json.dumps([]),
+        "project_type": "macro",
     },
     {
         "key": "steel",
@@ -164,6 +174,7 @@ SEED_MILESTONES = [
         "phase_type": "Material & NTP Phase",
         "preceding_milestones": json.dumps(["Scoping Validated by GC (MS 1327)"]),
         "following_milestones": json.dumps(["Material Pickup by GC (MS 3925)"]),
+        "project_type": "macro",
     },
     {
         "key": "3925",
@@ -176,6 +187,7 @@ SEED_MILESTONES = [
         "phase_type": "Material & NTP Phase",
         "preceding_milestones": json.dumps(["Steel Received (If applicable)"]),
         "following_milestones": json.dumps([]),
+        "project_type": "macro",
     },
     {
         "key": "1407",
@@ -188,6 +200,7 @@ SEED_MILESTONES = [
         "phase_type": "Material & NTP Phase",
         "preceding_milestones": json.dumps(["Scoping Validated by GC (MS 1327)"]),
         "following_milestones": json.dumps([]),
+        "project_type": "macro",
     },
     {
         "key": "4000",
@@ -200,6 +213,7 @@ SEED_MILESTONES = [
         "phase_type": "Material & NTP Phase",
         "preceding_milestones": json.dumps(["Scoping Validated by GC (MS 1327)"]),
         "following_milestones": json.dumps([]),
+        "project_type": "macro",
     },
 ]
 
@@ -215,71 +229,71 @@ SEED_MILESTONES = [
 SEED_MILESTONE_COLUMNS = [
     # 3710 — single date
     {"milestone_key": "3710", "column_name": "pj_a_3710_ran_entitlement_complete_finish",
-     "column_role": "date", "logic": None, "sort_order": 1},
+     "column_role": "date", "logic": None, "sort_order": 1, "project_type": "macro"},
 
     # 1310 — single date
     {"milestone_key": "1310", "column_name": "ms_1310_pre_construction_package_received_actual",
-     "column_role": "date", "logic": None, "sort_order": 2},
+     "column_role": "date", "logic": None, "sort_order": 2, "project_type": "macro"},
 
     # site_walk — max (latest) of 2 date columns
     {"milestone_key": "site_walk", "column_name": "ms_1316_pre_con_site_walk_completed_actual",
-     "column_role": "date", "logic": json.dumps({"pick": "max"}), "sort_order": 3},
+     "column_role": "date", "logic": json.dumps({"pick": "max"}), "sort_order": 3, "project_type": "macro"},
     {"milestone_key": "site_walk", "column_name": "ms_1321_talon_view_drone_svcs_actual",
-     "column_role": "date", "logic": json.dumps({"pick": "max"}), "sort_order": 4},
+     "column_role": "date", "logic": json.dumps({"pick": "max"}), "sort_order": 4, "project_type": "macro"},
 
     # 1323 — single date
     {"milestone_key": "1323", "column_name": "ms_1323_ready_for_scoping_actual",
-     "column_role": "date", "logic": None, "sort_order": 5},
+     "column_role": "date", "logic": None, "sort_order": 5, "project_type": "macro"},
 
     # 1327 — single date
     {"milestone_key": "1327", "column_name": "ms_1327_scoping_and_quoting_package_validated_actual",
-     "column_role": "date", "logic": None, "sort_order": 6},
+     "column_role": "date", "logic": None, "sort_order": 6, "project_type": "macro"},
 
     # 3850 — single date
     {"milestone_key": "3850", "column_name": "pj_a_3850_bom_submitted_bom_in_bat_finish",
-     "column_role": "date", "logic": None, "sort_order": 7},
+     "column_role": "date", "logic": None, "sort_order": 7, "project_type": "macro"},
 
     # 3875 — single date
     {"milestone_key": "3875", "column_name": "pj_a_3875_bom_received_bom_in_aims_finish",
-     "column_role": "date", "logic": None, "sort_order": 8},
+     "column_role": "date", "logic": None, "sort_order": 8, "project_type": "macro"},
 
     # steel — date + status
     {"milestone_key": "steel", "column_name": "pj_steel_received_date",
-     "column_role": "date", "logic": None, "sort_order": 9},
+     "column_role": "date", "logic": None, "sort_order": 9, "project_type": "macro"},
     {"milestone_key": "steel", "column_name": "pj_steel_received_status",
-     "column_role": "status", "logic": json.dumps({"skip": ["N", "Not Applicable", ""], "use_date": ["A"]}), "sort_order": 10},
+     "column_role": "status", "logic": json.dumps({"skip": ["N", "Not Applicable", ""], "use_date": ["A"]}), "sort_order": 10, "project_type": "macro"},
 
     # 3925 — single date
     {"milestone_key": "3925", "column_name": "pj_a_3925_msl_pickup_date_finish",
-     "column_role": "date", "logic": None, "sort_order": 11},
+     "column_role": "date", "logic": None, "sort_order": 11, "project_type": "macro"},
 
     # quote — single date
     {"milestone_key": "quote", "column_name": "ms_1331_scoping_package_submitted_actual",
-     "column_role": "date", "logic": None, "sort_order": 12},
+     "column_role": "date", "logic": None, "sort_order": 12, "project_type": "macro"},
 
     # cpo — text presence check
     {"milestone_key": "cpo", "column_name": "ms1555_construction_complete_so_header",
-     "column_role": "text", "logic": None, "sort_order": 13},
+     "column_role": "text", "logic": None, "sort_order": 13, "project_type": "macro"},
 
     # 1555 — single date
     {"milestone_key": "1555", "column_name": "ms1555_construction_complete_spo_issued_date",
-     "column_role": "date", "logic": None, "sort_order": 14},
+     "column_role": "date", "logic": None, "sort_order": 14, "project_type": "macro"},
 
     # 4000 — text presence check
     {"milestone_key": "4000", "column_name": "pj_a_4000_ll_ntp_received",
-     "column_role": "text", "logic": None, "sort_order": 15},
+     "column_role": "text", "logic": None, "sort_order": 15, "project_type": "macro"},
 
     # 1407 — single date
     {"milestone_key": "1407", "column_name": "ms_1407_tower_ntp_validated_actual",
-     "column_role": "date", "logic": None, "sort_order": 16},
+     "column_role": "date", "logic": None, "sort_order": 16, "project_type": "macro"},
 ]
 
 SEED_PREREQ_TAILS = [
-    {"milestone_key": "3925",  "offset_days": 4},
-    {"milestone_key": "steel", "offset_days": 7},
-    {"milestone_key": "1555",  "offset_days": 5},
-    {"milestone_key": "4000",  "offset_days": 7},
-    {"milestone_key": "1407",  "offset_days": 7},
+    {"milestone_key": "3925",  "offset_days": 4, "project_type": "macro"},
+    {"milestone_key": "steel", "offset_days": 7, "project_type": "macro"},
+    {"milestone_key": "1555",  "offset_days": 5, "project_type": "macro"},
+    {"milestone_key": "4000",  "offset_days": 7, "project_type": "macro"},
+    {"milestone_key": "1407",  "offset_days": 7, "project_type": "macro"},
 ]
 
 SEED_GANTT_CONFIG = [
@@ -287,11 +301,13 @@ SEED_GANTT_CONFIG = [
         "config_key": "CX_START_OFFSET_DAYS",
         "config_value": "4",
         "description": "Days after All Prerequisites Complete to Forecasted CX Start",
+        "project_type": "macro",
     },
     {
         "config_key": "PLANNED_START_COLUMN",
         "config_value": "pj_p_3710_ran_entitlement_complete_finish",
         "description": "Staging table column for the root milestone planned start date",
+        "project_type": "macro",
     },
 ]
 
@@ -322,6 +338,7 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "min_pct": 60,
         "max_pct": None,     # 60%+ on-track milestones
         "sort_order": 1,
+        "project_type": "macro",
     },
     {
         "constraint_type": "milestone",
@@ -331,6 +348,7 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "min_pct": 30,
         "max_pct": 59.99,    # 30–59.99% on-track milestones
         "sort_order": 2,
+        "project_type": "macro",
     },
     {
         "constraint_type": "milestone",
@@ -340,6 +358,7 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "min_pct": 0,
         "max_pct": 29.99,    # 0–29.99% on-track milestones
         "sort_order": 3,
+        "project_type": "macro",
     },
     # --- overall: dashboard status from on-track site percentage ---
     {
@@ -350,6 +369,7 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "min_pct": 60,
         "max_pct": None,     # 60%+ on-track sites
         "sort_order": 1,
+        "project_type": "macro",
     },
     {
         "constraint_type": "overall",
@@ -359,6 +379,7 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "min_pct": 30,
         "max_pct": 59.99,    # 30–59.99% on-track sites
         "sort_order": 2,
+        "project_type": "macro",
     },
     {
         "constraint_type": "overall",
@@ -368,6 +389,7 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "min_pct": 0,
         "max_pct": 29.99,    # 0–29.99% on-track sites
         "sort_order": 3,
+        "project_type": "macro",
     },
 ]
 

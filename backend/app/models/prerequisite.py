@@ -31,6 +31,7 @@ class MilestoneDefinition(ConfigBase):
     history_expected_days = Column(Integer, nullable=True)  # computed from historical actual dates
     sla_type = Column(String(20), nullable=False, default="default", server_default="default")  # "default" | "history"
     is_skipped = Column(Boolean, default=False, nullable=False, server_default="false")  # admin-set global skip
+    project_type = Column(String(50), nullable=False, default="macro", server_default="macro")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -60,6 +61,7 @@ class MilestoneColumn(ConfigBase):
     column_role = Column(String(20), nullable=False)      # "date", "text", "status"
     logic = Column(String(500), nullable=True)            # JSON — role-specific rules
     sort_order = Column(Integer, nullable=False, default=0)
+    project_type = Column(String(50), nullable=False, default="macro", server_default="macro")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -72,6 +74,7 @@ class PrereqTail(ConfigBase):
     id = Column(Integer, primary_key=True, autoincrement=True)
     milestone_key = Column(String(50), nullable=False, unique=True)
     offset_days = Column(Integer, nullable=False, default=0)
+    project_type = Column(String(50), nullable=False, default="macro", server_default="macro")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -85,6 +88,7 @@ class GanttConfig(ConfigBase):
     config_key = Column(String(100), unique=True, nullable=False)
     config_value = Column(String(200), nullable=False)
     description = Column(String(500), nullable=True)
+    project_type = Column(String(50), nullable=False, default="macro", server_default="macro")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -149,6 +153,7 @@ class ConstraintThreshold(ConfigBase):
     min_pct = Column(Float, nullable=False, default=0)    # lower bound (inclusive)
     max_pct = Column(Float, nullable=True)                # upper bound (inclusive), null = unbounded
     sort_order = Column(Integer, nullable=False, default=0)
+    project_type = Column(String(50), nullable=False, default="macro", server_default="macro")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
