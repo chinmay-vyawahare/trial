@@ -7,19 +7,21 @@ CX Start Date per site = Max(pj_p_3710_ran_entitlement_complete_finish,
 Each milestone's expected date = CX Start + (offset_weeks * 7 days)
 Status: compare actual date/value against expected date.
 
-Milestone definitions and column mappings are loaded from
-ahloa_milestone_seed_data.py (will move to DB later).
+Milestone definitions and column mappings are loaded from DB
+(ahloa_milestone_definitions / ahloa_milestone_columns tables).
 """
 
+import json
 import logging
+from collections import defaultdict
 from datetime import date, timedelta
 from typing import Optional
-
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.database import STAGING_TABLE
 from app.core.filters import apply_geo_filters
+from app.models.ahloa import AhloaMilestoneDefinition, AhloaMilestoneColumn
 from app.services.gantt.utils import parse_date
 
 logger = logging.getLogger(__name__)
@@ -33,58 +35,108 @@ CX_START_SOURCE_COLUMNS = [
     "pj_p_4075_construction_ntp_submitted_to_gc_finish",
 ]
 
-# ----------------------------------------------------------------
-# Milestone definitions — matches existing DB schema (no extra cols)
-#
-# These go into milestone_definitions / milestone_columns tables as-is.
-# Fields: key, name, sort_order, expected_days, depends_on,
-#         start_gap_days, task_owner, phase_type
-# ----------------------------------------------------------------
-AHLOA_MILESTONES = [
-    {"key": "cpo",              "name": "CPO For Site",                              "sort_order": 1,  "expected_days": 0,  "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "Pre-CX Phase"},
-    {"key": "3850",             "name": "BOM Ready (MS 3850)",                       "sort_order": 2,  "expected_days": 42, "depends_on": None,             "start_gap_days": 0, "task_owner": "CM",    "phase_type": "Material Phase"},
-    {"key": "3875",             "name": "BOM Material Available in MSL (MS 3875)",   "sort_order": 3,  "expected_days": 10,  "depends_on": None,           "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "Material Phase"},
-    {"key": "3925",             "name": "Material Pickup by GC (MS 3925)",           "sort_order": 4,  "expected_days": 7,  "depends_on": None,           "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Material Phase"},
-    {"key": "4000",             "name": "LL NTP Ready (MS 4000)",                    "sort_order": 5,  "expected_days": 28, "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "NTP Phase"},
-    {"key": "4075",             "name": "Overall NTP Ready (MS 4075)",               "sort_order": 6,  "expected_days": 28, "depends_on": None,             "start_gap_days": 0, "task_owner": "TMO",    "phase_type": "NTP Phase"},
-    {"key": "4100",             "name": "Final NTP Ready (MS 4100)",                 "sort_order": 7, "expected_days": 28, "depends_on": None,           "start_gap_days": 0, "task_owner": "PDM",     "phase_type": "NTP Phase"},
-    {"key": "spo_gc_cx",        "name": "SPO to GC for CX",                          "sort_order": 8, "expected_days": 42, "depends_on": None,             "start_gap_days": 0, "task_owner": "PROJECT-OPS",    "phase_type": "SPO Phase"},
-    {"key": "crane",            "name": "Crane",                                     "sort_order": 9, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Crane Readiness Phase"},
-    {"key": "talon_scoping",    "name": "Talon Session for Scoping",                 "sort_order": 10, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "SE-CoE", "phase_type": "Scoping Phase"},
-    {"key": "talon_scop",       "name": "Talon Session for SCOP",                    "sort_order": 11, "expected_days": 14, "depends_on": None,             "start_gap_days": 0, "task_owner": "SE-CoE", "phase_type": "SCOP Phase"},
-    {"key": "nas_upload",       "name": "Planned Activity Upload Status in NAS",     "sort_order": 12, "expected_days": 7,  "depends_on": None,             "start_gap_days": 0, "task_owner": "GC",     "phase_type": "Outage Readiness Phase"},
-]
 
 # ----------------------------------------------------------------
-# Column mapping — matches existing milestone_columns table schema
-#
-# Fields: milestone_key, column_name, column_role, logic
+# DB loaders
 # ----------------------------------------------------------------
-AHLOA_COLUMN_MAP = {
-    "cpo":              {"column_name": "ms_1555_construction_complete_cpo_custom_field", "column_role": "text", "logic": None},
-    "3850":             {"column_name": "pj_a_3850_bom_submitted_bom_in_bat_finish", "column_role": "date", "logic": None},
-    "3875":             {"column_name": "pj_a_3875_bom_received_bom_in_aims_finish", "column_role": "date", "logic": None},
-    "3925":             {"column_name": "pj_a_3925_msl_pickup_date_finish", "column_role": "date", "logic": None},
-    "4000":             {"column_name": "pj_a_4000_ll_ntp_received", "column_role": "text", "logic": None},
-    "4075":             {"column_name": "pj_a_4075_construction_ntp_submitted_to_gc_finish", "column_role": "date", "logic": None},
-    "4100":             {"column_name": "pj_a_4100_construction_ntp_accepted_by_gc_finish", "column_role": "date", "logic": None},
-    "spo_gc_cx":        {"column_name": "ms1555_construction_complete_spo_issued_date", "column_role": "date", "logic": None},
-    "crane":            {"column_name": "scoping_package_crane_required", "column_role": "status", "logic": {"on_track": ["Yes","No"], "delayed": ["null", "", None]}},
-    "talon_scoping":    {"column_name": "scoping_package_create_date", "column_role": "date", "logic": None},
-    "talon_scop":       {"column_name": "ms_1557_punch_checklist_reviewed_and_submitted_to_tmobile_atl", "column_role": "date", "logic": None},
-    "nas_upload":       {"column_name": "nas_activity_end_date", "column_role": "date", "logic": {"source_table": "nas_planned_outage_activity", "join_column": "nas_site_id", "filter": {"nas_project_category": "AHLOB"}}},
-}
+def _parse_logic(raw):
+    """Parse the logic JSON column, return dict or None."""
+    if not raw:
+        return None
+    try:
+        return json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, ValueError):
+        return None
 
 
+def get_ahloa_milestones(db: Session) -> list[dict]:
+    """Fetch all AHLOA milestone definitions from DB, ordered by sort_order."""
+    rows = (
+        db.query(AhloaMilestoneDefinition)
+        .order_by(AhloaMilestoneDefinition.sort_order)
+        .all()
+    )
+    return [
+        {
+            "key": r.key,
+            "name": r.name,
+            "sort_order": r.sort_order,
+            "expected_days": r.expected_days,
+            "depends_on": r.depends_on,
+            "start_gap_days": r.start_gap_days,
+            "task_owner": r.task_owner,
+            "phase_type": r.phase_type,
+        }
+        for r in rows
+    ]
 
-def _get_all_staging_columns() -> list[str]:
+
+def get_ahloa_column_map(db: Session) -> dict[str, dict]:
+    """
+    Fetch all AHLOA milestone columns from DB, keyed by milestone_key.
+
+    Returns {milestone_key: {"column_name": ..., "column_role": ..., "logic": ...}}
+    """
+    rows = (
+        db.query(AhloaMilestoneColumn)
+        .order_by(AhloaMilestoneColumn.sort_order)
+        .all()
+    )
+    col_map = {}
+    for r in rows:
+        col_map[r.milestone_key] = {
+            "column_name": r.column_name,
+            "column_role": r.column_role,
+            "logic": _parse_logic(r.logic),
+        }
+    return col_map
+
+
+def get_ahloa_milestone_by_key(db: Session, key: str) -> dict | None:
+    """Fetch a single AHLOA milestone definition by key."""
+    r = db.query(AhloaMilestoneDefinition).filter_by(key=key).first()
+    if not r:
+        return None
+    return {
+        "key": r.key,
+        "name": r.name,
+        "sort_order": r.sort_order,
+        "expected_days": r.expected_days,
+        "depends_on": r.depends_on,
+        "start_gap_days": r.start_gap_days,
+        "task_owner": r.task_owner,
+        "phase_type": r.phase_type,
+    }
+
+
+def get_ahloa_columns_for_milestone(db: Session, milestone_key: str) -> list[dict]:
+    """Fetch all AHLOA columns for a given milestone key."""
+    rows = (
+        db.query(AhloaMilestoneColumn)
+        .filter_by(milestone_key=milestone_key)
+        .order_by(AhloaMilestoneColumn.sort_order)
+        .all()
+    )
+    return [
+        {
+            "milestone_key": r.milestone_key,
+            "column_name": r.column_name,
+            "column_role": r.column_role,
+            "logic": _parse_logic(r.logic),
+            "sort_order": r.sort_order,
+        }
+        for r in rows
+    ]
+
+
+def _get_all_staging_columns(column_map: dict) -> list[str]:
     """Collect all staging table columns needed for AHLOA milestones."""
     cols = set()
     # CX start source columns
     for c in CX_START_SOURCE_COLUMNS:
         cols.add(c)
     # Milestone columns (skip NAS — separate table)
-    for key, col_entry in AHLOA_COLUMN_MAP.items():
+    for key, col_entry in column_map.items():
         logic = col_entry.get("logic")
         if logic and isinstance(logic, dict) and "source_table" in logic:
             continue  # skip external table columns
@@ -107,13 +159,13 @@ def _compute_cx_start(row: dict) -> Optional[date]:
     return max(dates) + timedelta(days=CX_START_OFFSET_DAYS)
 
 
-def _get_milestone_actual(row: dict, milestone_key: str, nas_data: dict | None = None):
+def _get_milestone_actual(row: dict, milestone_key: str, column_map: dict, nas_data: dict | None = None):
     """
     Extract actual value for a milestone from the row.
 
     Returns (actual_date, is_text, text_val, is_status, status_val)
     """
-    col_entry = AHLOA_COLUMN_MAP.get(milestone_key)
+    col_entry = column_map.get(milestone_key)
     if not col_entry:
         return None, False, None, False, None
 
@@ -153,6 +205,7 @@ def _compute_milestone_status(
     status_val: Optional[str],
     cx_start: Optional[date],
     today: date,
+    column_map: dict,
 ) -> tuple[str, int, Optional[str]]:
     """
     Compute status for a single AHLOA milestone.
@@ -164,7 +217,7 @@ def _compute_milestone_status(
 
     # --- Status check milestones (crane) ---
     if is_status:
-        col_entry = AHLOA_COLUMN_MAP.get(key)
+        col_entry = column_map.get(key)
         logic = col_entry.get("logic") if col_entry else None
 
         on_track_values = (logic or {}).get("on_track", [])
@@ -180,7 +233,7 @@ def _compute_milestone_status(
 
     # --- Date milestones with expected_days offset from CX start ---
     if expected_days > 0 and cx_start:
-        
+
         expected = cx_start - timedelta(days=expected_days)
 
         expected_str = str(expected)
@@ -210,6 +263,8 @@ def _build_ahloa_query(
     site_id: str = None,
     vendor: str = None,
     area: list[str] | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
     limit: int = None,
     offset: int = None,
 ):
@@ -221,6 +276,18 @@ def _build_ahloa_query(
         "pj_a_4225_construction_start_finish IS NULL",
     ]
     params = {}
+
+    # --- Gate check: por_plan_type IN (include selected values) ---
+    if plan_type_include:
+        placeholders = ", ".join(f":pti_{i}" for i in range(len(plan_type_include)))
+        where_clauses.append(f"COALESCE(por_plan_type, '') IN ({placeholders})")
+        for i, val in enumerate(plan_type_include):
+            params[f"pti_{i}"] = val
+
+    # --- Gate check: por_regional_dev_initiatives ILIKE ---
+    if regional_dev_initiatives:
+        where_clauses.append("COALESCE(por_regional_dev_initiatives, '') ILIKE :rdi_pattern")
+        params["rdi_pattern"] = f"%{regional_dev_initiatives}%"
 
     apply_geo_filters(
         where_clauses, params,
@@ -283,12 +350,12 @@ def _fetch_nas_data(db: Session, site_ids: list[str]) -> dict[str, str]:
 
     query = text("""
         SELECT nas_site_id, nas_activity_end_date
-        FROM pwc_macro_staging_schema.nas_planned_outage_activity
+        FROM pwc_macro_staging_schema.stg_nas_planned_outage_activity
         WHERE nas_project_category = 'AHLOB'
           AND nas_site_id = ANY(:site_ids)
           AND nas_activity_end_date IS NOT NULL
     """)
-    
+
     params = {"site_ids": site_ids}
 
     try:
@@ -301,13 +368,20 @@ def _fetch_nas_data(db: Session, site_ids: list[str]) -> dict[str, str]:
 
 def get_ahloa_gantt(
     db: Session,
+    config_db: Session,
     region: list[str] | None = None,
     market: list[str] | None = None,
     site_id: str = None,
     vendor: str = None,
     area: list[str] | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
     limit: int = None,
     offset: int = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_flag: bool = False,
+    status: str | None = None,
+    user_id: str | None = None,
 ):
     """
     Main AHLOA gantt endpoint — returns site-wise milestone-wise data.
@@ -319,12 +393,18 @@ def get_ahloa_gantt(
     """
     today = date.today()
 
-    staging_columns = _get_all_staging_columns()
+    # Load milestone definitions and column mappings from DB
+    ahloa_milestones = get_ahloa_milestones(db)
+    column_map = get_ahloa_column_map(db)
+
+    staging_columns = _get_all_staging_columns(column_map)
 
     query, params = _build_ahloa_query(
         staging_columns=staging_columns,
         region=region, market=market, site_id=site_id,
         vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
         limit=limit, offset=offset,
     )
     result = db.execute(query, params)
@@ -350,12 +430,12 @@ def get_ahloa_gantt(
         in_progress_count = 0
         total_ms = 0
 
-        for ms in AHLOA_MILESTONES:
+        for ms in ahloa_milestones:
             ms_key = ms["key"]
             total_ms += 1
 
             actual_date, is_text, text_val, is_status, status_val = _get_milestone_actual(
-                row, ms_key, nas_data=nas_data,
+                row, ms_key, column_map=column_map, nas_data=nas_data,
             )
 
             status, delay, expected_date_str = _compute_milestone_status(
@@ -367,6 +447,7 @@ def get_ahloa_gantt(
                 status_val=status_val,
                 cx_start=cx_start,
                 today=today,
+                column_map=column_map,
             )
 
             if status == "On Track":

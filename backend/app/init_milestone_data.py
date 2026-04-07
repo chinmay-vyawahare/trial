@@ -19,6 +19,7 @@ from app.models.prerequisite import (
     MacroUploadedData, MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig,
     ConstraintThreshold, UserHistoryExpectedDays,
 )
+from app.models.ahloa import AhloaMilestoneDefinition, AhloaMilestoneColumn
 
 logger = logging.getLogger(__name__)
 
@@ -393,6 +394,201 @@ SEED_CONSTRAINT_THRESHOLDS = [
     },
 ]
 
+# ----------------------------------------------------------------
+# Seed data — AHLOA Milestone Definitions
+# ----------------------------------------------------------------
+SEED_AHLOA_MILESTONES = [
+    {
+        "key": "cpo",
+        "name": "CPO For Site",
+        "sort_order": 1,
+        "expected_days": 0,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "TMO",
+        "phase_type": "Pre-CX Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "3850",
+        "name": "BOM Ready (MS 3850)",
+        "sort_order": 2,
+        "expected_days": 42,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "CM",
+        "phase_type": "Material Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "3875",
+        "name": "BOM Material Available in MSL (MS 3875)",
+        "sort_order": 3,
+        "expected_days": 10,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "TMO",
+        "phase_type": "Material Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "3925",
+        "name": "Material Pickup by GC (MS 3925)",
+        "sort_order": 4,
+        "expected_days": 7,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "GC",
+        "phase_type": "Material Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "4000",
+        "name": "LL NTP Ready (MS 4000)",
+        "sort_order": 5,
+        "expected_days": 28,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "TMO",
+        "phase_type": "NTP Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "4075",
+        "name": "Overall NTP Ready (MS 4075)",
+        "sort_order": 6,
+        "expected_days": 28,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "TMO",
+        "phase_type": "NTP Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "4100",
+        "name": "Final NTP Ready (MS 4100)",
+        "sort_order": 7,
+        "expected_days": 28,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "PDM",
+        "phase_type": "NTP Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "spo_gc_cx",
+        "name": "SPO to GC for CX",
+        "sort_order": 8,
+        "expected_days": 42,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "PROJECT-OPS",
+        "phase_type": "SPO Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "crane",
+        "name": "Crane",
+        "sort_order": 9,
+        "expected_days": 14,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "GC",
+        "phase_type": "Crane Readiness Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "talon_scoping",
+        "name": "Talon Session for Scoping",
+        "sort_order": 10,
+        "expected_days": 14,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "SE-CoE",
+        "phase_type": "Scoping Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "talon_scop",
+        "name": "Talon Session for SCOP",
+        "sort_order": 11,
+        "expected_days": 14,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "SE-CoE",
+        "phase_type": "SCOP Phase",
+        "project_type": "ahloa",
+    },
+    {
+        "key": "nas_upload",
+        "name": "Planned Activity Upload Status in NAS",
+        "sort_order": 12,
+        "expected_days": 7,
+        "depends_on": None,
+        "start_gap_days": 0,
+        "task_owner": "GC",
+        "phase_type": "Outage Readiness Phase",
+        "project_type": "ahloa",
+    },
+]
+
+# ----------------------------------------------------------------
+# Seed data — AHLOA Milestone Columns
+# ----------------------------------------------------------------
+SEED_AHLOA_MILESTONE_COLUMNS = [
+    # cpo — text presence check
+    {"milestone_key": "cpo", "column_name": "ms_1555_construction_complete_cpo_custom_field",
+     "column_role": "text", "logic": None, "sort_order": 1, "project_type": "ahloa"},
+
+    # 3850 — single date
+    {"milestone_key": "3850", "column_name": "pj_a_3850_bom_submitted_bom_in_bat_finish",
+     "column_role": "date", "logic": None, "sort_order": 2, "project_type": "ahloa"},
+
+    # 3875 — single date
+    {"milestone_key": "3875", "column_name": "pj_a_3875_bom_received_bom_in_aims_finish",
+     "column_role": "date", "logic": None, "sort_order": 3, "project_type": "ahloa"},
+
+    # 3925 — single date
+    {"milestone_key": "3925", "column_name": "pj_a_3925_msl_pickup_date_finish",
+     "column_role": "date", "logic": None, "sort_order": 4, "project_type": "ahloa"},
+
+    # 4000 — text presence check
+    {"milestone_key": "4000", "column_name": "pj_a_4000_ll_ntp_received",
+     "column_role": "text", "logic": None, "sort_order": 5, "project_type": "ahloa"},
+
+    # 4075 — single date
+    {"milestone_key": "4075", "column_name": "pj_a_4075_construction_ntp_submitted_to_gc_finish",
+     "column_role": "date", "logic": None, "sort_order": 6, "project_type": "ahloa"},
+
+    # 4100 — single date
+    {"milestone_key": "4100", "column_name": "pj_a_4100_construction_ntp_accepted_by_gc_finish",
+     "column_role": "date", "logic": None, "sort_order": 7, "project_type": "ahloa"},
+
+    # spo_gc_cx — single date
+    {"milestone_key": "spo_gc_cx", "column_name": "ms1555_construction_complete_spo_issued_date",
+     "column_role": "date", "logic": None, "sort_order": 8, "project_type": "ahloa"},
+
+    # crane — status check
+    {"milestone_key": "crane", "column_name": "scoping_package_crane_required",
+     "column_role": "status", "logic": json.dumps({"on_track": ["Yes", "No"], "delayed": ["null", "", None]}),
+     "sort_order": 9, "project_type": "ahloa"},
+
+    # talon_scoping — single date
+    {"milestone_key": "talon_scoping", "column_name": "scoping_package_create_date",
+     "column_role": "date", "logic": None, "sort_order": 10, "project_type": "ahloa"},
+
+    # talon_scop — single date
+    {"milestone_key": "talon_scop", "column_name": "ms_1557_punch_checklist_reviewed_and_submitted_to_tmobile_atl",
+     "column_role": "date", "logic": None, "sort_order": 11, "project_type": "ahloa"},
+
+    # nas_upload — date from external NAS table
+    {"milestone_key": "nas_upload", "column_name": "nas_activity_end_date",
+     "column_role": "date",
+     "logic": json.dumps({"source_table": "nas_planned_outage_activity", "join_column": "nas_site_id", "filter": {"nas_project_category": "AHLOB"}}),
+     "sort_order": 12, "project_type": "ahloa"},
+]
+
+
 def init_milestone_data():
     """Create tables and seed default data if not already present."""
     ConfigBase.metadata.create_all(bind=config_engine, tables=[
@@ -403,6 +599,8 @@ def init_milestone_data():
         ConstraintThreshold.__table__,
         UserHistoryExpectedDays.__table__,
         MacroUploadedData.__table__,
+        AhloaMilestoneDefinition.__table__,
+        AhloaMilestoneColumn.__table__,
     ])
 
     db: Session = ConfigSessionLocal()
@@ -436,6 +634,19 @@ def init_milestone_data():
                 db.add(ConstraintThreshold(**ct_data))
             db.commit()
             logger.info("Seeded %d constraint thresholds.", len(SEED_CONSTRAINT_THRESHOLDS))
+
+        # --- AHLOA seeds ---
+        if db.query(AhloaMilestoneDefinition).count() == 0:
+            for ms_data in SEED_AHLOA_MILESTONES:
+                db.add(AhloaMilestoneDefinition(**ms_data))
+            db.commit()
+            logger.info("Seeded %d AHLOA milestone definitions.", len(SEED_AHLOA_MILESTONES))
+
+        if db.query(AhloaMilestoneColumn).count() == 0:
+            for col_data in SEED_AHLOA_MILESTONE_COLUMNS:
+                db.add(AhloaMilestoneColumn(**col_data))
+            db.commit()
+            logger.info("Seeded %d AHLOA milestone columns.", len(SEED_AHLOA_MILESTONE_COLUMNS))
 
     except Exception:
         db.rollback()
