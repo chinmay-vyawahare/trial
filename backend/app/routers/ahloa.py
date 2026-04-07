@@ -9,7 +9,7 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.services.gantt_ahloa_construction import get_ahloa_gantt
+from app.services.ahloa.gantt_ahloa_construction import get_ahloa_gantt
 
 logger = logging.getLogger(__name__)
 
