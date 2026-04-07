@@ -5,6 +5,7 @@ from app.core.database import get_db, get_config_db
 from app.models.prerequisite import UserFilter, MilestoneDefinition
 from app.services.gantt import get_all_sites_gantt, get_dashboard_summary
 from app.services.gantt.milestones import get_user_expected_days_overrides
+from app.services.ahloa.gantt_ahloa_construction import get_ahloa_gantt
 
 router = APIRouter(prefix="/api/v1/schedular/gantt-charts", tags=["gantt-charts"])
 
@@ -140,6 +141,7 @@ def list_sites(
     strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
+    project_type: str = Query("macro", description="Project type: 'macro' (default) or 'ahloa'"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -151,27 +153,49 @@ def list_sites(
     region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives = _resolve_filters(
         config_db, user_id, region, market, site_id, vendor, area
     )
-    skipped_keys = _get_skipped_keys(config_db)
-    user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
-    sites, total_count, count = get_all_sites_gantt(
-        db,
-        config_db,
-        region=region,
-        market=market,
-        site_id=site_id,
-        vendor=vendor,
-        area=area,
-        plan_type_include=plan_type_include,
-        regional_dev_initiatives=regional_dev_initiatives,
-        limit=limit,
-        offset=offset,
-        skipped_keys=skipped_keys,
-        user_expected_days_overrides=user_ed_overrides,
-        consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_flag=pace_constraint_flag,
-        user_id=user_id,
-        strict_pace_apply=strict_pace_apply,
-    )
+
+    # --- AHLOA branch ---
+    if project_type == "ahloa":
+        sites, total_count, count = get_ahloa_gantt(
+            db=db,
+            config_db=config_db,
+            region=region,
+            market=market,
+            site_id=site_id,
+            vendor=vendor,
+            area=area,
+            plan_type_include=plan_type_include,
+            regional_dev_initiatives=regional_dev_initiatives,
+            limit=limit,
+            offset=offset,
+            consider_vendor_capacity=consider_vendor_capacity,
+            pace_constraint_flag=pace_constraint_flag,
+            status=status,
+            user_id=user_id,
+        )
+    else:
+        # --- Macro (default) branch ---
+        skipped_keys = _get_skipped_keys(config_db)
+        user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
+        sites, total_count, count = get_all_sites_gantt(
+            db,
+            config_db,
+            region=region,
+            market=market,
+            site_id=site_id,
+            vendor=vendor,
+            area=area,
+            plan_type_include=plan_type_include,
+            regional_dev_initiatives=regional_dev_initiatives,
+            limit=limit,
+            offset=offset,
+            skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_ed_overrides,
+            consider_vendor_capacity=consider_vendor_capacity,
+            pace_constraint_flag=pace_constraint_flag,
+            user_id=user_id,
+            strict_pace_apply=strict_pace_apply,
+        )
 
     # Post-filter by overall_status or exclude_reason if requested
     if status:

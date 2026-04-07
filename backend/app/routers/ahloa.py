@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db, get_config_db
 from app.models.prerequisite import UserFilter
 from app.services.ahloa.gantt_ahloa_construction import get_ahloa_gantt
+from app.services.ahloa.gantt_ahloa_scope import get_ahloa_gantt_scope
 
 logger = logging.getLogger(__name__)
 
@@ -201,26 +202,15 @@ def ahloa_scope_gantt(
     CX Start = Max(pj_p_3710, pj_p_4075) + 50 days
     Each milestone status is based on actual vs expected (CX Start + offset).
     """
-    region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives = _resolve_filters(
-        config_db, user_id, region, market, site_id, vendor, area,
-    )
-
-    sites, total_count, count = get_ahloa_gantt(
+    sites, total_count, count = get_ahloa_gantt_scope(
         db=db,
-        config_db=config_db,
         region=region,
         market=market,
         site_id=site_id,
         vendor=vendor,
         area=area,
-        plan_type_include=plan_type_include,
-        regional_dev_initiatives=regional_dev_initiatives,
         limit=limit,
         offset=offset,
-        consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_flag=pace_constraint_flag,
-        status=status,
-        user_id=user_id,
     )
 
     # Post-filter by overall_status if requested
