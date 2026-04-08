@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
+from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Boolean
 from sqlalchemy.sql import func
 from app.core.database import ConfigBase
 from app.core.config import settings
@@ -64,3 +64,35 @@ class AhloaMilestoneColumn(ConfigBase):
     project_type = Column(String(50), nullable=False, default="ahloa", server_default="ahloa")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class AhloaConstraintThreshold(ConfigBase):
+    """
+    Configurable thresholds that drive status classification.
+
+    constraint_type splits the rows into two groups:
+
+      "milestone"  — site-level status derived from pending milestone count.
+      "overall"    — dashboard-level status derived from on-track site percentage.
+
+    For "milestone": min_pct/max_pct = pending milestone count range.
+    For "overall": min_pct/max_pct = percentage range (0–100).
+
+    status_label is the string returned in the API response.
+    max_pct=null means no upper bound.
+    """
+    __tablename__ = "ahloa_constraint_thresholds"
+    __table_args__ = {"schema": _S}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    constraint_type = Column(String(20), nullable=False, default="milestone")  # "milestone" | "overall"
+    name = Column(String(100), nullable=False)
+    status_label = Column(String(50), nullable=False, default="")
+    color = Column(String(20), nullable=False)
+    min_pct = Column(Float, nullable=False, default=0)    # lower bound (inclusive)
+    max_pct = Column(Float, nullable=True)                # upper bound (inclusive), null = unbounded
+    sort_order = Column(Integer, nullable=False, default=0)
+    project_type = Column(String(50), nullable=False, default="ahloa", server_default="macro")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+

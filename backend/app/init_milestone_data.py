@@ -19,7 +19,7 @@ from app.models.prerequisite import (
     MacroUploadedData, MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig,
     ConstraintThreshold, UserHistoryExpectedDays,
 )
-from app.models.ahloa import AhloaMilestoneDefinition, AhloaMilestoneColumn
+from app.models.ahloa import AhloaMilestoneDefinition, AhloaMilestoneColumn, AhloaConstraintThreshold
 
 logger = logging.getLogger(__name__)
 
@@ -336,8 +336,8 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "name": "On Track",
         "status_label": "ON TRACK",
         "color": "green",
-        "min_pct": 60,
-        "max_pct": None,     # 60%+ on-track milestones
+        "min_pct": 65,
+        "max_pct": 92.99,     # 60%+ on-track milestones
         "sort_order": 1,
         "project_type": "macro",
     },
@@ -347,7 +347,7 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "status_label": "IN PROGRESS",
         "color": "orange",
         "min_pct": 30,
-        "max_pct": 59.99,    # 30–59.99% on-track milestones
+        "max_pct": 64.99,    # 30–59.99% on-track milestones
         "sort_order": 2,
         "project_type": "macro",
     },
@@ -359,6 +359,16 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "min_pct": 0,
         "max_pct": 29.99,    # 0–29.99% on-track milestones
         "sort_order": 3,
+        "project_type": "macro",
+    },
+    {
+        "constraint_type": "milestone",
+        "name": "ready",
+        "status_label": "READY",
+        "color": "green",
+        "min_pct": 93,
+        "max_pct": 100,    # 93–100% ready milestones
+        "sort_order": 4,
         "project_type": "macro",
     },
     # --- overall: dashboard status from on-track site percentage ---
@@ -393,6 +403,82 @@ SEED_CONSTRAINT_THRESHOLDS = [
         "project_type": "macro",
     },
 ]
+
+SEED_AHLOA_CONSTRAINT_THRESHOLDS = [
+    # --- milestone-level: site overall status from on-track milestone percentage ---
+    {
+        "constraint_type": "milestone",
+        "name": "On Track",
+        "status_label": "ON TRACK",
+        "color": "green",
+        "min_pct": 65,
+        "max_pct": 92.99,     # 60%+ on-track milestones
+        "sort_order": 1,
+        "project_type": "ahloa",
+    },
+    {
+        "constraint_type": "milestone",
+        "name": "In Progress",
+        "status_label": "IN PROGRESS",
+        "color": "orange",
+        "min_pct": 30,
+        "max_pct": 64.99,    # 30–59.99% on-track milestones
+        "sort_order": 2,
+        "project_type": "ahloa",
+    },
+    {
+        "constraint_type": "milestone",
+        "name": "Critical",
+        "status_label": "CRITICAL",
+        "color": "red",
+        "min_pct": 0,
+        "max_pct": 29.99,    # 0–29.99% on-track milestones
+        "sort_order": 3,
+        "project_type": "ahloa",
+    },
+    {
+        "constraint_type": "milestone",
+        "name": "ready",
+        "status_label": "READY",
+        "color": "green",
+        "min_pct": 93,
+        "max_pct": 100,    # 93–100% ready milestones
+        "sort_order": 4,
+        "project_type": "ahloa",
+    },
+    # --- overall: dashboard status from on-track site percentage ---
+    {
+        "constraint_type": "overall",
+        "name": "On Track",
+        "status_label": "ON TRACK",
+        "color": "green",
+        "min_pct": 60,
+        "max_pct": None,     # 60%+ on-track sites
+        "sort_order": 1,
+        "project_type": "ahloa",
+    },
+    {
+        "constraint_type": "overall",
+        "name": "In Progress",
+        "status_label": "IN PROGRESS",
+        "color": "orange",
+        "min_pct": 30,
+        "max_pct": 59.99,    # 30–59.99% on-track sites
+        "sort_order": 2,
+        "project_type": "ahloa",
+    },
+    {
+        "constraint_type": "overall",
+        "name": "Critical",
+        "status_label": "CRITICAL",
+        "color": "red",
+        "min_pct": 0,
+        "max_pct": 29.99,    # 0–29.99% on-track sites
+        "sort_order": 3,
+        "project_type": "ahloa",
+    },
+]
+
 
 # ----------------------------------------------------------------
 # Seed data — AHLOA Milestone Definitions
@@ -601,6 +687,7 @@ def init_milestone_data():
         MacroUploadedData.__table__,
         AhloaMilestoneDefinition.__table__,
         AhloaMilestoneColumn.__table__,
+        AhloaConstraintThreshold.__table__,
     ])
 
     db: Session = ConfigSessionLocal()
@@ -647,6 +734,12 @@ def init_milestone_data():
                 db.add(AhloaMilestoneColumn(**col_data))
             db.commit()
             logger.info("Seeded %d AHLOA milestone columns.", len(SEED_AHLOA_MILESTONE_COLUMNS))
+            
+        if db.query(AhloaConstraintThreshold).count() == 0:
+            for ct_data in SEED_AHLOA_CONSTRAINT_THRESHOLDS:
+                db.add(AhloaConstraintThreshold(**ct_data))
+            db.commit()
+            logger.info("Seeded %d AHLOA constraint thresholds.", len(SEED_AHLOA_CONSTRAINT_THRESHOLDS))
 
     except Exception:
         db.rollback()

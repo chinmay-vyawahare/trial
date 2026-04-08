@@ -382,6 +382,8 @@ def get_ahloa_gantt(
     pace_constraint_flag: bool = False,
     status: str | None = None,
     user_id: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ):
     """
     Main AHLOA gantt endpoint — returns site-wise milestone-wise data.
@@ -423,6 +425,15 @@ def get_ahloa_gantt(
     sites = []
     for row in rows:
         cx_start = _compute_cx_start(row)
+
+        # Filter by cx_start date range if provided
+        if start_date or end_date:
+            if cx_start is None:
+                continue
+            if start_date and cx_start < start_date:
+                continue
+            if end_date and cx_start > end_date:
+                continue
 
         milestones_out = []
         on_track_count = 0

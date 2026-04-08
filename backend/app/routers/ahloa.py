@@ -7,6 +7,7 @@ Does not touch any existing NTM/MACRO code.
 
 import json
 import logging
+from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db, get_config_db
@@ -133,6 +134,8 @@ def ahloa_construction_gantt(
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     status: str = Query(None, description="Filter by overall_status: ON TRACK, IN PROGRESS, CRITICAL"),
+    start_date: date = Query(None, description="Filter sites where CX start date >= this date"),
+    end_date: date = Query(None, description="Filter sites where CX start date <= this date"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -162,6 +165,8 @@ def ahloa_construction_gantt(
         pace_constraint_flag=pace_constraint_flag,
         status=status,
         user_id=user_id,
+        start_date=start_date,
+        end_date=end_date,
     )
 
     # Post-filter by overall_status if requested
