@@ -13,15 +13,17 @@ Milestone definitions and column mappings are loaded from DB
 
 import json
 import logging
+from typing import Optional, List, Dict
 from collections import defaultdict
 from datetime import date, timedelta
-from typing import Optional
+from typing import Dict, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.database import STAGING_TABLE
 from app.core.filters import apply_geo_filters
-from app.models.ahloa import AhloaMilestoneDefinition, AhloaMilestoneColumn
+from app.models.ahloa import AhloaMilestoneDefinition, AhloaMilestoneColumn, AhloaConstraintThreshold
+from app.services.gantt.logic import compute_overall_status, get_milestone_range_for_status
 from app.services.gantt.utils import parse_date
 
 logger = logging.getLogger(__name__)
@@ -92,6 +94,15 @@ def get_ahloa_column_map(db: Session) -> dict[str, dict]:
     return col_map
 
 
+def is_site_blocked(row: Dict) -> bool:
+    """Determine if a site is blocked based on delay comments or codes.
+    A site is blocked if either delay comments or delay code is present.
+    """
+    comments = (row.get("pj_construction_start_delay_comments") or "").strip()
+    code = (row.get("pj_construction_complete_delay_code") or "").strip()
+    return bool(comments or code)
+
+
 def get_ahloa_milestone_by_key(db: Session, key: str) -> dict | None:
     """Fetch a single AHLOA milestone definition by key."""
     r = db.query(AhloaMilestoneDefinition).filter_by(key=key).first()
@@ -124,6 +135,28 @@ def get_ahloa_columns_for_milestone(db: Session, milestone_key: str) -> list[dic
             "column_role": r.column_role,
             "logic": _parse_logic(r.logic),
             "sort_order": r.sort_order,
+        }
+        for r in rows
+    ]
+
+
+def get_ahloa_milestone_thresholds(db: Session) -> list[dict]:
+    """Load milestone-level constraint thresholds for AHLOA from DB."""
+    rows = (
+        db.query(AhloaConstraintThreshold)
+        .filter(
+            AhloaConstraintThreshold.constraint_type == "milestone",
+            AhloaConstraintThreshold.project_type == "ahloa",
+        )
+        .order_by(AhloaConstraintThreshold.sort_order)
+        .all()
+    )
+    return [
+        {
+            "status_label": r.status_label,
+            "color": r.color,
+            "min_pct": r.min_pct,
+            "max_pct": r.max_pct,
         }
         for r in rows
     ]
@@ -311,6 +344,8 @@ def _build_ahloa_query(
         "m_area",
         "region",
         "construction_gc",
+        "pj_construction_start_delay_comments",
+        "pj_construction_complete_delay_code",
     ]
 
     all_columns = list(fixed_columns)
@@ -395,9 +430,10 @@ def get_ahloa_gantt(
     """
     today = date.today()
 
-    # Load milestone definitions and column mappings from DB
+    # Load milestone definitions, column mappings, and thresholds from DB
     ahloa_milestones = get_ahloa_milestones(db)
     column_map = get_ahloa_column_map(db)
+    ms_thresholds = get_ahloa_milestone_thresholds(config_db)
 
     staging_columns = _get_all_staging_columns(column_map)
 
@@ -460,7 +496,7 @@ def get_ahloa_gantt(
                 today=today,
                 column_map=column_map,
             )
-
+            
             if status == "On Track":
                 on_track_count += 1
             elif status == "Delayed":
@@ -485,18 +521,16 @@ def get_ahloa_gantt(
                 "delay_days": delay,
             })
 
-        # Compute overall status
-        if total_ms > 0:
-            on_track_pct = round((on_track_count / total_ms) * 100, 2)
-        else:
+        # Compute overall status using DB-driven thresholds
+        blocked = is_site_blocked(row)
+        if blocked:
+            overall_status = "Blocked"
             on_track_pct = 0
-
-        if on_track_pct >= 60:
-            overall_status = "ON TRACK"
-        elif on_track_pct >= 30:
-            overall_status = "IN PROGRESS"
+            milestone_range = f"0-{total_ms}/{total_ms}"
         else:
-            overall_status = "CRITICAL"
+            overall_status = compute_overall_status(on_track_count, total_ms, ms_thresholds)
+            on_track_pct = round((on_track_count / total_ms * 100), 2) if total_ms > 0 else 0
+            milestone_range = get_milestone_range_for_status(overall_status, total_ms, ms_thresholds) if ms_thresholds else f"{on_track_count}/{total_ms}"
 
         sites.append({
             "site_id": row["s_site_id"],
@@ -506,10 +540,13 @@ def get_ahloa_gantt(
             "area": row.get("m_area") or "",
             "region": row.get("region") or "",
             "vendor_name": row.get("construction_gc") or "",
+            "delay_comments": row.get("pj_construction_start_delay_comments") or "",
+            "delay_code": row.get("pj_construction_complete_delay_code") or "",
             "forecasted_cx_start_date": str(cx_start) if cx_start else None,
             "milestones": milestones_out,
             "overall_status": overall_status,
             "on_track_pct": on_track_pct,
+            "milestone_range": milestone_range,
             "milestone_status_summary": {
                 "total": total_ms,
                 "on_track": on_track_count,
