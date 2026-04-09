@@ -15,12 +15,15 @@ min_pct / max_pct define percentage ranges (floats).
 - POST   /constraints                          — create a new threshold
 - PUT    /constraints/{id}                     — update a threshold
 - DELETE /constraints/{id}                     — delete a threshold
+
+Optional query param: project_type (default "macro", or "ahloa")
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_config_db
 from app.models.prerequisite import ConstraintThreshold
+from app.models.ahloa import AhloaConstraintThreshold
 from app.schemas.gantt import ConstraintThresholdSchema, ConstraintThresholdCreate, ConstraintThresholdUpdate
 
 router = APIRouter(
@@ -29,41 +32,65 @@ router = APIRouter(
 )
 
 
+def _get_model(project_type: str):
+    """Return the appropriate model class based on project_type."""
+    if project_type == "ahloa":
+        return AhloaConstraintThreshold
+    return ConstraintThreshold
+
+
 @router.get("", response_model=list[ConstraintThresholdSchema])
-def list_constraints(db: Session = Depends(get_config_db)):
+def list_constraints(
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    db: Session = Depends(get_config_db),
+):
     """Return all constraint thresholds ordered by type then sort_order."""
+    Model = _get_model(project_type)
     return (
-        db.query(ConstraintThreshold)
-        .order_by(ConstraintThreshold.constraint_type, ConstraintThreshold.sort_order)
+        db.query(Model)
+        .order_by(Model.constraint_type, Model.sort_order)
         .all()
     )
 
 
 @router.get("/milestone", response_model=list[ConstraintThresholdSchema])
-def list_milestone_constraints(db: Session = Depends(get_config_db)):
+def list_milestone_constraints(
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    db: Session = Depends(get_config_db),
+):
     """Return milestone-level thresholds only."""
+    Model = _get_model(project_type)
     return (
-        db.query(ConstraintThreshold)
-        .filter(ConstraintThreshold.constraint_type == "milestone")
-        .order_by(ConstraintThreshold.sort_order)
+        db.query(Model)
+        .filter(Model.constraint_type == "milestone")
+        .order_by(Model.sort_order)
         .all()
     )
 
 
 @router.get("/overall", response_model=list[ConstraintThresholdSchema])
-def list_overall_constraints(db: Session = Depends(get_config_db)):
+def list_overall_constraints(
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    db: Session = Depends(get_config_db),
+):
     """Return overall site-level thresholds only."""
+    Model = _get_model(project_type)
     return (
-        db.query(ConstraintThreshold)
-        .filter(ConstraintThreshold.constraint_type == "overall")
-        .order_by(ConstraintThreshold.sort_order)
+        db.query(Model)
+        .filter(Model.constraint_type == "overall")
+        .order_by(Model.sort_order)
         .all()
     )
 
 
 @router.get("/{constraint_id}", response_model=ConstraintThresholdSchema)
-def get_constraint(constraint_id: int, db: Session = Depends(get_config_db)):
-    row = db.query(ConstraintThreshold).filter(ConstraintThreshold.id == constraint_id).first()
+def get_constraint(
+    constraint_id: int,
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    db: Session = Depends(get_config_db),
+):
+    Model = _get_model(project_type)
+    row = db.query(Model).filter(Model.id == constraint_id).first()
     if not row:
         raise HTTPException(status_code=404, detail=f"Constraint threshold {constraint_id} not found")
     return row
@@ -72,6 +99,7 @@ def get_constraint(constraint_id: int, db: Session = Depends(get_config_db)):
 @router.post("", response_model=ConstraintThresholdSchema)
 def create_constraint(
     body: ConstraintThresholdCreate,
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
     db: Session = Depends(get_config_db),
 ):
     """
@@ -80,6 +108,8 @@ def create_constraint(
     The id is auto-generated — do not send it in the request body.
     Duplicate entries (same constraint_type + name) are rejected with 409.
     """
+    Model = _get_model(project_type)
+
     if body.constraint_type not in ("milestone", "overall"):
         raise HTTPException(status_code=400, detail="constraint_type must be 'milestone' or 'overall'.")
     if body.min_pct < 0 or body.min_pct > 100:
@@ -95,8 +125,8 @@ def create_constraint(
 
     # Check for overlapping ranges within the same constraint_type
     same_type = (
-        db.query(ConstraintThreshold)
-        .filter(ConstraintThreshold.constraint_type == body.constraint_type)
+        db.query(Model)
+        .filter(Model.constraint_type == body.constraint_type)
         .all()
     )
     for existing_row in same_type:
@@ -115,10 +145,10 @@ def create_constraint(
 
     # Prevent duplicate (same constraint_type + name)
     existing = (
-        db.query(ConstraintThreshold)
+        db.query(Model)
         .filter(
-            ConstraintThreshold.constraint_type == body.constraint_type,
-            ConstraintThreshold.name == body.name,
+            Model.constraint_type == body.constraint_type,
+            Model.name == body.name,
         )
         .first()
     )
@@ -128,7 +158,7 @@ def create_constraint(
             detail=f"Constraint threshold with type='{body.constraint_type}' and name='{body.name}' already exists (id={existing.id})",
         )
 
-    row = ConstraintThreshold(
+    row = Model(
         constraint_type=body.constraint_type,
         name=body.name,
         status_label=body.status_label,
@@ -147,10 +177,12 @@ def create_constraint(
 def update_constraint(
     constraint_id: int,
     body: ConstraintThresholdUpdate,
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
     db: Session = Depends(get_config_db),
 ):
     """Update an existing constraint threshold (partial update)."""
-    row = db.query(ConstraintThreshold).filter(ConstraintThreshold.id == constraint_id).first()
+    Model = _get_model(project_type)
+    row = db.query(Model).filter(Model.id == constraint_id).first()
     if not row:
         raise HTTPException(status_code=404, detail=f"Constraint threshold {constraint_id} not found")
 
@@ -168,10 +200,10 @@ def update_constraint(
 
     # Check for overlapping ranges (exclude self)
     same_type = (
-        db.query(ConstraintThreshold)
+        db.query(Model)
         .filter(
-            ConstraintThreshold.constraint_type == row.constraint_type,
-            ConstraintThreshold.id != constraint_id,
+            Model.constraint_type == row.constraint_type,
+            Model.id != constraint_id,
         )
         .all()
     )
@@ -195,11 +227,16 @@ def update_constraint(
 
 
 @router.delete("/{constraint_id}")
-def delete_constraint(constraint_id: int, db: Session = Depends(get_config_db)):
+def delete_constraint(
+    constraint_id: int,
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    db: Session = Depends(get_config_db),
+):
     """Delete a constraint threshold."""
+    Model = _get_model(project_type)
     deleted = (
-        db.query(ConstraintThreshold)
-        .filter(ConstraintThreshold.id == constraint_id)
+        db.query(Model)
+        .filter(Model.id == constraint_id)
         .delete()
     )
     db.commit()
