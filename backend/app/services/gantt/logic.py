@@ -273,6 +273,212 @@ def _compute_planned_dates(
     return dates
 
 
+def _compute_planned_dates_backward(
+    cx_start_date: date,
+    milestones: List[Dict],
+    prereq_tails: List[Dict],
+    skipped_keys: set | None = None,
+):
+    """
+    Compute planned finish dates backward from a known CX start date.
+
+    Starting from cx_start_date, walks the dependency chain in reverse:
+    - Tail milestones get: pf = cx_start_date - tail.offset_days
+    - Each predecessor gets: pf = successor.pf - successor.expected_days - gap
+    - Milestones with no dependents (roots like 3710) get: pf = earliest successor.pf - successor.expected_days - gap
+
+    The result is the same dict structure as _compute_planned_dates: {key: {"ps": date, "pf": date}}
+    """
+    skipped = skipped_keys or set()
+
+    # Build key→milestone lookup
+    ms_by_key = {m["key"]: m for m in milestones}
+
+    # Build forward dependency map: parent → [children that depend on it]
+    children_of: Dict[str, List[str]] = {m["key"]: [] for m in milestones}
+    for ms in milestones:
+        dep = ms["depends_on"]
+        if dep is None:
+            continue
+        dep_list = dep if isinstance(dep, list) else [dep]
+        for d in dep_list:
+            if d in children_of:
+                children_of[d].append(ms["key"])
+
+    # Identify tail milestone keys and their offsets
+    tail_offsets = {t["key"]: t["offset_days"] for t in prereq_tails}
+
+    # Start from tails: their planned_finish = cx_start_date - offset_days
+    dates: Dict[str, Dict] = {}
+    queue = []
+
+    for tail_key, offset in tail_offsets.items():
+        if tail_key not in ms_by_key:
+            continue
+        ms = ms_by_key[tail_key]
+        expected = 0 if tail_key in skipped else ms["expected_days"]
+        pf = cx_start_date - timedelta(days=offset)
+        ps = pf - timedelta(days=expected) if expected > 0 else pf
+        dates[tail_key] = {"ps": ps, "pf": pf}
+
+        # Queue predecessors of this tail
+        dep = ms["depends_on"]
+        if dep is not None:
+            dep_list = dep if isinstance(dep, list) else [dep]
+            for d in dep_list:
+                queue.append((d, tail_key))
+
+    # Walk backward: for each predecessor, its pf = min(child.ps) - gap
+    # When a parent gets tightened, re-queue its predecessors to propagate.
+    while queue:
+        parent_key, child_key = queue.pop(0)
+        if parent_key not in ms_by_key:
+            continue
+
+        child_ms = ms_by_key[child_key]
+        gap = child_ms.get("start_gap_days", 1)
+
+        # The parent's pf must be before the child's ps - gap
+        child_ps = dates[child_key]["ps"] if child_key in dates else cx_start_date
+        candidate_pf = child_ps - timedelta(days=gap)
+
+        parent_ms = ms_by_key[parent_key]
+        expected = 0 if parent_key in skipped else parent_ms["expected_days"]
+
+        updated = False
+        if parent_key in dates:
+            # Take the earliest (min) if multiple children constrain this parent
+            if candidate_pf < dates[parent_key]["pf"]:
+                dates[parent_key]["pf"] = candidate_pf
+                dates[parent_key]["ps"] = candidate_pf - timedelta(days=expected) if expected > 0 else candidate_pf
+                updated = True
+        else:
+            ps = candidate_pf - timedelta(days=expected) if expected > 0 else candidate_pf
+            dates[parent_key] = {"ps": ps, "pf": candidate_pf}
+            updated = True
+
+        # Always propagate upward when parent is new or tightened
+        if updated:
+            dep = parent_ms["depends_on"]
+            if dep is not None:
+                dep_list = dep if isinstance(dep, list) else [dep]
+                for d in dep_list:
+                    queue.append((d, parent_key))
+
+    # ----------------------------------------------------------------
+    # Second pass: milestones not reachable from tails (e.g. 3850, 3875)
+    # Compute them forward from their already-computed predecessors.
+    # Repeat until no new milestones are resolved (handles chains like 3850→3875).
+    # ----------------------------------------------------------------
+    expected_by_key = {m["key"]: m["expected_days"] for m in milestones}
+    changed = True
+    while changed:
+        changed = False
+        for ms in milestones:
+            key = ms["key"]
+            if key in dates:
+                continue
+            dep = ms["depends_on"]
+            if dep is None:
+                continue
+            dep_list = dep if isinstance(dep, list) else [dep]
+            # Need at least one predecessor with dates
+            dep_anchors = []
+            for d in dep_list:
+                if d in dates:
+                    gap = ms.get("start_gap_days", 1)
+                    dep_anchors.append(dates[d]["pf"] + timedelta(days=gap))
+            if not dep_anchors:
+                continue
+            ps = max(dep_anchors)
+            expected = 0 if key in skipped else (
+                max(expected_by_key.get(d, 0) for d in dep_list) if len(dep_list) > 1 else ms["expected_days"]
+            )
+            pf = ps + timedelta(days=expected)
+            dates[key] = {"ps": ps, "pf": pf}
+            changed = True
+
+    return dates
+
+
+def compute_milestones_for_site_actual(
+    row: Dict,
+    db: Session,
+    skipped_keys: set | None = None,
+    user_expected_days_overrides: dict | None = None,
+) -> tuple[List[Dict], Optional[date]]:
+    """
+    Actual-view milestone computation.
+
+    Uses pj_p_4225_construction_start_finish as the known CX start date,
+    then works backward through the dependency chain to compute expected
+    (planned) dates for each milestone. Status is determined by comparing
+    actual dates against these backward-computed expected dates.
+    """
+    today = date.today()
+
+    milestones_config = get_milestones(db)
+    milestones_config = apply_user_expected_days(milestones_config, user_expected_days_overrides or {})
+    prereq_tails = get_prereq_tails(db)
+
+    cx_start_date = parse_date(row.get("pj_p_4225_construction_start_finish"))
+    if cx_start_date is None:
+        return [], None
+
+    dates = _compute_planned_dates_backward(
+        cx_start_date, milestones_config, prereq_tails, skipped_keys=skipped_keys,
+    )
+
+    skipped = skipped_keys or set()
+    preceding_map, following_map = _build_dependency_maps(milestones_config, skipped_keys=skipped)
+    milestones = []
+
+    for ms in milestones_config:
+        key = ms["key"]
+        if key not in dates:
+            continue
+        ps = dates[key]["ps"]
+        pf = dates[key]["pf"]
+
+        preceding = preceding_map.get(key, [])
+        following = following_map.get(key, [])
+
+        if key in skipped:
+            continue
+
+        actual, is_text, text_val, skip = _get_actual_date(row, ms)
+
+        back_days = (cx_start_date - pf).days if pf else None
+
+        if skip:
+            row_out = _build_milestone_row(
+                key, ms, ps, pf,
+                actual=actual, status="On Track", delay=0,
+                days_since=None, days_remaining=None,
+                is_text=False, text_val=None,
+                preceding=preceding, following=following,
+            )
+            row_out["back_days"] = back_days
+            milestones.append(row_out)
+            continue
+
+        status, delay = compute_status(actual, pf, today, is_text, text_val)
+        days_since = (today - actual).days if actual else None
+        days_remaining = (pf - today).days if (actual is None and pf) else None
+
+        row_out = _build_milestone_row(
+            key, ms, ps, pf,
+            actual=actual, status=status, delay=delay,
+            days_since=days_since, days_remaining=days_remaining,
+            is_text=is_text, text_val=text_val,
+            preceding=preceding, following=following,
+        )
+        row_out["back_days"] = back_days
+        milestones.append(row_out)
+
+    return milestones, cx_start_date
+
+
 def _build_dependency_maps(milestones_config: List[Dict], skipped_keys: set | None = None) -> tuple[Dict, Dict]:
     """
     Build preceding and following milestone name maps from the dependency graph.

@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from .queries import build_gantt_query
-from .logic import compute_milestones_for_site, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, get_milestone_range_for_status, is_site_blocked
+from .logic import compute_milestones_for_site, compute_milestones_for_site_actual, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, get_milestone_range_for_status, is_site_blocked
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides, get_history_expected_days_by_user, save_user_history_expected_days
 from .utils import parse_date
 
@@ -264,12 +264,17 @@ def get_all_sites_gantt(
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
     strict_pace_apply: bool = False,
+    view_type: str = "forecast",
 ):
     # Load milestone config from config DB
     milestones_config = get_milestones(config_db)
     milestone_columns = get_all_actual_columns(milestones_config)
     planned_start_col = get_planned_start_column(config_db)
     ms_thresholds = get_milestone_thresholds(config_db)
+
+    # For actual view, also need pj_p_4225_construction_start_finish column
+    if view_type == "actual" and "pj_p_4225_construction_start_finish" not in milestone_columns:
+        milestone_columns = list(milestone_columns) + ["pj_p_4225_construction_start_finish"]
 
     # Query staging data from staging DB
     query, params = build_gantt_query(
@@ -296,10 +301,21 @@ def get_all_sites_gantt(
         count = len(rows)
 
     for row in rows:
-        milestones, forecasted_cx_start = compute_milestones_for_site(
-            row, config_db, skipped_keys=skipped_keys,
-            user_expected_days_overrides=user_expected_days_overrides,
-        )
+        if view_type == "actual":
+            # Actual view: use known CX start, compute backward
+            # Skip sites without a CX start date
+            if not row.get("pj_p_4225_construction_start_finish"):
+                continue
+            milestones, forecasted_cx_start = compute_milestones_for_site_actual(
+                row, config_db, skipped_keys=skipped_keys,
+                user_expected_days_overrides=user_expected_days_overrides,
+            )
+        else:
+            # Forecast view (default): compute forward
+            milestones, forecasted_cx_start = compute_milestones_for_site(
+                row, config_db, skipped_keys=skipped_keys,
+                user_expected_days_overrides=user_expected_days_overrides,
+            )
         if not milestones:
             continue
 
@@ -315,11 +331,9 @@ def get_all_sites_gantt(
         if blocked:
             overall = "Blocked"
             on_track_pct = 0
-            milestone_range = f"0-{total}/{total}"
         else:
             overall = compute_overall_status(on_track_count, total, ms_thresholds)
             on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
-            milestone_range = get_milestone_range_for_status(overall, total, ms_thresholds) if ms_thresholds else f"{on_track_count}/{total}"
 
         # ── Reschedule logic when forecasted_cx_start is in the past ──
         note = None
@@ -364,7 +378,6 @@ def get_all_sites_gantt(
                 ],
                 "overall_status": overall,
                 "on_track_pct": on_track_pct,
-                "milestone_range": milestone_range,
                 "milestone_status_summary": {
                     "total": total,
                     "on_track": on_track_count,
