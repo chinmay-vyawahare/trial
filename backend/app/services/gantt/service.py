@@ -335,57 +335,76 @@ def get_all_sites_gantt(
             overall = compute_overall_status(on_track_count, total, ms_thresholds)
             on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
 
-        # ── Reschedule logic when forecasted_cx_start is in the past ──
+        # ── Reschedule logic when forecasted_cx_start is in the past (forecast view) ──
         note = None
+        suggested_forecast_cx_start = None
+        suggested_comment = None
         today = date.today()
-        if forecasted_cx_start and forecasted_cx_start < today:
-            # Check non-virtual milestones for missing actual_finish
+
+        if view_type == "actual" and forecasted_cx_start:
+            # Actual view: find milestones without actual date (delayed/pending)
+            missing = [
+                m for m in countable
+                if not m.get("actual_finish")
+            ]
+            if missing:
+                # Pick the milestone with max expected_days among those missing
+                blocker = max(missing, key=lambda m: m.get("expected_days", 0))
+                blocker_expected = blocker.get("expected_days", 0)
+                suggested_forecast_cx_start = forecasted_cx_start + timedelta(days=blocker_expected)
+                suggested_comment = f"Suggested {suggested_forecast_cx_start} due to delay in {blocker['name']}"
+
+        if view_type != "actual" and forecasted_cx_start and forecasted_cx_start < today:
+            # Forecast view reschedule logic
             missing = [
                 m for m in countable
                 if not m.get("actual_finish")
             ]
             if not missing:
-                # All milestones have actual_finish → ready for schedule
                 forecasted_cx_start = today + timedelta(days=7)
                 note = "Ready for schedule"
             else:
-                # At least one milestone missing actual_finish
-                # Pick the earliest (min sort_order) milestone without actual_finish
                 missing_sorted = sorted(missing, key=lambda m: m.get("sort_order", 999))
                 blocker = missing_sorted[0]
                 delay_days = (today - forecasted_cx_start).days
                 forecasted_cx_start = today + timedelta(days=7)
                 note = f"Delayed due to {blocker['name']} by {delay_days} days"
 
-        sites.append(
-            {
-                "vendor_name": row.get("construction_gc") or "",
-                "site_id": row["s_site_id"],
-                "project_id": row["pj_project_id"],
-                "project_name": row["pj_project_name"],
-                "market": row["m_market"],
-                "area": row.get("m_area") or "",
-                "region": row.get("region") or "",
-                "delay_comments": row.get("pj_construction_start_delay_comments") or "",
-                "delay_code": row.get("pj_construction_complete_delay_code") or "",
-                "forecasted_cx_start_date": (
-                    str(forecasted_cx_start) if forecasted_cx_start else None
-                ),
-                "note": note,
-                "milestones": [
-                    {k: v for k, v in m.items() if k != "is_virtual"}
-                    for m in milestones
-                ],
-                "overall_status": overall,
-                "on_track_pct": on_track_pct,
-                "milestone_status_summary": {
-                    "total": total,
-                    "on_track": on_track_count,
-                    "in_progress": in_progress_count,
-                    "delayed": delayed_count,
-                },
-            }
-        )
+        site_dict = {
+            "vendor_name": row.get("construction_gc") or "",
+            "site_id": row["s_site_id"],
+            "project_id": row["pj_project_id"],
+            "project_name": row["pj_project_name"],
+            "market": row["m_market"],
+            "area": row.get("m_area") or "",
+            "region": row.get("region") or "",
+            "delay_comments": row.get("pj_construction_start_delay_comments") or "",
+            "delay_code": row.get("pj_construction_complete_delay_code") or "",
+            "forecasted_cx_start_date": (
+                str(forecasted_cx_start) if forecasted_cx_start else None
+            ),
+            "note": note,
+            "milestones": [
+                {k: v for k, v in m.items() if k != "is_virtual"}
+                for m in milestones
+            ],
+            "overall_status": overall,
+            "on_track_pct": on_track_pct,
+            "milestone_status_summary": {
+                "total": total,
+                "on_track": on_track_count,
+                "in_progress": in_progress_count,
+                "delayed": delayed_count,
+            },
+        }
+
+        if view_type == "actual":
+            site_dict["suggested_forecast_cx_start"] = (
+                str(suggested_forecast_cx_start) if suggested_forecast_cx_start else None
+            )
+            site_dict["suggested_comment"] = suggested_comment
+
+        sites.append(site_dict)
 
     # Apply vendor capacity constraints if requested
     if consider_vendor_capacity:
