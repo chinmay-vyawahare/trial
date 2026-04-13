@@ -282,10 +282,12 @@ def _compute_planned_dates_backward(
     """
     Compute planned finish dates backward from a known CX start date.
 
-    Starting from cx_start_date, walks the dependency chain in reverse:
-    - Tail milestones get: pf = cx_start_date - tail.offset_days
-    - Each predecessor gets: pf = successor.pf - successor.expected_days - gap
-    - Milestones with no dependents (roots like 3710) get: pf = earliest successor.pf - successor.expected_days - gap
+    In the forward view the chain is:
+      tail.pf + tail_offset → All Prereq Complete + CX_START_OFFSET → CX Start
+
+    In backward we reverse that — but CX_START_OFFSET_DAYS is NOT used here
+    because the actual CX start date already accounts for any buffer.
+    We go directly: tail.pf = cx_start_date − tail_offset_days.
 
     The result is the same dict structure as _compute_planned_dates: {key: {"ps": date, "pf": date}}
     """
@@ -308,7 +310,8 @@ def _compute_planned_dates_backward(
     # Identify tail milestone keys and their offsets
     tail_offsets = {t["key"]: t["offset_days"] for t in prereq_tails}
 
-    # Start from tails: their planned_finish = cx_start_date - offset_days
+    # Start from tails: pf = cx_start_date − tail_offset
+    # No CX_START_OFFSET_DAYS subtracted — it is only used in forward view.
     dates: Dict[str, Dict] = {}
     queue = []
 
@@ -328,37 +331,39 @@ def _compute_planned_dates_backward(
             for d in dep_list:
                 queue.append((d, tail_key))
 
-    # Walk backward: for each predecessor, its pf = min(child.ps) - gap
-    # When a parent gets tightened, re-queue its predecessors to propagate.
+    # Walk backward: each step from child to parent subtracts child.expected_days.
+    # parent.pf = child.pf - child.expected_days
+    # - Tail milestones keep their own offset — never overwritten by child tails.
+    # - No gap days, no CX_START_OFFSET_DAYS in backward.
+    # - When a parent gets tightened, re-queue its predecessors to propagate.
     while queue:
         parent_key, child_key = queue.pop(0)
         if parent_key not in ms_by_key:
             continue
 
+        # Skip if parent is itself a tail — it has its own offset from CX
+        if parent_key in tail_offsets:
+            continue
+
         child_ms = ms_by_key[child_key]
-        gap = child_ms.get("start_gap_days", 1)
-
-        # The parent's pf must be before the child's ps - gap
-        child_ps = dates[child_key]["ps"] if child_key in dates else cx_start_date
-        candidate_pf = child_ps - timedelta(days=gap)
-
-        parent_ms = ms_by_key[parent_key]
-        expected = 0 if parent_key in skipped else parent_ms["expected_days"]
+        child_pf = dates[child_key]["pf"] if child_key in dates else cx_start_date
+        child_expected = child_ms["expected_days"]
+        candidate_pf = child_pf - timedelta(days=child_expected)
 
         updated = False
         if parent_key in dates:
             # Take the earliest (min) if multiple children constrain this parent
             if candidate_pf < dates[parent_key]["pf"]:
                 dates[parent_key]["pf"] = candidate_pf
-                dates[parent_key]["ps"] = candidate_pf - timedelta(days=expected) if expected > 0 else candidate_pf
+                dates[parent_key]["ps"] = candidate_pf
                 updated = True
         else:
-            ps = candidate_pf - timedelta(days=expected) if expected > 0 else candidate_pf
-            dates[parent_key] = {"ps": ps, "pf": candidate_pf}
+            dates[parent_key] = {"ps": candidate_pf, "pf": candidate_pf}
             updated = True
 
         # Always propagate upward when parent is new or tightened
         if updated:
+            parent_ms = ms_by_key[parent_key]
             dep = parent_ms["depends_on"]
             if dep is not None:
                 dep_list = dep if isinstance(dep, list) else [dep]
@@ -370,7 +375,6 @@ def _compute_planned_dates_backward(
     # Compute them forward from their already-computed predecessors.
     # Repeat until no new milestones are resolved (handles chains like 3850→3875).
     # ----------------------------------------------------------------
-    expected_by_key = {m["key"]: m["expected_days"] for m in milestones}
     changed = True
     while changed:
         changed = False
@@ -382,20 +386,15 @@ def _compute_planned_dates_backward(
             if dep is None:
                 continue
             dep_list = dep if isinstance(dep, list) else [dep]
-            # Need at least one predecessor with dates
+            # Forward fill: this milestone's pf = predecessor.pf + this milestone's expected_days
             dep_anchors = []
             for d in dep_list:
                 if d in dates:
-                    gap = ms.get("start_gap_days", 1)
-                    dep_anchors.append(dates[d]["pf"] + timedelta(days=gap))
+                    dep_anchors.append(dates[d]["pf"] + timedelta(days=ms["expected_days"]))
             if not dep_anchors:
                 continue
-            ps = max(dep_anchors)
-            expected = 0 if key in skipped else (
-                max(expected_by_key.get(d, 0) for d in dep_list) if len(dep_list) > 1 else ms["expected_days"]
-            )
-            pf = ps + timedelta(days=expected)
-            dates[key] = {"ps": ps, "pf": pf}
+            pf = max(dep_anchors)
+            dates[key] = {"ps": pf, "pf": pf}
             changed = True
 
     return dates

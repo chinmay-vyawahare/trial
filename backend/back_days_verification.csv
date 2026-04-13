@@ -1,0 +1,15 @@
+Key,Name,back_days,How computed
+3925,Material Pickup by GC,cx-4,tail_offset(4)
+1555,SPO Issued,cx-5,tail_offset(5)
+steel,Steel Received (If applicable),cx-7,tail_offset(7)
+1407,NTP Received,cx-7,tail_offset(7)
+4000,Access Confirmation,cx-7,tail_offset(7)
+cpo,CPO Available,cx-7,1555(5) + 1555.exp(2) = 7
+3875,BOM Received in AIMS,cx-9,3925(4) + 3925.exp(5) = 9
+quote,Quote Submitted to Customer,cx-21,cpo(7) + cpo.exp(14) = 21
+3850,BOM in BAT,cx-30,3875(9) + 3875.exp(21) = 30
+1327,Scoping Validated by GC,cx-30,"max(3850:30, quote:28, steel:21, 1407:14, 4000:14) = 30"
+1323,Ready for Scoping,cx-37,1327(30) + 1327.exp(7) = 37
+site_walk,Site Walk Performed,cx-40,1323(37) + 1323.exp(3) = 40
+1310,Pre-NTP Document Received,cx-47,site_walk(40) + site_walk.exp(7) = 47
+3710,Entitlement Complete,cx-49,1310(47) + 1310.exp(2) = 49
