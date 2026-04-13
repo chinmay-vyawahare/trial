@@ -30,6 +30,7 @@ def get_calendar_gantt_sites(
     status: str | None = None,
     strict_pace_apply: bool = False,
     site_ids: list[str] | None = None,
+    view_type: str = "forecast",
 ):
     sites, total_count, count = get_all_sites_gantt(
         db,
@@ -49,6 +50,7 @@ def get_calendar_gantt_sites(
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     if site_ids:
@@ -90,6 +92,7 @@ def get_calendar_history_gantt_sites(
     status: str | None = None,
     strict_pace_apply: bool = False,
     site_ids: list[str] | None = None,
+    view_type: str = "forecast",
 ):
     sites, total_count, count, sla_last_updated = get_history_gantt(
         db,
@@ -110,6 +113,7 @@ def get_calendar_history_gantt_sites(
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     if site_ids:

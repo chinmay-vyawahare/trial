@@ -28,6 +28,7 @@ def get_weekly_status_counts(
     user_id: str | None = None,
     status: str | None = None,
     strict_pace_apply: bool = False,
+    view_type: str = "forecast",
 ) -> list[dict]:
     """
     Return weekly status counts grouped by ISO week/year, with region breakdown.
@@ -76,6 +77,7 @@ def get_weekly_status_counts(
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     # Post-filter by status if requested

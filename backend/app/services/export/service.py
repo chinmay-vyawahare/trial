@@ -67,6 +67,7 @@ def export_gantt_csv(
     strict_pace_apply: bool = False,
     status: str | None = None,
     sla_type: str = "default",
+    view_type: str = "forecast",
 ) -> str:
     """
     Build a CSV string of the full gantt chart.
@@ -111,6 +112,7 @@ def export_gantt_csv(
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     # Post-filter by status if requested
@@ -259,6 +261,7 @@ def export_gantt_csv_history(
     pace_constraint_flag: bool = False,
     strict_pace_apply: bool = False,
     status: str | None = None,
+    view_type: str = "forecast",
 ) -> str:
     """
     Build a CSV string of the gantt chart using SLA history-based expected_days.
@@ -296,6 +299,7 @@ def export_gantt_csv_history(
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     # Post-filter by status if requested

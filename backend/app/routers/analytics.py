@@ -86,6 +86,7 @@ def pending_milestones_auto(
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
+    view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -119,6 +120,7 @@ def pending_milestones_auto(
         filter_date_from=fd_from,
         filter_date_to=fd_to,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     return {
@@ -144,6 +146,7 @@ def pending_milestones_sla_history(
     strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
+    view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -183,6 +186,7 @@ def pending_milestones_sla_history(
         filter_date_from=fd_from,
         filter_date_to=fd_to,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     return {
@@ -209,6 +213,7 @@ def pending_by_milestone_auto(
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
+    view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -239,6 +244,7 @@ def pending_by_milestone_auto(
         filter_date_from=fd_from,
         filter_date_to=fd_to,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     return {
@@ -264,6 +270,7 @@ def pending_by_milestone_sla_history(
     strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
+    view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -303,6 +310,7 @@ def pending_by_milestone_sla_history(
         filter_date_from=fd_from,
         filter_date_to=fd_to,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     return {
@@ -332,6 +340,7 @@ def drilldown_auto(
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
+    view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -372,6 +381,7 @@ def drilldown_auto(
         filter_date_from=fd_from,
         filter_date_to=fd_to,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     return {
@@ -402,6 +412,7 @@ def drilldown_sla_history(
     strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     filter_date_from: str = Query(None, description="Only include sites with forecasted CX start >= this date (YYYY-MM-DD)"),
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
+    view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -451,6 +462,7 @@ def drilldown_sla_history(
         filter_date_from=fd_from,
         filter_date_to=fd_to,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     return {

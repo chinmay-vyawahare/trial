@@ -7,6 +7,47 @@ from .logic import compute_milestones_for_site, compute_milestones_for_site_actu
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides, get_history_expected_days_by_user, save_user_history_expected_days
 from .utils import parse_date
 
+def _apply_uploaded_overrides(sites: list[dict], config_db: Session, user_id: str) -> list[dict]:
+    """
+    Override forecasted_cx_start_date with user-uploaded data from macro_uploaded_data.
+
+    Matches by (site_id, project_id). If a match is found and the uploaded row
+    has a valid pj_p_4225_construction_start_finish date, it replaces the forecasted date.
+    """
+    from app.models.prerequisite import MacroUploadedData
+
+    rows = (
+        config_db.query(MacroUploadedData)
+        .filter(MacroUploadedData.uploaded_by == user_id)
+        .all()
+    )
+    if not rows:
+        return sites
+
+    # Build lookup: (site_id, project_id) -> uploaded date
+    upload_lookup: dict[tuple[str, str], date] = {}
+    for r in rows:
+        if r.pj_p_4225_construction_start_finish:
+            d = r.pj_p_4225_construction_start_finish
+            key = (r.site_id.strip(), (r.project_id or "").strip())
+            upload_lookup[key] = d.date() if hasattr(d, "date") else d
+
+    if not upload_lookup:
+        return sites
+
+    for site in sites:
+        site_id = (site.get("site_id") or "").strip()
+        project_id = (site.get("project_id") or "").strip()
+        key = (site_id, project_id)
+        if key in upload_lookup:
+            uploaded_date = upload_lookup[key]
+            site["forecasted_cx_start_date"] = str(uploaded_date)
+            site["forecasted_cx_source"] = "uploaded"
+
+    return sites
+
+
+
 def _apply_pace_constraint(
     sites: list[dict],
     config_db: Session,
@@ -302,8 +343,6 @@ def get_all_sites_gantt(
 
     for row in rows:
         if view_type == "actual":
-            # Actual view: use known CX start, compute backward
-            # Skip sites without a CX start date
             if not row.get("pj_p_4225_construction_start_finish"):
                 continue
             milestones, forecasted_cx_start = compute_milestones_for_site_actual(
@@ -351,8 +390,20 @@ def get_all_sites_gantt(
                 # Pick the milestone with max expected_days among those missing
                 blocker = max(missing, key=lambda m: m.get("expected_days", 0))
                 blocker_expected = blocker.get("expected_days", 0)
-                suggested_forecast_cx_start = forecasted_cx_start + timedelta(days=blocker_expected)
-                suggested_comment = f"Suggested {suggested_forecast_cx_start} due to delay in {blocker['name']}"
+
+                # Calculate new suggested date
+                temp_suggested_date = forecasted_cx_start + timedelta(days=blocker_expected)
+
+                # 🔴 Critical condition: check if buffer is consumed
+                delay_days = (temp_suggested_date - forecasted_cx_start).days
+
+                if delay_days > 0:
+                    suggested_forecast_cx_start = temp_suggested_date
+                    suggested_comment = f"Suggested {suggested_forecast_cx_start} due to delay in {blocker['name']}"
+                else:
+                    # Buffer absorbed → no suggestion
+                    suggested_forecast_cx_start = None
+                    suggested_comment = None
 
         if view_type != "actual" and forecasted_cx_start and forecasted_cx_start < today:
             # Forecast view reschedule logic
@@ -419,6 +470,10 @@ def get_all_sites_gantt(
     else:
         for site in sites:
             site["excluded_due_to_pace_constraint"] = False
+            
+        # Override forecasted_cx_start_date from user-uploaded data if available
+    if user_id:
+        sites = _apply_uploaded_overrides(sites, config_db, user_id)
 
     # Sort by forecasted_cx_start_date descending (latest first, nulls at bottom)
     sites.sort(
@@ -575,6 +630,7 @@ def get_dashboard_summary(
     status: str | None = None,
     user_id: str | None = None,
     strict_pace_apply: bool = False,
+    view_type: str = "forecast",
 ):
     """Dashboard summary using the same query and logic as the gantt chart."""
     sites, total_count, _ = get_all_sites_gantt(
@@ -593,6 +649,7 @@ def get_dashboard_summary(
         pace_constraint_flag=pace_constraint_flag,
         strict_pace_apply=strict_pace_apply,
         user_id=user_id,
+        view_type=view_type,
     )
 
     result = _get_pace_constraint(config_db, user_id, region=region, area=area, market=market)
@@ -774,6 +831,7 @@ def get_history_gantt(
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
     strict_pace_apply: bool = False,
+    view_type: str = "forecast",
 ):
     """
     Gantt chart using history-based SLA.
@@ -837,6 +895,7 @@ def get_history_gantt(
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,
         strict_pace_apply=strict_pace_apply,
+        view_type=view_type,
     )
 
     return sites, total_count, count, sla_last_updated

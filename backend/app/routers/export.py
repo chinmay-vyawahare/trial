@@ -38,6 +38,7 @@ def export_gantt_to_csv(
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
+    view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
 ):
     """
     Export gantt chart data as a downloadable CSV file.
@@ -61,6 +62,7 @@ def export_gantt_to_csv(
             strict_pace_apply=strict_pace_apply,
             status=status,
             sla_type=sla_type,
+            view_type=view_type,
         )
     except Exception as e:
         logger.exception(f"Failed to export gantt CSV: {e}")
@@ -90,6 +92,7 @@ def export_gantt_to_csv_history(
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
     strict_pace_apply: bool = Query(False, description="When true, exclude excess sites without stretching to next week"),
     status: str = Query(None, description="Filter by overall_status or exclude_reason"),
+    view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -123,6 +126,7 @@ def export_gantt_to_csv_history(
             pace_constraint_flag=pace_constraint_flag,
             strict_pace_apply=strict_pace_apply,
             status=status,
+            view_type=view_type,
         )
     except Exception as e:
         logger.exception(f"Failed to export SLA history gantt CSV: {e}")
