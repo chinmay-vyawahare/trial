@@ -45,13 +45,23 @@ def set_expected_days(
             detail=f"Milestone '{body.milestone_key}' not found",
         )
 
-    if body.expected_days < 0:
+    if body.expected_days is None and body.back_days is None:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one of expected_days or back_days must be provided",
+        )
+    if body.expected_days is not None and body.expected_days < 0:
         raise HTTPException(
             status_code=400,
             detail="expected_days must be >= 0",
         )
+    if body.back_days is not None and body.back_days < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="back_days must be >= 0",
+        )
 
-    # Upsert
+    # Upsert — only the fields the caller supplied are touched.
     existing = (
         db.query(UserExpectedDays)
         .filter(
@@ -61,7 +71,10 @@ def set_expected_days(
         .first()
     )
     if existing:
-        existing.expected_days = body.expected_days
+        if body.expected_days is not None:
+            existing.expected_days = body.expected_days
+        if body.back_days is not None:
+            existing.back_days = body.back_days
         db.commit()
         db.refresh(existing)
         return existing
@@ -70,6 +83,7 @@ def set_expected_days(
         user_id=user_id,
         milestone_key=body.milestone_key,
         expected_days=body.expected_days,
+        back_days=body.back_days,
     )
     db.add(row)
     db.commit()

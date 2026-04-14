@@ -22,6 +22,7 @@ class MilestoneDefinition(ConfigBase):
     name = Column(String(200), nullable=False)
     sort_order = Column(Integer, nullable=False, default=0)
     expected_days = Column(Integer, nullable=False, default=0)
+    back_days = Column(Integer, nullable=True)            # canonical days-before-CX-start (right-to-left view)
     depends_on = Column(String(200), nullable=True)       # JSON: '["3710","1327"]' or single key string
     start_gap_days = Column(Integer, nullable=False, default=1)
     task_owner = Column(String(100), nullable=True)       # e.g. "TMO", "PM", "CM", "SE-CoE", "GC", "PDM", "Proj Ops"
@@ -228,7 +229,8 @@ class UserExpectedDays(ConfigBase):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(100), nullable=False, index=True)
     milestone_key = Column(String(50), nullable=False)
-    expected_days = Column(Integer, nullable=False)
+    expected_days = Column(Integer, nullable=True)
+    back_days = Column(Integer, nullable=True)            # per-user override for actual-view back_days
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

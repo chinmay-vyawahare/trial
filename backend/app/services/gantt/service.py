@@ -301,6 +301,7 @@ def get_all_sites_gantt(
     offset: int = None,
     skipped_keys: set[str] | None = None,
     user_expected_days_overrides: dict[str, int] | None = None,
+    user_back_days_overrides: dict[str, int] | None = None,
     consider_vendor_capacity: bool = False,
     pace_constraint_flag: bool = False,
     user_id: str | None = None,
@@ -312,6 +313,11 @@ def get_all_sites_gantt(
     milestone_columns = get_all_actual_columns(milestones_config)
     planned_start_col = get_planned_start_column(config_db)
     ms_thresholds = get_milestone_thresholds(config_db)
+
+    # Lazy-load user back_days overrides for actual view
+    if view_type == "actual" and user_id and user_back_days_overrides is None:
+        from .milestones import get_user_back_days_overrides
+        user_back_days_overrides = get_user_back_days_overrides(config_db, user_id)
 
     # For actual view, also need pj_p_4225_construction_start_finish column
     if view_type == "actual" and "pj_p_4225_construction_start_finish" not in milestone_columns:
@@ -348,6 +354,7 @@ def get_all_sites_gantt(
             milestones, forecasted_cx_start = compute_milestones_for_site_actual(
                 row, config_db, skipped_keys=skipped_keys,
                 user_expected_days_overrides=user_expected_days_overrides,
+                user_back_days_overrides=user_back_days_overrides,
             )
         else:
             # Forecast view (default): compute forward

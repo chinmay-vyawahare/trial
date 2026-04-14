@@ -26,7 +26,7 @@ from app.services.gantt.milestones import get_milestones
 _BASE_WHERE = (
     "smp_name = 'NTM' "
     "AND COALESCE(TRIM(construction_gc), '') != '' "
-    "AND pj_a_4225_construction_start_finish IS NULL"
+    "AND pj_a_4225_construction_start_finish IS NOT NULL"
 )
 
 

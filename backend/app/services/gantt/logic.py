@@ -319,8 +319,14 @@ def _compute_planned_dates_backward(
         if tail_key not in ms_by_key:
             continue
         ms = ms_by_key[tail_key]
-        expected = 0 if tail_key in skipped else ms["expected_days"]
-        pf = cx_start_date - timedelta(days=offset)
+        # When a tail is admin-skipped, its tail buffer (offset_days) disappears
+        # — the skip removes the pre-CX buffer entirely. The milestone's own
+        # expected_days still propagates up to its parent through the walk
+        # below, so the parent becomes the new right-most anchor at
+        #   parent.pf = cx − skipped_tail.expected_days
+        effective_offset = 0 if tail_key in skipped else offset
+        pf = cx_start_date - timedelta(days=effective_offset)
+        expected = ms["expected_days"]
         ps = pf - timedelta(days=expected) if expected > 0 else pf
         dates[tail_key] = {"ps": ps, "pf": pf}
 
@@ -400,11 +406,46 @@ def _compute_planned_dates_backward(
     return dates
 
 
+def _compute_planned_dates_backward_from_db(
+    cx_start_date: date,
+    milestones: List[Dict],
+    skipped_keys: set | None,
+    user_back_days_overrides: dict | None,
+) -> Dict[str, Dict]:
+    """
+    Fast path for the actual (right-to-left) view.
+
+    Reads each milestone's effective `back_days` from:
+      1. user override (if present)
+      2. ms['back_days']  (the seeded / persisted value on MilestoneDefinition)
+    and anchors the planned finish at `cx_start_date - back_days`.
+
+    Skipped milestones are excluded from the result, matching the slow-path
+    behaviour in `_compute_planned_dates_backward` + the caller's filter.
+    """
+    skipped = skipped_keys or set()
+    overrides = user_back_days_overrides or {}
+    dates: Dict[str, Dict] = {}
+    for ms in milestones:
+        key = ms["key"]
+        if key in skipped:
+            continue
+        bd = overrides.get(key, ms.get("back_days"))
+        if bd is None:
+            continue
+        pf = cx_start_date - timedelta(days=bd)
+        expected = ms.get("expected_days") or 0
+        ps = pf - timedelta(days=expected) if expected > 0 else pf
+        dates[key] = {"ps": ps, "pf": pf}
+    return dates
+
+
 def compute_milestones_for_site_actual(
     row: Dict,
     db: Session,
     skipped_keys: set | None = None,
     user_expected_days_overrides: dict | None = None,
+    user_back_days_overrides: dict | None = None,
 ) -> tuple[List[Dict], Optional[date]]:
     """
     Actual-view milestone computation.
@@ -424,9 +465,40 @@ def compute_milestones_for_site_actual(
     if cx_start_date is None:
         return [], None
 
-    dates = _compute_planned_dates_backward(
-        cx_start_date, milestones_config, prereq_tails, skipped_keys=skipped_keys,
+    # Fast path: read persisted back_days from MilestoneDefinition.back_days
+    # (seeded + maintained by admin mutation hooks) and apply any per-key
+    # user pin from `user_back_days_overrides`.
+    #
+    # Slow path (BFS) is used when:
+    #   - the user has expected_days overrides (those shift ancestors'
+    #     back_days; the persisted column doesn't account for them), or
+    #   - any non-skipped milestone is missing a persisted back_days value
+    #     (fresh install / freshly-added milestone before global persist).
+    has_all_back_days = all(
+        ms.get("back_days") is not None
+        for ms in milestones_config
+        if ms["key"] not in (skipped_keys or set())
     )
+    if has_all_back_days and not user_expected_days_overrides:
+        dates = _compute_planned_dates_backward_from_db(
+            cx_start_date, milestones_config, skipped_keys, user_back_days_overrides,
+        )
+    else:
+        dates = _compute_planned_dates_backward(
+            cx_start_date, milestones_config, prereq_tails, skipped_keys=skipped_keys,
+        )
+        # Apply user back_days pins on top of slow-path output (single-milestone
+        # overrides — they don't propagate to ancestors).
+        if user_back_days_overrides:
+            for k, bd in user_back_days_overrides.items():
+                if k in dates:
+                    pf = cx_start_date - timedelta(days=bd)
+                    expected = next(
+                        (m.get("expected_days") or 0 for m in milestones_config if m["key"] == k),
+                        0,
+                    )
+                    ps = pf - timedelta(days=expected) if expected > 0 else pf
+                    dates[k] = {"ps": ps, "pf": pf}
 
     skipped = skipped_keys or set()
     preceding_map, following_map = _build_dependency_maps(milestones_config, skipped_keys=skipped)

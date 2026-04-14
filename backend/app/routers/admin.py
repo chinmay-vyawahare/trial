@@ -21,6 +21,7 @@ from app.core.database import get_config_db, get_db, STAGING_TABLE
 from app.models.prerequisite import (
     MilestoneDefinition, MilestoneColumn, PrereqTail,
 )
+from app.services.gantt.milestones import persist_global_back_days
 from app.schemas.gantt import (
     MilestoneDefinitionOut,
     MilestoneDefinitionUpdate,
@@ -410,6 +411,7 @@ def create_prerequisite(
     db.flush()
     _, enriched = _recompute_and_persist_dependencies(db)
     _sync_prereq_tails(db)
+    persist_global_back_days(db)
 
     db.commit()
     db.refresh(new_ms)
@@ -485,6 +487,7 @@ def update_prerequisite(
     db.flush()
     _, enriched = _recompute_and_persist_dependencies(db)
     _sync_prereq_tails(db)
+    persist_global_back_days(db)
 
     db.commit()
     db.refresh(row)
@@ -517,6 +520,7 @@ def skip_prerequisite(
     ms.is_skipped = True
     db.flush()
     _recompute_skip_aware_dependencies(db)
+    persist_global_back_days(db)
     db.commit()
     db.refresh(ms)
     return ms
@@ -552,6 +556,7 @@ def unskip_prerequisite(
     ms.is_skipped = False
     db.flush()
     _recompute_skip_aware_dependencies(db)
+    persist_global_back_days(db)
     db.commit()
     return {"detail": f"Un-skipped '{milestone_key}' globally"}
 
@@ -568,6 +573,7 @@ def unskip_all_prerequisites(db: Session = Depends(get_config_db)):
         raise HTTPException(status_code=404, detail="No skipped prerequisites found")
     db.flush()
     _recompute_skip_aware_dependencies(db)
+    persist_global_back_days(db)
     db.commit()
     return {"detail": f"Un-skipped all prerequisites globally, updated {updated} entries"}
 

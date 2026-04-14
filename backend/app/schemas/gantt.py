@@ -157,6 +157,7 @@ class MilestoneDefinitionOut(BaseModel):
     name: str
     sort_order: int
     expected_days: int
+    back_days: Optional[int] = None
     history_expected_days: Optional[int] = None
     start_gap_days: int = 1
     sla_type: str = "default"
@@ -240,6 +241,7 @@ class MilestoneDefinitionCreateOut(BaseModel):
     name: str
     sort_order: int
     expected_days: int
+    back_days: Optional[int] = None
     start_gap_days: int = 1
     task_owner: Optional[str] = None
     phase_type: Optional[str] = None
@@ -393,7 +395,8 @@ class SkipPrerequisiteOut(BaseModel):
 
 class UserExpectedDaysRequest(BaseModel):
     milestone_key: str
-    expected_days: int
+    expected_days: Optional[int] = None
+    back_days: Optional[int] = None
 
 
 class UserExpectedDaysOut(BaseModel):
@@ -402,7 +405,8 @@ class UserExpectedDaysOut(BaseModel):
     id: int
     user_id: str
     milestone_key: str
-    expected_days: int
+    expected_days: Optional[int] = None
+    back_days: Optional[int] = None
 
 
 class UserHistoryExpectedDaysOut(BaseModel):

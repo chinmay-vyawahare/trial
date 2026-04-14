@@ -33,6 +33,7 @@ SEED_MILESTONES = [
         "name": "Entitlement Complete (MS 3710)",
         "sort_order": 1,
         "expected_days": 0,
+        "back_days": 49,
         "depends_on": None,
         "start_gap_days": 1,
         "task_owner": "TMO",
@@ -46,6 +47,7 @@ SEED_MILESTONES = [
         "name": "Pre-NTP Document Received",
         "sort_order": 2,
         "expected_days": 2,
+        "back_days": 47,
         "depends_on": "3710",
         "start_gap_days": 0,
         "task_owner": "Proj Ops",
@@ -59,6 +61,7 @@ SEED_MILESTONES = [
         "name": "Site Walk Performed",
         "sort_order": 3,
         "expected_days": 7,
+        "back_days": 40,
         "depends_on": "1310",
         "start_gap_days": 1,
         "task_owner": "CM",
@@ -72,6 +75,7 @@ SEED_MILESTONES = [
         "name": "Ready for Scoping (MS 1323)",
         "sort_order": 4,
         "expected_days": 3,
+        "back_days": 37,
         "depends_on": "site_walk",
         "start_gap_days": 1,
         "task_owner": "SE-CoE",
@@ -85,6 +89,7 @@ SEED_MILESTONES = [
         "name": "Scoping Validated by GC (MS 1327)",
         "sort_order": 5,
         "expected_days": 7,
+        "back_days": 30,
         "depends_on": "1323",
         "start_gap_days": 1,
         "task_owner": "SE-CoE",
@@ -104,6 +109,7 @@ SEED_MILESTONES = [
         "name": "BOM in BAT (MS 3850)",
         "sort_order": 6,
         "expected_days": 0,      # duration derived at runtime: max(expected_days of predecessors)
+        "back_days": 30,
         "depends_on": json.dumps(["3710", "1327"]),
         "start_gap_days": 1,
         "task_owner": "TMO",
@@ -117,6 +123,7 @@ SEED_MILESTONES = [
         "name": "Quote Submitted to Customer",
         "sort_order": 7,
         "expected_days": 7,
+        "back_days": 21,
         "depends_on": "1327",
         "start_gap_days": 1,
         "task_owner": "PM",
@@ -130,6 +137,7 @@ SEED_MILESTONES = [
         "name": "BOM Received in AIMS (MS 3875)",
         "sort_order": 8,
         "expected_days": 21,
+        "back_days": 9,
         "depends_on": "3850",
         "start_gap_days": 1,
         "task_owner": "TMO",
@@ -143,6 +151,7 @@ SEED_MILESTONES = [
         "name": "CPO Available",
         "sort_order": 9,
         "expected_days": 14,
+        "back_days": 7,
         "depends_on": "quote",
         "start_gap_days": 1,
         "task_owner": "TMO",
@@ -156,6 +165,7 @@ SEED_MILESTONES = [
         "name": "SPO Issued",
         "sort_order": 10,
         "expected_days": 2,
+        "back_days": 5,
         "depends_on": "cpo",
         "start_gap_days": 1,
         "task_owner": "PDM",
@@ -169,6 +179,7 @@ SEED_MILESTONES = [
         "name": "Steel Received (If applicable)",
         "sort_order": 11,
         "expected_days": 14,
+        "back_days": 7,
         "depends_on": "1327",
         "start_gap_days": 1,
         "task_owner": "GC",
@@ -182,6 +193,7 @@ SEED_MILESTONES = [
         "name": "Material Pickup by GC (MS 3925)",
         "sort_order": 12,
         "expected_days": 5,
+        "back_days": 4,
         "depends_on": "3875",
         "start_gap_days": 1,
         "task_owner": "GC",
@@ -195,6 +207,7 @@ SEED_MILESTONES = [
         "name": "NTP Received",
         "sort_order": 13,
         "expected_days": 7,
+        "back_days": 7,
         "depends_on": "1327",
         "start_gap_days": 1,
         "task_owner": "TMO",
@@ -208,6 +221,7 @@ SEED_MILESTONES = [
         "name": "Access Confirmation",
         "sort_order": 14,
         "expected_days": 7,
+        "back_days": 7,
         "depends_on": "1327",
         "start_gap_days": 1,
         "task_owner": "CM",
@@ -697,6 +711,22 @@ def init_milestone_data():
                 db.add(MilestoneDefinition(**ms_data))
             db.commit()
             logger.info("Seeded %d milestone definitions.", len(SEED_MILESTONES))
+        else:
+            # Sync back_days onto existing rows so the right-to-left actual view
+            # has its canonical values without needing a re-seed.
+            updated = 0
+            for ms_data in SEED_MILESTONES:
+                row = (
+                    db.query(MilestoneDefinition)
+                    .filter(MilestoneDefinition.key == ms_data["key"])
+                    .first()
+                )
+                if row and row.back_days != ms_data.get("back_days"):
+                    row.back_days = ms_data.get("back_days")
+                    updated += 1
+            if updated:
+                db.commit()
+                logger.info("Synced back_days on %d milestone definitions.", updated)
 
         if db.query(MilestoneColumn).count() == 0:
             for col_data in SEED_MILESTONE_COLUMNS:

@@ -111,6 +111,7 @@ def get_milestones(db: Session) -> list[dict]:
             "name": r.name,
             "sort_order": r.sort_order,
             "expected_days": r.expected_days,
+            "back_days": r.back_days,
             "depends_on": _parse_json_or_str(r.depends_on),
             "start_gap_days": r.start_gap_days if r.start_gap_days is not None else 1,
             "task_owner": r.task_owner,
@@ -133,7 +134,25 @@ def get_user_expected_days_overrides(db: Session, user_id: str) -> dict[str, int
         .filter(UserExpectedDays.user_id == user_id)
         .all()
     )
-    return {r.milestone_key: r.expected_days for r in rows}
+    return {r.milestone_key: r.expected_days for r in rows if r.expected_days is not None}
+
+
+def get_user_back_days_overrides(db: Session, user_id: str) -> dict[str, int]:
+    """
+    Return a {milestone_key: back_days} map of user-level back_days overrides.
+
+    Used by the actual (right-to-left) view to anchor each milestone's planned
+    finish at `cx_start - back_days`. An empty dict means: fall back to the
+    global back_days persisted on MilestoneDefinition.
+    """
+    if not user_id:
+        return {}
+    rows = (
+        db.query(UserExpectedDays)
+        .filter(UserExpectedDays.user_id == user_id)
+        .all()
+    )
+    return {r.milestone_key: r.back_days for r in rows if r.back_days is not None}
 
 
 def get_history_expected_days_overrides(db: Session) -> dict[str, int]:
@@ -229,6 +248,60 @@ def apply_user_expected_days(milestones: list[dict], overrides: dict[str, int]) 
             ms = {**ms, "expected_days": overrides[ms["key"]]}
         result.append(ms)
     return result
+
+
+# ----------------------------------------------------------------
+# back_days recomputation helpers
+# ----------------------------------------------------------------
+
+def recompute_back_days(
+    db: Session,
+    skipped_keys: set | None = None,
+    user_expected_days_overrides: dict | None = None,
+) -> dict[str, int]:
+    """
+    Run the right-to-left dependency walk once against a sentinel CX start
+    date and return a {milestone_key: back_days} map.
+
+    Reuses the same backward algorithm used per-request in the actual view
+    (`_compute_planned_dates_backward` in gantt.logic), so values stay
+    consistent between the persisted snapshot and an ad-hoc recompute.
+    """
+    # Local import to avoid circular dependency: logic.py imports from milestones.py.
+    from datetime import date as _date
+    from .logic import _compute_planned_dates_backward
+
+    sentinel_cx = _date(2100, 1, 1)
+    milestones = get_milestones(db)
+    milestones = apply_user_expected_days(milestones, user_expected_days_overrides or {})
+    tails = get_prereq_tails(db)
+
+    dates = _compute_planned_dates_backward(
+        sentinel_cx, milestones, tails, skipped_keys=skipped_keys,
+    )
+    return {key: (sentinel_cx - d["pf"]).days for key, d in dates.items()}
+
+
+def persist_global_back_days(db: Session) -> None:
+    """
+    Recompute back_days using the GLOBAL skip set + global expected_days
+    (no per-user overrides) and persist onto each MilestoneDefinition row.
+
+    Call after any admin mutation that shifts the chain: is_skipped flip,
+    expected_days edit, depends_on edit, or milestone create/delete.
+    """
+    global_skipped = {
+        r.key for r in db.query(MilestoneDefinition.key, MilestoneDefinition.is_skipped)
+        .filter(MilestoneDefinition.is_skipped == True).all()
+    }
+    back_days_map = recompute_back_days(db, skipped_keys=global_skipped)
+
+    rows = db.query(MilestoneDefinition).all()
+    for r in rows:
+        new_val = back_days_map.get(r.key)
+        if r.back_days != new_val:
+            r.back_days = new_val
+    db.flush()
 
 
 def get_prereq_tails(db: Session) -> list[dict]:
