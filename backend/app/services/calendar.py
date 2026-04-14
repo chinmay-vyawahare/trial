@@ -212,6 +212,7 @@ def get_calendar_history_sites(
     user_id: str | None = None,
     status: str | None = None,
     strict_pace_apply: bool = False,
+    view_type: str = "forecast",
 ):
     """
     Optimised calendar view — history-based SLA.
@@ -225,13 +226,14 @@ def get_calendar_history_sites(
     from app.services.gantt.milestones import save_user_history_expected_days
     from sqlalchemy import func as sa_func
 
-    # Compute history-based expected_days
+    # Compute history-based expected_days (or back_days when view_type="actual")
     history_results = compute_history_expected_days(
         db, config_db, sla_date_from, sla_date_to,
         region=region, market=market, site_id=site_id,
         vendor=vendor, area=area,
         plan_type_include=plan_type_include,
         regional_dev_initiatives=regional_dev_initiatives,
+        view_type=view_type,
     )
     history_overrides = {}
     for item in history_results:
@@ -241,7 +243,10 @@ def get_calendar_history_sites(
 
     # Save per-user history expected days
     if user_id:
-        save_user_history_expected_days(config_db, user_id, history_results, sla_date_from, sla_date_to)
+        save_user_history_expected_days(
+            config_db, user_id, history_results, sla_date_from, sla_date_to,
+            view_type=view_type,
+        )
 
     last_updated_row = None
     if user_id:

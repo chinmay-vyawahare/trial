@@ -179,6 +179,7 @@ def _get_sites_history(
         vendor=vendor, area=area,
         plan_type_include=plan_type_include,
         regional_dev_initiatives=regional_dev_initiatives,
+        view_type=view_type,
     )
     history_overrides = {}
     for item in history_results:
@@ -186,7 +187,10 @@ def _get_sites_history(
             history_overrides[item["milestone_key"]] = item["history_expected_days"]
     # Save per-user history expected days
     if user_id:
-        save_user_history_expected_days(config_db, user_id, history_results, date_from, date_to)
+        save_user_history_expected_days(
+            config_db, user_id, history_results, date_from, date_to,
+            view_type=view_type,
+        )
     return _get_sites(
         db, config_db,
         region=region, market=market, site_id=site_id, vendor=vendor, area=area,

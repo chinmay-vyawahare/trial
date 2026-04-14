@@ -251,6 +251,7 @@ class UserHistoryExpectedDays(ConfigBase):
     milestone_key = Column(String(50), nullable=False)
     milestone_name = Column(String(200), nullable=True)
     history_expected_days = Column(Integer, nullable=False)
+    back_days = Column(Integer, nullable=True)    # right-to-left: median(cx_actual - ms_actual)
     date_from = Column(DateTime, nullable=True)   # date range used for computation
     date_to = Column(DateTime, nullable=True)
     sample_count = Column(Integer, nullable=True, default=0)

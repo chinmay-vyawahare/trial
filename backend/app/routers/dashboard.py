@@ -154,6 +154,7 @@ def sla_dashboard_summary(
         vendor=vendor, area=area,
         plan_type_include=plan_type_include,
         regional_dev_initiatives=regional_dev_initiatives,
+        view_type=view_type,
     )
 
     # Build overrides dict from median history
@@ -164,7 +165,7 @@ def sla_dashboard_summary(
 
     # Save per-user history expected days
     if user_id:
-        save_user_history_expected_days(config_db, user_id, history_results, df, dt)
+        save_user_history_expected_days(config_db, user_id, history_results, df, dt, view_type=view_type)
 
     # Get dashboard summary using history-based SLA overrides and gantt filters
     summary = get_dashboard_summary(
@@ -292,6 +293,7 @@ def weekly_status_history(
         vendor=vendor, area=area,
         plan_type_include=plan_type_include,
         regional_dev_initiatives=regional_dev_initiatives,
+        view_type=view_type,
     )
 
     history_overrides = {}
@@ -301,7 +303,7 @@ def weekly_status_history(
 
     # Save per-user history expected days
     if user_id:
-        save_user_history_expected_days(config_db, user_id, history_results, df, dt)
+        save_user_history_expected_days(config_db, user_id, history_results, df, dt, view_type=view_type)
 
     weeks = get_weekly_status_counts(
         db,

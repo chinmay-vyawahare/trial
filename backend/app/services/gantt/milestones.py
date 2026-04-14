@@ -185,20 +185,46 @@ def get_history_expected_days_by_user(db: Session, user_id: str) -> dict[str, in
     return {r.milestone_key: r.history_expected_days for r in rows}
 
 
+def get_user_history_back_days_overrides(db: Session, user_id: str) -> dict[str, int]:
+    """
+    Return a {milestone_key: back_days} map from user_history_expected_days.
+
+    Used by the actual (right-to-left) view to anchor each milestone's
+    planned finish at `cx_actual - back_days` from the historical sample.
+    """
+    if not user_id:
+        return {}
+    rows = (
+        db.query(UserHistoryExpectedDays)
+        .filter(UserHistoryExpectedDays.user_id == user_id)
+        .all()
+    )
+    return {r.milestone_key: r.back_days for r in rows if r.back_days is not None}
+
+
 def save_user_history_expected_days(
     db: Session,
     user_id: str,
     history_results: list[dict],
     date_from=None,
     date_to=None,
+    view_type: str = "forecast",
 ) -> None:
     """
-    Save computed history_expected_days for a user.
+    Save computed history values for a user.
 
-    Upserts each milestone's history_expected_days into user_history_expected_days.
+    Upserts each milestone into user_history_expected_days. The destination
+    column depends on view_type:
+      - "forecast" → history_expected_days  (left-to-right median)
+      - "actual"   → back_days              (right-to-left median, cx_actual - ms_actual)
+
+    Both columns can coexist per (user, milestone) so successive forecast/actual
+    runs do not overwrite each other.
     """
     if not user_id:
         return
+
+    is_actual = view_type == "actual"
 
     for item in history_results:
         computed = item.get("history_expected_days")
@@ -213,9 +239,12 @@ def save_user_history_expected_days(
             .first()
         )
         if existing:
-            existing.history_expected_days = effective
             existing.milestone_name = item.get("milestone_name")
             existing.sample_count = item.get("sample_count", 0)
+            if is_actual:
+                existing.back_days = computed   # may be None for text milestones
+            else:
+                existing.history_expected_days = effective
             if date_from:
                 existing.date_from = date_from
             if date_to:
@@ -225,7 +254,8 @@ def save_user_history_expected_days(
                 user_id=user_id,
                 milestone_key=item["milestone_key"],
                 milestone_name=item.get("milestone_name"),
-                history_expected_days=effective,
+                history_expected_days=(0 if is_actual else effective),
+                back_days=(computed if is_actual else None),
                 sample_count=item.get("sample_count", 0),
                 date_from=date_from,
                 date_to=date_to,

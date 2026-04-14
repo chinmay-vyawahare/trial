@@ -851,27 +851,39 @@ def get_history_gantt(
     from app.services.sla_history import compute_history_expected_days
     from app.models.prerequisite import UserHistoryExpectedDays
 
-    # Compute history-based expected_days from actual dates
+    # Compute history-based duration from actual dates.
+    # When view_type="actual" the function returns historical back_days
+    # (cx_actual - ms_actual) under the same `history_expected_days` key.
     history_results = compute_history_expected_days(
         db, config_db, date_from, date_to,
         region=region, market=market, site_id=site_id,
         vendor=vendor, area=area,
         plan_type_include=plan_type_include,
         regional_dev_initiatives=regional_dev_initiatives,
+        view_type=view_type,
     )
 
     # Build overrides dict.
-    # In history mode, ALL milestones use computed history values.
-    # If no historical data exists (None), use 0 — never fall back to defaults.
-    history_overrides = {}
+    # In forecast mode every milestone falls back to 0 when no history exists
+    # (never fall back to defaults). In actual mode, only milestones with
+    # computed back_days override; rest fall through to the persisted
+    # MilestoneDefinition.back_days fast-path.
+    is_actual = view_type == "actual"
+    overrides: dict[str, int] = {}
     for item in history_results:
         computed = item["history_expected_days"]
-        effective = computed if computed is not None else 0
-        history_overrides[item["milestone_key"]] = effective
+        if is_actual:
+            if computed is not None:
+                overrides[item["milestone_key"]] = computed
+        else:
+            overrides[item["milestone_key"]] = computed if computed is not None else 0
 
-    # Save per-user history expected days
+    # Save per-user history values into the right column based on view_type.
     if user_id:
-        save_user_history_expected_days(config_db, user_id, history_results, date_from, date_to)
+        save_user_history_expected_days(
+            config_db, user_id, history_results, date_from, date_to,
+            view_type=view_type,
+        )
 
     # Get the latest updated_at timestamp for this user's history SLA
     from sqlalchemy import func as sa_func
@@ -898,7 +910,8 @@ def get_history_gantt(
         limit=limit,
         offset=offset,
         skipped_keys=skipped_keys,
-        user_expected_days_overrides=history_overrides,
+        user_expected_days_overrides=overrides if not is_actual else None,
+        user_back_days_overrides=overrides if is_actual else None,
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
         user_id=user_id,

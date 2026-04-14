@@ -417,6 +417,7 @@ class UserHistoryExpectedDaysOut(BaseModel):
     milestone_key: str
     milestone_name: Optional[str] = None
     history_expected_days: int
+    back_days: Optional[int] = None
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
 
