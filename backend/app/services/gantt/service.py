@@ -336,6 +336,7 @@ def get_all_sites_gantt(
         regional_dev_initiatives=regional_dev_initiatives,
         limit=limit,
         offset=offset,
+        view_type=view_type
     )
     result = db.execute(query, params)
     rows = [dict(r._mapping) for r in result]

@@ -18,12 +18,17 @@ def build_gantt_query(
     regional_dev_initiatives: str | None = None,
     limit: int = None,
     offset: int = None,
+    view_type: str = "forecast",
 ):
     where_clauses = [
         "smp_name = 'NTM'",
         "COALESCE(TRIM(construction_gc), '') != ''",
         "pj_a_4225_construction_start_finish IS NULL",
     ]
+    
+    if view_type == "actual":
+        where_clauses.append("pj_p_4225_construction_start_finish IS NOT NULL")
+        
     params = {}
 
     # --- Gate check: por_plan_type IN (include selected values) ---
