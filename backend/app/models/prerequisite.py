@@ -323,6 +323,36 @@ class MacroUploadedData(ConfigBase):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class MacroMilestoneUploadedData(ConfigBase):
+    """
+    Uploaded per-milestone actual dates for Macro sites.
+
+    Each row = one (user_id, site_id, project_id) triple. The dynamic
+    `milestone_actuals` JSON payload stores one entry per provided milestone:
+        {
+          "3710":  "2026-01-06",         # date-typed milestone
+          "cpo":   "SO-12345",           # text milestone
+          "steel": {"date": "2026-02-19", "status": "A"},  # with_status milestone
+          ...
+        }
+
+    Storing the payload as JSON (rather than one column per milestone) lets
+    admins add or rename prerequisites without a schema migration.
+    """
+    __tablename__ = "macro_milestone_uploaded_data"
+    __table_args__ = {"schema": _S}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    site_id = Column(String(100), nullable=False, index=True)
+    project_id = Column(String(200), nullable=True)
+    region = Column(String(200), nullable=True)
+    market = Column(String(200), nullable=True)
+    milestone_actuals = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class ChatHistory(ConfigBase):
     """
     Per-user, per-thread chat history for the AI assistant.

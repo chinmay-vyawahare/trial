@@ -2,7 +2,7 @@ import math
 from collections import defaultdict
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
-from .queries import build_gantt_query
+from .queries import build_gantt_query, build_light_cx_query
 from .logic import compute_milestones_for_site, compute_milestones_for_site_actual, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, get_milestone_range_for_status, is_site_blocked
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides, get_history_expected_days_by_user, save_user_history_expected_days
 from .utils import parse_date
@@ -323,6 +323,29 @@ def get_all_sites_gantt(
     if view_type == "actual" and "pj_p_4225_construction_start_finish" not in milestone_columns:
         milestone_columns = list(milestone_columns) + ["pj_p_4225_construction_start_finish"]
 
+    # Actual view uses a two-phase flow (light cx → constraints → heavy fetch)
+    # so milestone dates are computed against the settled (pace-adjusted) CX.
+    if view_type == "actual":
+        return _run_actual_two_phase(
+            db=db, config_db=config_db,
+            milestones_config=milestones_config,
+            planned_start_col=planned_start_col,
+            milestone_columns=milestone_columns,
+            ms_thresholds=ms_thresholds,
+            region=region, market=market, site_id=site_id,
+            vendor=vendor, area=area,
+            plan_type_include=plan_type_include,
+            regional_dev_initiatives=regional_dev_initiatives,
+            limit=limit, offset=offset,
+            skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_expected_days_overrides,
+            user_back_days_overrides=user_back_days_overrides,
+            consider_vendor_capacity=consider_vendor_capacity,
+            pace_constraint_flag=pace_constraint_flag,
+            strict_pace_apply=strict_pace_apply,
+            user_id=user_id,
+        )
+
     # Query staging data from staging DB
     query, params = build_gantt_query(
         milestone_columns=milestone_columns,
@@ -348,32 +371,23 @@ def get_all_sites_gantt(
         total_count = rows[0]["total_count"]
         count = len(rows)
 
+    # Forecast-only path beyond this point — actual view returned above.
+    today = date.today()
+
     for row in rows:
-        if view_type == "actual":
-            if not row.get("pj_p_4225_construction_start_finish"):
-                continue
-            milestones, forecasted_cx_start = compute_milestones_for_site_actual(
-                row, config_db, skipped_keys=skipped_keys,
-                user_expected_days_overrides=user_expected_days_overrides,
-                user_back_days_overrides=user_back_days_overrides,
-            )
-        else:
-            # Forecast view (default): compute forward
-            milestones, forecasted_cx_start = compute_milestones_for_site(
-                row, config_db, skipped_keys=skipped_keys,
-                user_expected_days_overrides=user_expected_days_overrides,
-            )
+        milestones, forecasted_cx_start = compute_milestones_for_site(
+            row, config_db, skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_expected_days_overrides,
+        )
         if not milestones:
             continue
 
-        # Exclude virtual milestones from status counting (skipped are already omitted)
         countable = [m for m in milestones if not m.get("is_virtual", False)]
         total = len(countable)
         on_track_count = sum(1 for m in countable if m["status"] == "On Track")
         in_progress_count = sum(1 for m in countable if m["status"] == "In Progress")
         delayed_count = sum(1 for m in countable if m["status"] == "Delayed")
 
-        # Check if site is blocked (delay comments or delay code present)
         blocked = is_site_blocked(row)
         if blocked:
             overall = "Blocked"
@@ -382,44 +396,10 @@ def get_all_sites_gantt(
             overall = compute_overall_status(on_track_count, total, ms_thresholds)
             on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
 
-        # ── Reschedule logic when forecasted_cx_start is in the past (forecast view) ──
+        # Forecast reschedule: if cx is in the past, bump to next week and annotate.
         note = None
-        suggested_forecast_cx_start = None
-        suggested_comment = None
-        today = date.today()
-
-        if view_type == "actual" and forecasted_cx_start:
-            # Actual view: find milestones without actual date (delayed/pending)
-            missing = [
-                m for m in countable
-                if not m.get("actual_finish")
-            ]
-            if missing:
-                # Pick the milestone with max expected_days among those missing
-                blocker = max(missing, key=lambda m: m.get("expected_days", 0))
-                blocker_expected = blocker.get("expected_days", 0)
-
-                # Suggested date = today + blocker's expected_days
-                temp_suggested_date = today + timedelta(days=blocker_expected)
-
-                # Only suggest if:
-                #   1. Suggested date is in the future (after today)
-                #   2. Suggested date exceeds the current forecasted_cx_start
-                #      (i.e., blocker pushes past the planned CX start → real delay)
-                if temp_suggested_date > today and temp_suggested_date > forecasted_cx_start:
-                    suggested_forecast_cx_start = temp_suggested_date
-                    suggested_comment = f"Suggested {suggested_forecast_cx_start} due to delay in {blocker['name']}"
-                else:
-                    # Buffer absorbed → no suggestion
-                    suggested_forecast_cx_start = None
-                    suggested_comment = None
-
-        if view_type != "actual" and forecasted_cx_start and forecasted_cx_start < today:
-            # Forecast view reschedule logic
-            missing = [
-                m for m in countable
-                if not m.get("actual_finish")
-            ]
+        if forecasted_cx_start and forecasted_cx_start < today:
+            missing = [m for m in countable if not m.get("actual_finish")]
             if not missing:
                 forecasted_cx_start = today + timedelta(days=7)
                 note = "Ready for schedule"
@@ -458,12 +438,6 @@ def get_all_sites_gantt(
             },
         }
 
-        if view_type == "actual":
-            site_dict["suggested_forecast_cx_start"] = (
-                str(suggested_forecast_cx_start) if suggested_forecast_cx_start else None
-            )
-            site_dict["suggested_comment"] = suggested_comment
-
         sites.append(site_dict)
 
     # Apply vendor capacity constraints if requested
@@ -491,6 +465,200 @@ def get_all_sites_gantt(
     )
 
     return sites, total_count, count
+
+
+def _run_actual_two_phase(
+    *,
+    db: Session,
+    config_db: Session,
+    milestones_config: list,
+    planned_start_col: str,
+    milestone_columns: list[str],
+    ms_thresholds: list,
+    region, market, site_id, vendor, area,
+    plan_type_include, regional_dev_initiatives,
+    limit, offset,
+    skipped_keys,
+    user_expected_days_overrides,
+    user_back_days_overrides,
+    consider_vendor_capacity,
+    pace_constraint_flag,
+    strict_pace_apply,
+    user_id,
+):
+    """
+    Two-phase flow for view_type="actual":
+
+      1. Light query → (site_id, vendor, market, area, region, forecasted_cx)
+      2. Apply vendor capacity + pace constraint on the light list (these
+         shift `forecasted_cx_start_date` for overflow sites).
+      3. Sort + paginate the settled list.
+      4. Heavy query restricted to the paginated site_ids.
+      5. Compute milestones per site with cx_override = settled CX.
+
+    This ensures milestone planned_finish / status / delay_days are always
+    consistent with the pace-adjusted CX, and avoids running the expensive
+    milestone walk for sites that won't be displayed.
+    """
+    # --- Stage 1: light query ---
+    light_q, light_params = build_light_cx_query(
+        region=region, market=market, site_id=site_id,
+        vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+    )
+    light_rows = db.execute(light_q, light_params).fetchall()
+
+    light_sites: list[dict] = []
+    for r in light_rows:
+        m = r._mapping
+        light_sites.append({
+            "site_id": m["s_site_id"],
+            "project_id": m.get("pj_project_id") or "",
+            "vendor_name": m.get("vendor_name") or "",
+            "market": m.get("market") or "",
+            "area": m.get("area") or "",
+            "region": m.get("region") or "",
+            "forecasted_cx_start_date": (
+                str(m["forecasted_cx_start_date"]) if m.get("forecasted_cx_start_date") else None
+            ),
+        })
+
+    # --- Stage 2: constraints ---
+    if consider_vendor_capacity:
+        light_sites = _apply_vendor_capacity(light_sites, db)
+    else:
+        for s in light_sites:
+            s["excluded_due_to_crew_shortage"] = False
+
+    if (pace_constraint_flag or strict_pace_apply) and user_id:
+        light_sites = _apply_pace_constraint(
+            light_sites, config_db, pace_constraint_flag, user_id,
+            strict_pace_apply=strict_pace_apply,
+        )
+    else:
+        for s in light_sites:
+            s["excluded_due_to_pace_constraint"] = False
+
+    if user_id:
+        light_sites = _apply_uploaded_overrides(light_sites, config_db, user_id)
+
+    total_count = len(light_sites)
+
+    # --- Stage 3: sort + paginate ---
+    light_sites.sort(
+        key=lambda s: s.get("forecasted_cx_start_date") or "",
+        reverse=True,
+    )
+    start = offset or 0
+    end = start + limit if limit else len(light_sites)
+    page = light_sites[start:end]
+
+    page_ids = [s["site_id"] for s in page]
+    if not page_ids:
+        return [], total_count, 0
+
+    # --- Stage 4: heavy query restricted to page ---
+    heavy_q, heavy_params = build_gantt_query(
+        milestone_columns=milestone_columns,
+        planned_start_column=planned_start_col,
+        region=region, market=market, site_id=site_id,
+        vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
+        view_type="actual",
+        site_id_filter=page_ids,
+    )
+    heavy_rows = db.execute(heavy_q, heavy_params)
+    row_by_id = {dict(r._mapping)["s_site_id"]: dict(r._mapping) for r in heavy_rows}
+
+    today = date.today()
+
+    # --- Stage 5: milestone compute per page site against SETTLED cx ---
+    sites_out: list[dict] = []
+    for light in page:
+        row = row_by_id.get(light["site_id"])
+        if row is None:
+            continue
+
+        settled_cx = parse_date(light["forecasted_cx_start_date"])
+        if settled_cx is None:
+            continue
+
+        milestones, forecasted_cx_start = compute_milestones_for_site_actual(
+            row, config_db,
+            skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_expected_days_overrides,
+            user_back_days_overrides=user_back_days_overrides,
+            cx_override=settled_cx,
+        )
+        if not milestones:
+            continue
+
+        countable = [m for m in milestones if not m.get("is_virtual", False)]
+        total = len(countable)
+        on_track_count = sum(1 for m in countable if m["status"] == "On Track")
+        in_progress_count = sum(1 for m in countable if m["status"] == "In Progress")
+        delayed_count = sum(1 for m in countable if m["status"] == "Delayed")
+
+        blocked = is_site_blocked(row)
+        if blocked:
+            overall = "Blocked"
+            on_track_pct = 0
+        else:
+            overall = compute_overall_status(on_track_count, total, ms_thresholds)
+            on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
+
+        # Reschedule suggestion (actual view)
+        suggested_forecast_cx_start = None
+        suggested_comment = None
+        missing = [m for m in countable if not m.get("actual_finish")]
+        if missing:
+            blocker = max(missing, key=lambda m: m.get("expected_days", 0))
+            blocker_expected = blocker.get("expected_days", 0)
+            temp = today + timedelta(days=blocker_expected)
+            if temp > today and temp > settled_cx:
+                suggested_forecast_cx_start = temp
+                suggested_comment = f"Suggested {suggested_forecast_cx_start} due to delay in {blocker['name']}"
+
+        site_dict = {
+            "vendor_name": row.get("construction_gc") or "",
+            "site_id": row["s_site_id"],
+            "project_id": row["pj_project_id"],
+            "project_name": row["pj_project_name"],
+            "market": row["m_market"],
+            "area": row.get("m_area") or "",
+            "region": row.get("region") or "",
+            "delay_comments": row.get("pj_construction_start_delay_comments") or "",
+            "delay_code": row.get("pj_construction_complete_delay_code") or "",
+            "forecasted_cx_start_date": light["forecasted_cx_start_date"],
+            "note": light.get("note"),
+            "milestones": [
+                {k: v for k, v in m.items() if k != "is_virtual"}
+                for m in milestones
+            ],
+            "overall_status": overall,
+            "on_track_pct": on_track_pct,
+            "milestone_status_summary": {
+                "total": total,
+                "on_track": on_track_count,
+                "in_progress": in_progress_count,
+                "delayed": delayed_count,
+            },
+            "excluded_due_to_crew_shortage": bool(light.get("excluded_due_to_crew_shortage")),
+            "excluded_due_to_pace_constraint": bool(light.get("excluded_due_to_pace_constraint")),
+            "suggested_forecast_cx_start": (
+                str(suggested_forecast_cx_start) if suggested_forecast_cx_start else None
+            ),
+            "suggested_comment": suggested_comment,
+        }
+        if "exclude_reason" in light:
+            site_dict["exclude_reason"] = light["exclude_reason"]
+
+        sites_out.append(site_dict)
+
+    return sites_out, total_count, len(sites_out)
+
 
 def _site_status(row, milestones_config, planned_start_col, ms_thresholds, skipped_keys, user_expected_days_overrides=None):
     """Compute overall status for one row — only dates, no full milestone dicts."""

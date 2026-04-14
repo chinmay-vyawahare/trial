@@ -19,16 +19,17 @@ def build_gantt_query(
     limit: int = None,
     offset: int = None,
     view_type: str = "forecast",
+    site_id_filter: list[str] | None = None,
 ):
     where_clauses = [
         "smp_name = 'NTM'",
         "COALESCE(TRIM(construction_gc), '') != ''",
         "pj_a_4225_construction_start_finish IS NULL",
     ]
-    
+
     if view_type == "actual":
         where_clauses.append("pj_p_4225_construction_start_finish IS NOT NULL")
-        
+
     params = {}
 
     # --- Gate check: por_plan_type IN (include selected values) ---
@@ -48,6 +49,13 @@ def build_gantt_query(
         region=region, market=market, area=area,
         site_id=site_id, vendor=vendor,
     )
+
+    # Explicit site_id restriction for two-phase actual flow (Stage 4 heavy fetch).
+    if site_id_filter:
+        placeholders = ", ".join(f":sid_{i}" for i in range(len(site_id_filter)))
+        where_clauses.append(f"s_site_id IN ({placeholders})")
+        for i, sid in enumerate(site_id_filter):
+            params[f"sid_{i}"] = sid
 
     where_sql = " AND ".join(where_clauses)
 
@@ -97,6 +105,67 @@ def build_gantt_query(
     {pagination_sql}
     """
     )
+    return query, params
+
+
+def build_light_cx_query(
+    region: list[str] | None = None,
+    market: list[str] | None = None,
+    site_id: str = None,
+    vendor: str = None,
+    area: list[str] | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
+):
+    """
+    Lightweight query for the actual-view two-phase flow: returns only the
+    columns needed to run vendor/pace constraints (site_id, vendor, market,
+    area, region, forecasted_cx_start_date) without pulling milestone dates.
+
+    Applies the SAME filters as build_gantt_query(view_type="actual"), so the
+    survivor list is a valid input to the heavy query in stage 4.
+    """
+    where_clauses = [
+        "smp_name = 'NTM'",
+        "COALESCE(TRIM(construction_gc), '') != ''",
+        "pj_a_4225_construction_start_finish IS NULL",
+        "pj_p_4225_construction_start_finish IS NOT NULL",
+    ]
+    params = {}
+
+    if plan_type_include:
+        placeholders = ", ".join(f":pti_{i}" for i in range(len(plan_type_include)))
+        where_clauses.append(f"COALESCE(por_plan_type, '') IN ({placeholders})")
+        for i, val in enumerate(plan_type_include):
+            params[f"pti_{i}"] = val
+
+    if regional_dev_initiatives:
+        where_clauses.append("COALESCE(por_regional_dev_initiatives, '') ILIKE :rdi_pattern")
+        params["rdi_pattern"] = f"%{regional_dev_initiatives}%"
+
+    apply_geo_filters(
+        where_clauses, params,
+        region=region, market=market, area=area,
+        site_id=site_id, vendor=vendor,
+    )
+
+    where_sql = " AND ".join(where_clauses)
+
+    # Actual view anchors to pj_p_4225 (the planned CX start), not the root
+    # milestone column used in forecast view.
+    query = text(f"""
+        SELECT DISTINCT ON (pj_project_id, s_site_id)
+            s_site_id,
+            pj_project_id,
+            construction_gc AS vendor_name,
+            m_market AS market,
+            m_area AS area,
+            region,
+            pj_p_4225_construction_start_finish::date AS forecasted_cx_start_date
+        FROM {STAGING_TABLE}
+        WHERE {where_sql}
+        ORDER BY pj_project_id, s_site_id
+    """)
     return query, params
 
 

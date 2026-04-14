@@ -446,14 +446,17 @@ def compute_milestones_for_site_actual(
     skipped_keys: set | None = None,
     user_expected_days_overrides: dict | None = None,
     user_back_days_overrides: dict | None = None,
+    cx_override: date | None = None,
 ) -> tuple[List[Dict], Optional[date]]:
     """
     Actual-view milestone computation.
 
-    Uses pj_p_4225_construction_start_finish as the known CX start date,
-    then works backward through the dependency chain to compute expected
-    (planned) dates for each milestone. Status is determined by comparing
-    actual dates against these backward-computed expected dates.
+    Uses pj_p_4225_construction_start_finish as the known CX start date
+    (or cx_override if passed, so the orchestrator can feed a pace-adjusted
+    CX that already accounts for vendor/pace constraints), then works
+    backward through the dependency chain to compute expected (planned)
+    dates for each milestone. Status is determined by comparing actual
+    dates against these backward-computed expected dates.
     """
     today = date.today()
 
@@ -461,7 +464,7 @@ def compute_milestones_for_site_actual(
     milestones_config = apply_user_expected_days(milestones_config, user_expected_days_overrides or {})
     prereq_tails = get_prereq_tails(db)
 
-    cx_start_date = parse_date(row.get("pj_p_4225_construction_start_finish"))
+    cx_start_date = cx_override or parse_date(row.get("pj_p_4225_construction_start_finish"))
     if cx_start_date is None:
         return [], None
 
