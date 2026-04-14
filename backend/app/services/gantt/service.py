@@ -391,13 +391,14 @@ def get_all_sites_gantt(
                 blocker = max(missing, key=lambda m: m.get("expected_days", 0))
                 blocker_expected = blocker.get("expected_days", 0)
 
-                # Calculate new suggested date
-                temp_suggested_date = forecasted_cx_start + timedelta(days=blocker_expected)
+                # Suggested date = today + blocker's expected_days
+                temp_suggested_date = today + timedelta(days=blocker_expected)
 
-                # 🔴 Critical condition: check if buffer is consumed
-                delay_days = (temp_suggested_date - forecasted_cx_start).days
-
-                if delay_days > 0:
+                # Only suggest if:
+                #   1. Suggested date is in the future (after today)
+                #   2. Suggested date exceeds the current forecasted_cx_start
+                #      (i.e., blocker pushes past the planned CX start → real delay)
+                if temp_suggested_date > today and temp_suggested_date > forecasted_cx_start:
                     suggested_forecast_cx_start = temp_suggested_date
                     suggested_comment = f"Suggested {suggested_forecast_cx_start} due to delay in {blocker['name']}"
                 else:
