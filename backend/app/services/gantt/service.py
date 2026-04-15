@@ -609,17 +609,21 @@ def _run_actual_two_phase(
             overall = compute_overall_status(on_track_count, total, ms_thresholds)
             on_track_pct = round((on_track_count / total * 100), 2) if total > 0 else 0
 
-        # Reschedule suggestion (actual view)
+        # Reschedule suggestion (actual view) — only when the forecasted CX is
+        # in the future AND today + remaining-blocker days would push past it.
+        # If the forecasted date is already past, the site is already late;
+        # no forward-looking suggestion is useful.
         suggested_forecast_cx_start = None
         suggested_comment = None
-        missing = [m for m in countable if not m.get("actual_finish")]
-        if missing:
-            blocker = max(missing, key=lambda m: m.get("expected_days", 0))
-            blocker_expected = blocker.get("expected_days", 0)
-            temp = today + timedelta(days=blocker_expected)
-            if temp > today and temp > settled_cx:
-                suggested_forecast_cx_start = temp
-                suggested_comment = f"Suggested {suggested_forecast_cx_start} due to delay in {blocker['name']}"
+        if settled_cx and settled_cx > today:
+            missing = [m for m in countable if not m.get("actual_finish")]
+            if missing:
+                blocker = max(missing, key=lambda m: m.get("expected_days", 0))
+                blocker_expected = blocker.get("expected_days", 0)
+                temp = today + timedelta(days=blocker_expected)
+                if temp > settled_cx:
+                    suggested_forecast_cx_start = temp
+                    suggested_comment = f"Suggested {suggested_forecast_cx_start} due to delay in {blocker['name']}"
 
         site_dict = {
             "vendor_name": row.get("construction_gc") or "",
