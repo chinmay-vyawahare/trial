@@ -10,7 +10,9 @@ Run:
 """
 from __future__ import annotations
 
+import html as _html
 import json
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -18,6 +20,7 @@ from urllib.parse import urlencode
 
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 # ---------------------------------------------------------------
@@ -54,6 +57,39 @@ st.markdown(
         padding: 10px 14px; margin: 8px 0 18px 0; border-radius: 4px;
         color: #cbd5e1; font-size: 0.9rem;
     }
+    .resp-scroll {
+        display: block; width: 100%; box-sizing: border-box;
+        max-height: 500px; overflow-y: auto; overflow-x: auto;
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 8px; padding: 14px 16px;
+        background: #0d1117;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        margin: 0;
+    }
+    .resp-scroll pre {
+        margin: 0; padding: 0;
+        white-space: pre;
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+        font-size: 0.82rem; line-height: 1.55;
+        tab-size: 2;
+    }
+    .resp-scroll pre, .resp-scroll pre * {
+        font-variant-ligatures: none;
+    }
+    /* JSON syntax colors (tokyo-night-ish) */
+    .j-key    { color: #7dd3fc; }          /* light blue */
+    .j-str    { color: #a3e635; }          /* lime */
+    .j-num    { color: #fbbf24; }          /* amber */
+    .j-bool   { color: #f472b6; font-weight: 600; }  /* pink */
+    .j-null   { color: #94a3b8; font-style: italic; }
+    .j-punct  { color: #64748b; }
+    .resp-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+    .resp-scroll::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.15); border-radius: 5px;
+    }
+    .resp-scroll::-webkit-scrollbar-thumb:hover {
+        background: rgba(255,255,255,0.25);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -87,6 +123,79 @@ HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
 def method_badge(method: str) -> str:
     return f'<span class="method-badge {METHOD_COLORS.get(method, "m-GET")}">{method}</span>'
+
+
+_JSON_TOKEN = re.compile(
+    r'("(?:\\.|[^"\\])*"\s*:)'                    # 1: key with trailing colon
+    r'|("(?:\\.|[^"\\])*")'                        # 2: string
+    r'|\b(true|false)\b'                           # 3: bool
+    r'|\b(null)\b'                                 # 4: null
+    r'|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'         # 5: number
+    r'|([{}\[\],])'                                # 6: punctuation
+)
+
+
+def render_code_html(inner_html: str, height: int = 520) -> None:
+    """Render syntax-highlighted code in a scrollable iframe (preserves \\n)."""
+    doc = f"""
+    <!doctype html><html><head><meta charset="utf-8"><style>
+      html, body {{ margin:0; padding:0; background:#0d1117; }}
+      body {{ font-family: 'SF Mono', Menlo, Consolas, monospace; color:#e5e7eb; }}
+      .wrap {{
+        max-height: 500px; overflow:auto;
+        border:1px solid rgba(255,255,255,0.10); border-radius:8px;
+        padding:14px 16px; background:#0d1117;
+      }}
+      pre {{
+        margin:0; padding:0; white-space:pre;
+        font-family:'SF Mono', Menlo, Consolas, monospace;
+        font-size:12.5px; line-height:1.55; tab-size:2;
+      }}
+      .j-key   {{ color:#7dd3fc; }}
+      .j-str   {{ color:#a3e635; }}
+      .j-num   {{ color:#fbbf24; }}
+      .j-bool  {{ color:#f472b6; font-weight:600; }}
+      .j-null  {{ color:#94a3b8; font-style:italic; }}
+      .j-punct {{ color:#64748b; }}
+      .wrap::-webkit-scrollbar {{ width:10px; height:10px; }}
+      .wrap::-webkit-scrollbar-thumb {{ background:rgba(255,255,255,0.15); border-radius:5px; }}
+      .wrap::-webkit-scrollbar-thumb:hover {{ background:rgba(255,255,255,0.25); }}
+    </style></head><body>
+      <div class="wrap"><pre>{inner_html}</pre></div>
+    </body></html>
+    """
+    components.html(doc, height=height, scrolling=False)
+
+
+def highlight_json(text: str) -> str:
+    def repl(m: re.Match) -> str:
+        k, s, b, n, num, p = m.groups()
+        if k is not None:  # "key":
+            return f'<span class="j-key">{_html.escape(k)}</span>'
+        if s is not None:
+            return f'<span class="j-str">{_html.escape(s)}</span>'
+        if b is not None:
+            return f'<span class="j-bool">{b}</span>'
+        if n is not None:
+            return f'<span class="j-null">{n}</span>'
+        if num is not None:
+            return f'<span class="j-num">{num}</span>'
+        if p is not None:
+            return f'<span class="j-punct">{p}</span>'
+        return _html.escape(m.group(0))
+
+    # Escape first, then run tokenizer on escaped text? Simpler: escape inside repl,
+    # run tokenizer on raw text (above), and escape any gaps.
+    out = []
+    last = 0
+    for m in _JSON_TOKEN.finditer(text):
+        if m.start() > last:
+            out.append(_html.escape(text[last:m.start()]))
+        out.append(repl(m))
+        last = m.end()
+    if last < len(text):
+        out.append(_html.escape(text[last:]))
+    return "".join(out)
 
 
 # ---------------------------------------------------------------
@@ -660,18 +769,24 @@ with right:
             tab_body, tab_hdr = st.tabs(["Body", "Headers"])
             with tab_body:
                 body = resp.get("body")
-                if isinstance(body, (dict, list)):
-                    st.code(json.dumps(body, indent=2, default=str), language="json")
+                is_json = isinstance(body, (dict, list))
+                if is_json:
+                    body_text = json.dumps(body, indent=2, default=str)
+                    rendered = highlight_json(body_text)
+                else:
+                    body_text = str(body)
+                    rendered = _html.escape(body_text)
+                render_code_html(rendered)
+                if is_json:
                     st.download_button(
                         "⬇️ Download JSON",
-                        data=json.dumps(body, indent=2, default=str),
+                        data=body_text,
                         file_name=f"response_{int(time.time())}.json",
                         mime="application/json",
                     )
-                else:
-                    st.code(str(body))
             with tab_hdr:
-                st.code(json.dumps(resp.get("headers", {}), indent=2), language="json")
+                hdr_text = json.dumps(resp.get("headers", {}), indent=2)
+                render_code_html(highlight_json(hdr_text))
 
     st.markdown("### 🕘 History")
     if not st.session_state.history:
