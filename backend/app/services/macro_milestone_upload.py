@@ -435,6 +435,31 @@ def list_user_uploads(db: Session, user_id: str) -> list[dict]:
     return out
 
 
+def get_user_milestone_actuals_map(
+    db: Session, user_id: str
+) -> dict[tuple[str, str], dict]:
+    """
+    Build a {(site_id, project_id): milestone_actuals_dict} lookup for all
+    upload rows belonging to *user_id*. Empty dict if no uploads exist.
+    """
+    rows = (
+        db.query(MacroMilestoneUploadedData)
+        .filter(MacroMilestoneUploadedData.user_id == user_id)
+        .all()
+    )
+    out: dict[tuple[str, str], dict] = {}
+    for r in rows:
+        if not r.site_id or not r.project_id:
+            continue
+        try:
+            payload = json.loads(r.milestone_actuals) if r.milestone_actuals else {}
+        except (json.JSONDecodeError, ValueError, TypeError):
+            payload = {}
+        if payload:
+            out[(r.site_id.strip(), r.project_id.strip())] = payload
+    return out
+
+
 def delete_user_uploads(db: Session, user_id: str) -> int:
     """Delete all milestone-upload rows for a user. Returns rows deleted."""
     n = (

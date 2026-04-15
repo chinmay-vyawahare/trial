@@ -196,6 +196,45 @@ def _get_actual_date(row: Dict, ms: Dict):
     return handler(row, cfg)
 
 
+def _apply_actual_override(ms: Dict, override_value):
+    """
+    Build the same 4-tuple `_get_actual_date` returns, but from a user-uploaded
+    override value. The shape of `override_value` depends on ms column_config.type:
+      - single / max    : ISO date string
+      - text            : free-text string
+      - with_status     : {"date": "YYYY-MM-DD" | None, "status": "A"|"N"|...|""}
+    """
+    cfg = ms.get("column_config") or {}
+    cfg_type = cfg.get("type", "single")
+
+    if cfg_type in ("single", "max"):
+        d = parse_date(
+            override_value.get("date") if isinstance(override_value, dict) else override_value
+        )
+        return d, False, None, False
+
+    if cfg_type == "text":
+        val = override_value if isinstance(override_value, str) else ""
+        return None, True, val, False
+
+    if cfg_type == "with_status":
+        if isinstance(override_value, dict):
+            actual_date = parse_date(override_value.get("date"))
+            status_val = (override_value.get("status") or "").strip()
+        else:
+            actual_date = parse_date(override_value)
+            status_val = ""
+        skip_values = cfg.get("skip", [])
+        use_date_values = cfg.get("use_date", [])
+        if status_val in skip_values or (not status_val and "" in skip_values):
+            return actual_date, False, None, True
+        if status_val in use_date_values:
+            return actual_date, False, None, False
+        return None, False, None, False
+
+    return None, False, None, False
+
+
 def _compute_planned_dates(
     origin_date: date,
     milestones: List[Dict],
@@ -447,6 +486,7 @@ def compute_milestones_for_site_actual(
     user_expected_days_overrides: dict | None = None,
     user_back_days_overrides: dict | None = None,
     cx_override: date | None = None,
+    actual_overrides: dict | None = None,
 ) -> tuple[List[Dict], Optional[date]]:
     """
     Actual-view milestone computation.
@@ -520,7 +560,10 @@ def compute_milestones_for_site_actual(
         if key in skipped:
             continue
 
-        actual, is_text, text_val, skip = _get_actual_date(row, ms)
+        if actual_overrides and key in actual_overrides:
+            actual, is_text, text_val, skip = _apply_actual_override(ms, actual_overrides[key])
+        else:
+            actual, is_text, text_val, skip = _get_actual_date(row, ms)
 
         back_days = (cx_start_date - pf).days if pf else None
 

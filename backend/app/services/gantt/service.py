@@ -574,6 +574,14 @@ def _run_actual_two_phase(
 
     today = date.today()
 
+    # Load user-uploaded per-milestone actuals (keyed by site_id+project_id).
+    # When a site+project has an uploaded payload, those milestone values
+    # take precedence over the staging-DB columns during compute.
+    uploaded_actuals_map: dict[tuple[str, str], dict] = {}
+    if user_id:
+        from app.services.macro_milestone_upload import get_user_milestone_actuals_map
+        uploaded_actuals_map = get_user_milestone_actuals_map(config_db, user_id)
+
     # --- Stage 5: milestone compute per page site against SETTLED cx ---
     sites_out: list[dict] = []
     for light in page:
@@ -585,12 +593,17 @@ def _run_actual_two_phase(
         if settled_cx is None:
             continue
 
+        site_actual_overrides = uploaded_actuals_map.get(
+            ((row.get("s_site_id") or "").strip(), (row.get("pj_project_id") or "").strip())
+        )
+
         milestones, forecasted_cx_start = compute_milestones_for_site_actual(
             row, config_db,
             skipped_keys=skipped_keys,
             user_expected_days_overrides=user_expected_days_overrides,
             user_back_days_overrides=user_back_days_overrides,
             cx_override=settled_cx,
+            actual_overrides=site_actual_overrides,
         )
         if not milestones:
             continue
