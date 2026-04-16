@@ -2,6 +2,8 @@ import math
 from collections import defaultdict
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
+
+from backend.app.services.ahloa.gantt_ahloa_construction import get_ahloa_gantt
 from .queries import build_gantt_query, build_light_cx_query
 from .logic import compute_milestones_for_site, compute_milestones_for_site_actual, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, get_milestone_range_for_status, is_site_blocked
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides, get_history_expected_days_by_user, save_user_history_expected_days
@@ -825,26 +827,48 @@ def get_dashboard_summary(
     user_id: str | None = None,
     strict_pace_apply: bool = False,
     view_type: str = "forecast",
+    project_type: str = "macro",
 ):
     """Dashboard summary using the same query and logic as the gantt chart."""
-    sites, total_count, _ = get_all_sites_gantt(
-        db=db,
-        config_db=config_db,
-        region=region,
-        market=market,
-        site_id=site_id,
-        vendor=vendor,
-        area=area,
-        plan_type_include=plan_type_include,
-        regional_dev_initiatives=regional_dev_initiatives,
-        skipped_keys=skipped_keys,
-        user_expected_days_overrides=user_expected_days_overrides,
-        consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_flag=pace_constraint_flag,
-        strict_pace_apply=strict_pace_apply,
-        user_id=user_id,
-        view_type=view_type,
-    )
+    
+    if project_type == "ahloa":
+        sites, total_count, _ = get_ahloa_gantt(
+            db=db,
+            config_db=config_db,
+            region=region,
+            market=market,
+            site_id=site_id,
+            vendor=vendor,
+            area=area,
+            plan_type_include=plan_type_include,
+            regional_dev_initiatives=regional_dev_initiatives,
+            skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_expected_days_overrides,
+            consider_vendor_capacity=consider_vendor_capacity,
+            pace_constraint_flag=pace_constraint_flag,
+            strict_pace_apply=strict_pace_apply,
+            user_id=user_id,
+            view_type=view_type,
+        )
+    else:   
+        sites, total_count, _ = get_all_sites_gantt(
+            db=db,
+            config_db=config_db,
+            region=region,
+            market=market,
+            site_id=site_id,
+            vendor=vendor,
+            area=area,
+            plan_type_include=plan_type_include,
+            regional_dev_initiatives=regional_dev_initiatives,
+            skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_expected_days_overrides,
+            consider_vendor_capacity=consider_vendor_capacity,
+            pace_constraint_flag=pace_constraint_flag,
+            strict_pace_apply=strict_pace_apply,
+            user_id=user_id,
+            view_type=view_type,
+        )
 
     result = _get_pace_constraint(config_db, user_id, region=region, area=area, market=market)
     print(result,"Result")

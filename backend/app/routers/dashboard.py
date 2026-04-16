@@ -66,6 +66,7 @@ def dashboard_summary(
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual' (backward from CX start)"),
+    project_type: str = Query(None, description="Filter by project type"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -100,6 +101,7 @@ def dashboard_summary(
         user_id=user_id,
         strict_pace_apply=strict_pace_apply,
         view_type=view_type,
+        project_type=project_type,
     )
 
 
