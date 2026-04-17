@@ -87,14 +87,14 @@ def pending_milestones_auto(
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    tab: str = Query("construction", description="AHLOA tab: 'construction' or 'survey' (ignored for macro)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
     """
     Pending milestone distribution using default/user-override SLA.
-
-    Returns a list of {pending_milestone_count, site_count} showing
-    how many sites have N pending milestones (milestones without actual_finish).
+    Supports project_type=ahloa with tab=construction|survey.
     """
     fd_from = _parse_optional_date(filter_date_from, "filter_date_from")
     fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
@@ -102,6 +102,14 @@ def pending_milestones_auto(
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+
+    user_skips = None
+    if project_type == "ahloa" and user_id:
+        from app.models.ahloa import AhloaUserSkippedPrerequisite
+        rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
+            AhloaUserSkippedPrerequisite.user_id == user_id
+        ).all()
+        user_skips = [(r.milestone_key, r.market) for r in rows]
 
     data = get_pending_milestones_auto(
         db, config_db,
@@ -121,6 +129,9 @@ def pending_milestones_auto(
         filter_date_to=fd_to,
         strict_pace_apply=strict_pace_apply,
         view_type=view_type,
+        project_type=project_type,
+        tab=tab,
+        user_skips=user_skips,
     )
 
     return {
@@ -214,18 +225,26 @@ def pending_by_milestone_auto(
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    tab: str = Query("construction", description="AHLOA tab: 'construction' or 'survey' (ignored for macro)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
-    """
-    Per-milestone pending site count using default/user-override SLA.
-    """
+    """Per-milestone pending site count. Supports project_type=ahloa with tab."""
     fd_from = _parse_optional_date(filter_date_from, "filter_date_from")
     fd_to = _parse_optional_date(filter_date_to, "filter_date_to")
 
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+
+    user_skips = None
+    if project_type == "ahloa" and user_id:
+        from app.models.ahloa import AhloaUserSkippedPrerequisite
+        rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
+            AhloaUserSkippedPrerequisite.user_id == user_id
+        ).all()
+        user_skips = [(r.milestone_key, r.market) for r in rows]
 
     data = get_pending_by_milestone_auto(
         db, config_db,
@@ -245,6 +264,9 @@ def pending_by_milestone_auto(
         filter_date_to=fd_to,
         strict_pace_apply=strict_pace_apply,
         view_type=view_type,
+        project_type=project_type,
+        tab=tab,
+        user_skips=user_skips,
     )
 
     return {
@@ -341,12 +363,12 @@ def drilldown_auto(
     filter_date_to: str = Query(None, description="Only include sites with forecasted CX start <= this date (YYYY-MM-DD)"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    tab: str = Query("construction", description="AHLOA tab: 'construction' or 'survey' (ignored for macro)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
-    """
-    Drilldown into analytics charts — returns full gantt site data for the clicked bar.
-    """
+    """Drilldown into analytics charts. Supports project_type=ahloa with tab."""
     if drilldown_type not in ("pending_count", "milestone_key"):
         raise HTTPException(status_code=400, detail="drilldown_type must be 'pending_count' or 'milestone_key'")
     if drilldown_type == "pending_count" and pending_count is None:
@@ -360,6 +382,14 @@ def drilldown_auto(
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+
+    user_skips = None
+    if project_type == "ahloa" and user_id:
+        from app.models.ahloa import AhloaUserSkippedPrerequisite
+        rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
+            AhloaUserSkippedPrerequisite.user_id == user_id
+        ).all()
+        user_skips = [(r.milestone_key, r.market) for r in rows]
 
     sites, blocked = drilldown_sites_auto(
         db, config_db,
@@ -382,6 +412,9 @@ def drilldown_auto(
         filter_date_to=fd_to,
         strict_pace_apply=strict_pace_apply,
         view_type=view_type,
+        project_type=project_type,
+        tab=tab,
+        user_skips=user_skips,
     )
 
     return {

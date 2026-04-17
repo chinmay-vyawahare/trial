@@ -13,6 +13,9 @@ engine = create_engine(
     f"postgresql+psycopg2://{settings.PG_USER}:{password_encoded}"
     f"@{settings.PG_HOST}:{settings.PG_PORT}/{settings.PG_DATABASE}",
     pool_pre_ping=True,
+    pool_size=20,         # persistent connections (default was 5)
+    max_overflow=30,      # burst connections above pool_size (default was 10)
+    pool_timeout=120,      # wait up to 120s for a connection (default 30)
 )
 
 # Both point to the same engine now (single database, different schemas)

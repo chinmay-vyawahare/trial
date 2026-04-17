@@ -36,7 +36,9 @@ from app.routers import cx_actual_summary
 from app.routers import ahloa
 from app.routers import macro_upload
 from app.routers import macro_milestone_upload
+from app.routers import skip_prerequisites
 from app.models.prerequisite import MacroUploadedData, MacroMilestoneUploadedData
+from app.models.ahloa import AhloaUserSkippedPrerequisite
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,7 @@ ConfigBase.metadata.create_all(bind=config_engine, tables=[
     PaceConstraint.__table__,
     MacroUploadedData.__table__,
     MacroMilestoneUploadedData.__table__,
+    AhloaUserSkippedPrerequisite.__table__,
 ])
 
 init_milestone_data()
@@ -87,6 +90,7 @@ app.include_router(cx_actual_summary.router)
 app.include_router(ahloa.router)
 app.include_router(macro_upload.router)
 app.include_router(macro_milestone_upload.router)
+app.include_router(skip_prerequisites.router)
 
 @app.on_event("startup")
 async def _capture_event_loop():

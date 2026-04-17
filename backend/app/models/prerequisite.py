@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Boolean
+from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Boolean, UniqueConstraint
 from sqlalchemy.sql import func
 from app.core.database import ConfigBase
 from app.core.config import settings
@@ -304,13 +304,18 @@ class PaceConstraint(ConfigBase):
 
 class MacroUploadedData(ConfigBase):
     """
-    Uploaded planned CX start dates for Macro sites.
+    Uploaded planned CX start dates (unified for macro + ahloa).
 
     Stores data from CSV/Excel uploads: site_id, region, market,
-    project_id, and pj_p_4225_construction_start_finish.
+    project_id, pj_p_4225_construction_start_finish, and project_type.
+    When project_type='ahloa', data is used by AHLOA gantt services.
     """
     __tablename__ = "macro_uploaded_data"
-    __table_args__ = {"schema": _S}
+    __table_args__ = (
+        UniqueConstraint("site_id", "project_id", "uploaded_by", "project_type",
+                         name="uq_upload_site_proj_user_ptype"),
+        {"schema": _S},
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     site_id = Column(String(100), nullable=False, index=True)
@@ -319,6 +324,7 @@ class MacroUploadedData(ConfigBase):
     project_id = Column(String(200), nullable=True)
     pj_p_4225_construction_start_finish = Column(DateTime, nullable=True)
     uploaded_by = Column(String(100), nullable=True)
+    project_type = Column(String(50), nullable=False, default="macro", server_default="macro")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

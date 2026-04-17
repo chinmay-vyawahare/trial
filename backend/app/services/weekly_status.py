@@ -29,6 +29,9 @@ def get_weekly_status_counts(
     status: str | None = None,
     strict_pace_apply: bool = False,
     view_type: str = "forecast",
+    project_type: str = "macro",
+    tab: str = "construction",
+    user_skips: list | None = None,
 ) -> list[dict]:
     """
     Return weekly status counts grouped by ISO week/year, with region breakdown.
@@ -61,24 +64,50 @@ def get_weekly_status_counts(
       }
     """
     # Get all sites (no pagination limit)
-    sites, _, _ = get_all_sites_gantt(
-        db,
-        config_db,
-        region=region,
-        market=market,
-        site_id=site_id,
-        vendor=vendor,
-        area=area,
-        plan_type_include=plan_type_include,
-        regional_dev_initiatives=regional_dev_initiatives,
-        skipped_keys=skipped_keys,
-        user_expected_days_overrides=user_expected_days_overrides,
-        consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_flag=pace_constraint_flag,
-        user_id=user_id,
-        strict_pace_apply=strict_pace_apply,
-        view_type=view_type,
-    )
+    if project_type == "ahloa":
+        if tab == "survey":
+            from app.services.ahloa.gantt_ahloa_scope import get_ahloa_gantt_scope
+            sites, _, _ = get_ahloa_gantt_scope(
+                db=db, config_db=config_db,
+                region=region, market=market, site_id=site_id,
+                vendor=vendor, area=area,
+                plan_type_include=plan_type_include,
+                regional_dev_initiatives=regional_dev_initiatives,
+                consider_vendor_capacity=consider_vendor_capacity,
+                pace_constraint_flag=pace_constraint_flag,
+                user_id=user_id, user_skips=user_skips,
+            )
+        else:
+            from app.services.ahloa.gantt_ahloa_construction import get_ahloa_gantt
+            sites, _, _ = get_ahloa_gantt(
+                db=db, config_db=config_db,
+                region=region, market=market, site_id=site_id,
+                vendor=vendor, area=area,
+                plan_type_include=plan_type_include,
+                regional_dev_initiatives=regional_dev_initiatives,
+                consider_vendor_capacity=consider_vendor_capacity,
+                pace_constraint_flag=pace_constraint_flag,
+                user_id=user_id, user_skips=user_skips,
+            )
+    else:
+        sites, _, _ = get_all_sites_gantt(
+            db,
+            config_db,
+            region=region,
+            market=market,
+            site_id=site_id,
+            vendor=vendor,
+            area=area,
+            plan_type_include=plan_type_include,
+            regional_dev_initiatives=regional_dev_initiatives,
+            skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_expected_days_overrides,
+            consider_vendor_capacity=consider_vendor_capacity,
+            pace_constraint_flag=pace_constraint_flag,
+            user_id=user_id,
+            strict_pace_apply=strict_pace_apply,
+            view_type=view_type,
+        )
 
     # Post-filter by status if requested
     if status:

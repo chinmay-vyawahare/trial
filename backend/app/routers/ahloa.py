@@ -117,6 +117,19 @@ def _resolve_filters(
     return region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives
 
 
+def _load_user_skips(config_db: Session, user_id: str | None) -> list[tuple[str, str | None]]:
+    """Load AHLOA per-user market-wise skips as [(milestone_key, market|None)]."""
+    if not user_id:
+        return []
+    from app.models.ahloa import AhloaUserSkippedPrerequisite
+    rows = (
+        config_db.query(AhloaUserSkippedPrerequisite)
+        .filter(AhloaUserSkippedPrerequisite.user_id == user_id)
+        .all()
+    )
+    return [(r.milestone_key, r.market) for r in rows]
+
+
 # ----------------------------------------------------------------
 # Gantt chart endpoints
 # ----------------------------------------------------------------
@@ -133,6 +146,7 @@ def ahloa_construction_gantt(
     offset: int = None,
     consider_vendor_capacity: bool = Query(False, description="Apply GC vendor capacity constraints"),
     pace_constraint_flag: bool = Query(False, description="Apply pace constraints for the user"),
+    strict_pace_apply: bool = Query(False, description="Strict pace: exclude overflow sites instead of pushing to next week"),
     status: str = Query(None, description="Filter by overall_status: ON TRACK, IN PROGRESS, CRITICAL"),
     start_date: date = Query(None, description="Filter sites where CX start date >= this date"),
     end_date: date = Query(None, description="Filter sites where CX start date <= this date"),
@@ -149,6 +163,8 @@ def ahloa_construction_gantt(
         config_db, user_id, region, market, site_id, vendor, area,
     )
 
+    user_skips = _load_user_skips(config_db, user_id)
+
     sites, total_count, count = get_ahloa_gantt(
         db=db,
         config_db=config_db,
@@ -163,10 +179,12 @@ def ahloa_construction_gantt(
         offset=offset,
         consider_vendor_capacity=consider_vendor_capacity,
         pace_constraint_flag=pace_constraint_flag,
+        strict_pace_apply=strict_pace_apply,
         status=status,
         user_id=user_id,
         start_date=start_date,
         end_date=end_date,
+        user_skips=user_skips,
     )
 
     # Post-filter by overall_status if requested
@@ -207,8 +225,11 @@ def ahloa_scope_gantt(
     CX Start = Max(pj_p_3710, pj_p_4075) + 50 days
     Each milestone status is based on actual vs expected (CX Start + offset).
     """
+    user_skips = _load_user_skips(config_db, user_id)
+
     sites, total_count, count = get_ahloa_gantt_scope(
         db=db,
+        config_db=config_db,
         region=region,
         market=market,
         site_id=site_id,
@@ -216,6 +237,10 @@ def ahloa_scope_gantt(
         area=area,
         limit=limit,
         offset=offset,
+        consider_vendor_capacity=consider_vendor_capacity,
+        pace_constraint_flag=pace_constraint_flag,
+        user_id=user_id,
+        user_skips=user_skips,
     )
 
     # Post-filter by overall_status if requested

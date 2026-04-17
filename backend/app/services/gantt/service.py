@@ -3,24 +3,26 @@ from collections import defaultdict
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
-from backend.app.services.ahloa.gantt_ahloa_construction import get_ahloa_gantt
 from .queries import build_gantt_query, build_light_cx_query
 from .logic import compute_milestones_for_site, compute_milestones_for_site_actual, compute_overall_status, compute_status, _get_actual_date, _match_pct_threshold, get_milestone_range_for_status, is_site_blocked
 from .milestones import get_milestones, get_all_actual_columns, get_planned_start_column, get_milestone_thresholds, get_overall_thresholds, apply_user_expected_days, get_history_expected_days_overrides, get_history_expected_days_by_user, save_user_history_expected_days
 from .utils import parse_date
 
-def _apply_uploaded_overrides(sites: list[dict], config_db: Session, user_id: str) -> list[dict]:
+def _apply_uploaded_overrides(sites: list[dict], config_db: Session, user_id: str, project_type: str = "macro") -> list[dict]:
     """
     Override forecasted_cx_start_date with user-uploaded data from macro_uploaded_data.
 
-    Matches by (site_id, project_id). If a match is found and the uploaded row
+    Matches by (site_id, project_id) and project_type. If a match is found and the uploaded row
     has a valid pj_p_4225_construction_start_finish date, it replaces the forecasted date.
     """
     from app.models.prerequisite import MacroUploadedData
 
     rows = (
         config_db.query(MacroUploadedData)
-        .filter(MacroUploadedData.uploaded_by == user_id)
+        .filter(
+            MacroUploadedData.uploaded_by == user_id,
+            MacroUploadedData.project_type == project_type,
+        )
         .all()
     )
     if not rows:
@@ -59,16 +61,7 @@ def _apply_pace_constraint(
 ) -> list[dict]:
     """
     Apply pace constraints to sites for a specific user_id.
-
-    When strict_pace_apply=False (default — cascading mode):
-        1. Collect all geo-matching sites in that week.
-        2. Sort by forecasted_cx_start_date (earliest first) — keep up to max_sites.
-        3. Push excess sites to the next week by advancing their forecasted_cx_start_date.
-        4. Repeat for subsequent weeks until no week overflows.
-
-    When strict_pace_apply=True (strict mode):
-        1. For each week, keep up to max_sites (earliest forecast first).
-        2. Exclude the rest — mark them but do NOT move them to the next week.
+    Same logic for both NTM and AHLOA — user's constraints apply by geo matching.
     """
     from app.models.prerequisite import PaceConstraint
 
@@ -76,7 +69,7 @@ def _apply_pace_constraint(
         return sites
 
     constraints = config_db.query(PaceConstraint).filter(
-        PaceConstraint.user_id == user_id
+        PaceConstraint.user_id == user_id,
     ).all()
 
     if not constraints:
@@ -458,7 +451,7 @@ def get_all_sites_gantt(
             
         # Override forecasted_cx_start_date from user-uploaded data if available
     if user_id:
-        sites = _apply_uploaded_overrides(sites, config_db, user_id)
+        sites = _apply_uploaded_overrides(sites, config_db, user_id, project_type="macro")
 
     # Sort by forecasted_cx_start_date descending (latest first, nulls at bottom)
     sites.sort(
@@ -543,7 +536,7 @@ def _run_actual_two_phase(
             s["excluded_due_to_pace_constraint"] = False
 
     if user_id:
-        light_sites = _apply_uploaded_overrides(light_sites, config_db, user_id)
+        light_sites = _apply_uploaded_overrides(light_sites, config_db, user_id, project_type="macro")
 
     total_count = len(light_sites)
 
@@ -828,28 +821,38 @@ def get_dashboard_summary(
     strict_pace_apply: bool = False,
     view_type: str = "forecast",
     project_type: str = "macro",
+    tab: str = "construction",
+    user_skips: list | None = None,
 ):
     """Dashboard summary using the same query and logic as the gantt chart."""
-    
+
     if project_type == "ahloa":
-        sites, total_count, _ = get_ahloa_gantt(
-            db=db,
-            config_db=config_db,
-            region=region,
-            market=market,
-            site_id=site_id,
-            vendor=vendor,
-            area=area,
-            plan_type_include=plan_type_include,
-            regional_dev_initiatives=regional_dev_initiatives,
-            skipped_keys=skipped_keys,
-            user_expected_days_overrides=user_expected_days_overrides,
-            consider_vendor_capacity=consider_vendor_capacity,
-            pace_constraint_flag=pace_constraint_flag,
-            strict_pace_apply=strict_pace_apply,
-            user_id=user_id,
-            view_type=view_type,
-        )
+        if tab == "survey":
+            from app.services.ahloa.gantt_ahloa_scope import get_ahloa_gantt_scope
+            sites, total_count, _ = get_ahloa_gantt_scope(
+                db=db, config_db=config_db,
+                region=region, market=market, site_id=site_id,
+                vendor=vendor, area=area,
+                plan_type_include=plan_type_include,
+                regional_dev_initiatives=regional_dev_initiatives,
+                consider_vendor_capacity=consider_vendor_capacity,
+                pace_constraint_flag=pace_constraint_flag,
+                user_id=user_id, user_skips=user_skips,
+            )
+        else:
+            from app.services.ahloa.gantt_ahloa_construction import get_ahloa_gantt
+            sites, total_count, _ = get_ahloa_gantt(
+                db=db, config_db=config_db,
+                region=region, market=market, site_id=site_id,
+                vendor=vendor, area=area,
+                plan_type_include=plan_type_include,
+                regional_dev_initiatives=regional_dev_initiatives,
+                skipped_keys=skipped_keys,
+                consider_vendor_capacity=consider_vendor_capacity,
+                pace_constraint_flag=pace_constraint_flag,
+                strict_pace_apply=strict_pace_apply,
+                user_id=user_id, user_skips=user_skips,
+            )
     else:   
         sites, total_count, _ = get_all_sites_gantt(
             db=db,
@@ -921,7 +924,7 @@ def get_dashboard_summary(
     non_blocked_total = len(countable)
     on_track_pct = (on_track / non_blocked_total * 100) if non_blocked_total > 0 else 0
 
-    overall_thresholds = get_overall_thresholds(config_db)
+    overall_thresholds = get_overall_thresholds(config_db, project_type=project_type)
     if overall_thresholds:
         dashboard_status, _ = _match_pct_threshold(on_track_pct, overall_thresholds)
     elif on_track_pct >= 60:
@@ -968,7 +971,7 @@ def get_dashboard_summary(
             typical_total_ms = ms_summary["total"]
             break
 
-    ms_thresholds = get_milestone_thresholds(config_db)
+    ms_thresholds = get_milestone_thresholds(config_db, project_type=project_type)
     threshold_defs = {}
     for t in ms_thresholds:
         min_count = math.ceil(t["min_pct"] / 100 * typical_total_ms) if typical_total_ms > 0 else 0

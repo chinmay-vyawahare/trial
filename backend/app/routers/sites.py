@@ -142,6 +142,7 @@ def list_sites(
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     project_type: str = Query("macro", description="Project type: 'macro' (default) or 'ahloa'"),
+    tab: str = Query("construction", description="AHLOA tab: 'construction' or 'survey' (ignored for macro)"),
     view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual' (backward from CX start)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
@@ -157,23 +158,43 @@ def list_sites(
 
     # --- AHLOA branch ---
     if project_type == "ahloa":
-        sites, total_count, count = get_ahloa_gantt(
-            db=db,
-            config_db=config_db,
-            region=region,
-            market=market,
-            site_id=site_id,
-            vendor=vendor,
-            area=area,
-            plan_type_include=plan_type_include,
-            regional_dev_initiatives=regional_dev_initiatives,
-            limit=limit,
-            offset=offset,
-            consider_vendor_capacity=consider_vendor_capacity,
-            pace_constraint_flag=pace_constraint_flag,
-            status=status,
-            user_id=user_id,
-        )
+        if tab == "survey":
+            from app.services.ahloa.gantt_ahloa_scope import get_ahloa_gantt_scope
+            sites, total_count, count = get_ahloa_gantt_scope(
+                db=db,
+                config_db=config_db,
+                region=region,
+                market=market,
+                site_id=site_id,
+                vendor=vendor,
+                area=area,
+                plan_type_include=plan_type_include,
+                regional_dev_initiatives=regional_dev_initiatives,
+                limit=limit,
+                offset=offset,
+                consider_vendor_capacity=consider_vendor_capacity,
+                pace_constraint_flag=pace_constraint_flag,
+                user_id=user_id,
+            )
+        else:
+            sites, total_count, count = get_ahloa_gantt(
+                db=db,
+                config_db=config_db,
+                region=region,
+                market=market,
+                site_id=site_id,
+                vendor=vendor,
+                area=area,
+                plan_type_include=plan_type_include,
+                regional_dev_initiatives=regional_dev_initiatives,
+                limit=limit,
+                offset=offset,
+                consider_vendor_capacity=consider_vendor_capacity,
+                pace_constraint_flag=pace_constraint_flag,
+                strict_pace_apply=strict_pace_apply,
+                status=status,
+                user_id=user_id,
+            )
     else:
         # --- Macro (default) branch ---
         skipped_keys = _get_skipped_keys(config_db)

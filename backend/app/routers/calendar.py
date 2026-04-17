@@ -79,14 +79,16 @@ def get_calendar(
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     site_ids: list[str] = Query(None, description="Filter by list of site IDs (multi-value)"),
     view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual' (backward from CX start)"),
+    project_type: str = Query("macro", description="Project type: 'macro' (default) or 'ahloa'"),
+    tab: str = Query("construction", description="AHLOA tab: 'construction' or 'survey' (ignored for macro)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
     """
     Calendar view — returns gantt chart sites whose forecasted_cx_start_date
     falls within the given [start_date, end_date] range.
+    Supports project_type=ahloa with tab=construction|survey.
     """
-    # Validations
     if start_date > end_date:
         raise HTTPException(
             status_code=400,
@@ -98,6 +100,14 @@ def get_calendar(
     )
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
+
+    user_skips = None
+    if project_type == "ahloa" and user_id:
+        from app.models.ahloa import AhloaUserSkippedPrerequisite
+        rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
+            AhloaUserSkippedPrerequisite.user_id == user_id
+        ).all()
+        user_skips = [(r.milestone_key, r.market) for r in rows]
 
     filtered_sites = get_calendar_gantt_sites(
         db=db,
@@ -120,6 +130,9 @@ def get_calendar(
         strict_pace_apply=strict_pace_apply,
         site_ids=site_ids,
         view_type=view_type,
+        project_type=project_type,
+        tab=tab,
+        user_skips=user_skips,
     )
 
     return {

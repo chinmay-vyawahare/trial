@@ -66,22 +66,25 @@ def dashboard_summary(
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual' (backward from CX start)"),
-    project_type: str = Query(None, description="Filter by project type"),
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    tab: str = Query("construction", description="AHLOA tab: 'construction' or 'survey' (ignored for macro)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
     """
-    Return dashboard status counts using the same filters as the gantt chart.
-
-    Response:
-      - dashboard_status: overall status label
-      - on_track_pct: percentage of on-track sites
-      - total_sites, on_track_sites, in_progress_sites, critical_sites, blocked_sites
-      - excluded_crew_shortage_sites, excluded_pace_constraint_sites
+    Dashboard status counts. Supports project_type=ahloa with tab=construction|survey.
     """
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+
+    user_skips = None
+    if project_type == "ahloa" and user_id:
+        from app.models.ahloa import AhloaUserSkippedPrerequisite
+        rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
+            AhloaUserSkippedPrerequisite.user_id == user_id
+        ).all()
+        user_skips = [(r.milestone_key, r.market) for r in rows]
 
     return get_dashboard_summary(
         db,
@@ -102,6 +105,8 @@ def dashboard_summary(
         strict_pace_apply=strict_pace_apply,
         view_type=view_type,
         project_type=project_type,
+        tab=tab,
+        user_skips=user_skips,
     )
 
 
@@ -213,19 +218,26 @@ def weekly_status_user_override(
     status: str = Query(None, description="Filter by overall_status. Possible values: ON TRACK, IN PROGRESS, CRITICAL, Blocked, Excluded - Crew Shortage, Excluded - Pace Constraint"),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual' (backward from CX start)"),
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    tab: str = Query("construction", description="AHLOA tab: 'construction' or 'survey' (ignored for macro)"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
     """
     Week-wise status counts using default/user override SLA.
-
-    Groups sites by ISO week/year based on forecasted_cx_start_date.
-    Returns status counts per week. Supports all gantt-chart filters.
-    If user_id is provided, uses that user's SLA overrides (expected_days).
+    Supports project_type=ahloa with tab=construction|survey.
     """
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+
+    user_skips = None
+    if project_type == "ahloa" and user_id:
+        from app.models.ahloa import AhloaUserSkippedPrerequisite
+        rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
+            AhloaUserSkippedPrerequisite.user_id == user_id
+        ).all()
+        user_skips = [(r.milestone_key, r.market) for r in rows]
 
     weeks = get_weekly_status_counts(
         db,
@@ -245,6 +257,9 @@ def weekly_status_user_override(
         status=status,
         strict_pace_apply=strict_pace_apply,
         view_type=view_type,
+        project_type=project_type,
+        tab=tab,
+        user_skips=user_skips,
     )
 
     return {"sla_type": "user_override" if user_id else "default", "weeks": weeks}

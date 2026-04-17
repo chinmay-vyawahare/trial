@@ -1,9 +1,12 @@
 """
-Skip-prerequisite APIs.
+Skip-prerequisite APIs (unified for macro + ahloa).
 
 When a user skips a prerequisite the planned-date calculation treats that
-milestone as having zero duration (instantly complete).  All downstream
-milestones are recalculated accordingly.
+milestone as having zero duration (instantly complete).
+
+project_type='macro': uses UserSkippedPrerequisite + MilestoneDefinition
+project_type='ahloa': uses AhloaUserSkippedPrerequisite + AhloaMilestoneDefinition
+  (AHLOA also supports market-wise skip via optional market param)
 
 - POST   /skip-prerequisites                           — skip a prerequisite for a user
 - GET    /skip-prerequisites/{user_id}                 — list skipped prerequisites for a user
@@ -11,11 +14,12 @@ milestones are recalculated accordingly.
 - DELETE /skip-prerequisites/{user_id}                 — un-skip all prerequisites for a user
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_config_db
 from app.models.prerequisite import UserSkippedPrerequisite, MilestoneDefinition
-from app.schemas.gantt import SkipPrerequisiteRequest, SkipPrerequisiteOut
+from app.models.ahloa import AhloaMilestoneDefinition, AhloaUserSkippedPrerequisite
 
 router = APIRouter(
     prefix="/api/v1/schedular/skip-prerequisites",
@@ -23,97 +27,124 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=SkipPrerequisiteOut)
+class SkipRequest(BaseModel):
+    user_id: str
+    milestone_key: str
+    market: str | None = None
+
+
+@router.post("")
 def skip_prerequisite(
-    body: SkipPrerequisiteRequest,
+    body: SkipRequest,
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
     db: Session = Depends(get_config_db),
 ):
-    """
-    Mark a prerequisite as skipped for a user.
+    """Skip a prerequisite for a user. AHLOA supports optional market-level scope."""
+    if project_type == "ahloa":
+        ms = db.query(AhloaMilestoneDefinition).filter(AhloaMilestoneDefinition.key == body.milestone_key).first()
+        if not ms:
+            raise HTTPException(404, f"AHLOA milestone '{body.milestone_key}' not found")
 
-    Validates the milestone_key exists and prevents duplicate entries.
-    """
-    # Validate milestone exists
-    ms = (
-        db.query(MilestoneDefinition)
-        .filter(MilestoneDefinition.key == body.milestone_key)
-        .first()
-    )
-    if not ms:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Milestone '{body.milestone_key}' not found",
+        existing = (
+            db.query(AhloaUserSkippedPrerequisite)
+            .filter(
+                AhloaUserSkippedPrerequisite.user_id == body.user_id,
+                AhloaUserSkippedPrerequisite.milestone_key == body.milestone_key,
+                AhloaUserSkippedPrerequisite.market == body.market,
+            )
+            .first()
         )
+        if existing:
+            return {"id": existing.id, "user_id": existing.user_id, "milestone_key": existing.milestone_key, "market": existing.market, "project_type": "ahloa"}
 
-    # Prevent duplicate
-    existing = (
-        db.query(UserSkippedPrerequisite)
-        .filter(
-            UserSkippedPrerequisite.user_id == body.user_id,
-            UserSkippedPrerequisite.milestone_key == body.milestone_key,
+        row = AhloaUserSkippedPrerequisite(user_id=body.user_id, milestone_key=body.milestone_key, market=body.market)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return {"id": row.id, "user_id": row.user_id, "milestone_key": row.milestone_key, "market": row.market, "project_type": "ahloa"}
+    else:
+        ms = db.query(MilestoneDefinition).filter(MilestoneDefinition.key == body.milestone_key).first()
+        if not ms:
+            raise HTTPException(404, f"Milestone '{body.milestone_key}' not found")
+
+        existing = (
+            db.query(UserSkippedPrerequisite)
+            .filter(UserSkippedPrerequisite.user_id == body.user_id, UserSkippedPrerequisite.milestone_key == body.milestone_key)
+            .first()
         )
-        .first()
-    )
-    if existing:
-        return existing
+        if existing:
+            return {"id": existing.id, "user_id": existing.user_id, "milestone_key": existing.milestone_key, "project_type": "macro"}
 
-    row = UserSkippedPrerequisite(
-        user_id=body.user_id,
-        milestone_key=body.milestone_key,
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
+        row = UserSkippedPrerequisite(user_id=body.user_id, milestone_key=body.milestone_key)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return {"id": row.id, "user_id": row.user_id, "milestone_key": row.milestone_key, "project_type": "macro"}
 
 
-@router.get("/{user_id}", response_model=list[SkipPrerequisiteOut])
-def list_skipped_prerequisites(user_id: str, db: Session = Depends(get_config_db)):
-    """Return all skipped prerequisites for a user."""
-    rows = (
-        db.query(UserSkippedPrerequisite)
-        .filter(UserSkippedPrerequisite.user_id == user_id)
-        .all()
-    )
-    return rows
+@router.get("/{user_id}")
+def list_skipped_prerequisites(
+    user_id: str,
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    market: str = Query(None, description="Filter by market (AHLOA only)"),
+    db: Session = Depends(get_config_db),
+):
+    """Return all skipped prerequisites for a user, filtered by project_type."""
+    if project_type == "ahloa":
+        q = db.query(AhloaUserSkippedPrerequisite).filter(AhloaUserSkippedPrerequisite.user_id == user_id)
+        if market:
+            q = q.filter(AhloaUserSkippedPrerequisite.market == market)
+        rows = q.all()
+        return [{"id": r.id, "user_id": r.user_id, "milestone_key": r.milestone_key, "market": r.market, "project_type": "ahloa"} for r in rows]
+    else:
+        rows = db.query(UserSkippedPrerequisite).filter(UserSkippedPrerequisite.user_id == user_id).all()
+        return [{"id": r.id, "user_id": r.user_id, "milestone_key": r.milestone_key, "project_type": "macro"} for r in rows]
 
 
 @router.delete("/{user_id}/{milestone_key}")
 def unskip_prerequisite(
     user_id: str,
     milestone_key: str,
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    market: str = Query(None, description="Market to unskip (AHLOA only, null = all-markets skip)"),
     db: Session = Depends(get_config_db),
 ):
     """Remove a single skipped prerequisite for a user."""
-    deleted = (
-        db.query(UserSkippedPrerequisite)
-        .filter(
-            UserSkippedPrerequisite.user_id == user_id,
-            UserSkippedPrerequisite.milestone_key == milestone_key,
+    if project_type == "ahloa":
+        q = db.query(AhloaUserSkippedPrerequisite).filter(
+            AhloaUserSkippedPrerequisite.user_id == user_id,
+            AhloaUserSkippedPrerequisite.milestone_key == milestone_key,
         )
-        .delete()
-    )
+        if market:
+            q = q.filter(AhloaUserSkippedPrerequisite.market == market)
+        else:
+            q = q.filter(AhloaUserSkippedPrerequisite.market.is_(None))
+        deleted = q.delete(synchronize_session=False)
+    else:
+        deleted = (
+            db.query(UserSkippedPrerequisite)
+            .filter(UserSkippedPrerequisite.user_id == user_id, UserSkippedPrerequisite.milestone_key == milestone_key)
+            .delete()
+        )
+
     db.commit()
     if deleted == 0:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Skip entry not found for user '{user_id}', milestone '{milestone_key}'",
-        )
-    return {"detail": f"Un-skipped '{milestone_key}' for user '{user_id}'"}
+        raise HTTPException(404, f"Skip entry not found for user '{user_id}', milestone '{milestone_key}'")
+    return {"detail": f"Un-skipped '{milestone_key}' for user '{user_id}'", "deleted": deleted}
 
 
 @router.delete("/{user_id}")
-def unskip_all_prerequisites(user_id: str, db: Session = Depends(get_config_db)):
+def unskip_all_prerequisites(
+    user_id: str,
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    db: Session = Depends(get_config_db),
+):
     """Remove all skipped prerequisites for a user."""
-    deleted = (
-        db.query(UserSkippedPrerequisite)
-        .filter(UserSkippedPrerequisite.user_id == user_id)
-        .delete()
-    )
+    if project_type == "ahloa":
+        deleted = db.query(AhloaUserSkippedPrerequisite).filter(AhloaUserSkippedPrerequisite.user_id == user_id).delete(synchronize_session=False)
+    else:
+        deleted = db.query(UserSkippedPrerequisite).filter(UserSkippedPrerequisite.user_id == user_id).delete()
     db.commit()
     if deleted == 0:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No skip entries found for user '{user_id}'",
-        )
+        raise HTTPException(404, f"No skip entries found for user '{user_id}'")
     return {"detail": f"All skip entries cleared for user '{user_id}', removed {deleted} entries"}

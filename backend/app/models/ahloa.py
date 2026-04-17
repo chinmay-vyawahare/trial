@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Boolean
+from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Boolean, UniqueConstraint
 from sqlalchemy.sql import func
 from app.core.database import ConfigBase
 from app.core.config import settings
@@ -95,4 +95,24 @@ class AhloaConstraintThreshold(ConfigBase):
     project_type = Column(String(50), nullable=False, default="ahloa", server_default="macro")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class AhloaUserSkippedPrerequisite(ConfigBase):
+    """Per-user, per-market skipped prerequisite for AHLOA.
+
+    market=NULL means the skip applies to all markets for that user.
+    """
+    __tablename__ = "ahloa_user_skipped_prerequisites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "milestone_key", "market", name="uq_ahloa_skip_user_ms_market"),
+        {"schema": _S},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    milestone_key = Column(String(50), nullable=False)
+    market = Column(String(200), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 

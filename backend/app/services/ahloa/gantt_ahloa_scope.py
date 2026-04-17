@@ -58,10 +58,14 @@ def _get_all_staging_columns() -> list[str]:
     return sorted(cols)
 
 
-def _compute_cx_start(row: dict) -> Optional[date]:
+def _compute_cx_start(row: dict, today: date | None = None) -> tuple[Optional[date], str]:
     """
     CX Start = Max(pj_p_3710, pj_p_4075) + 50 days.
-    Returns None if neither source column has a valid date.
+
+    If the formula result falls in the past, fall back to
+    pj_p_4225_construction_start_finish when available.
+
+    Returns (cx_start_date, cx_source).
     """
     dates = []
     for col in CX_START_SOURCE_COLUMNS:
@@ -69,8 +73,16 @@ def _compute_cx_start(row: dict) -> Optional[date]:
         if d:
             dates.append(d)
     if not dates:
-        return None
-    return max(dates) + timedelta(days=CX_START_OFFSET_DAYS)
+        return None, ""
+
+    cx_start = max(dates) + timedelta(days=CX_START_OFFSET_DAYS)
+
+    if today and cx_start < today:
+        fallback = parse_date(row.get("pj_p_4225_construction_start_finish"))
+        if fallback:
+            return fallback, "p_4225_fallback"
+
+    return cx_start, "formula"
 
 
 def _get_milestone_actual(row: dict, milestone_key: str):
@@ -170,18 +182,31 @@ def _build_ahloa_query(
     site_id: str = None,
     vendor: str = None,
     area: list[str] | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
     limit: int = None,
     offset: int = None,
+    cx_date_from: date | None = None,
+    cx_date_to: date | None = None,
 ):
     """Build the SQL query for AHLOA sites from the staging table."""
     where_clauses = [
-        # "smp_name = 'AHLOB Modernization'",
         "pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%'",
         "por_release_version = 'Radio Upgrade NR'",
         "por_plan_added_date > '2025-03-28'",
         "pj_a_4225_construction_start_finish IS NULL",
     ]
     params = {}
+
+    if plan_type_include:
+        placeholders = ", ".join(f":pti_{i}" for i in range(len(plan_type_include)))
+        where_clauses.append(f"COALESCE(por_plan_type, '') IN ({placeholders})")
+        for i, val in enumerate(plan_type_include):
+            params[f"pti_{i}"] = val
+
+    if regional_dev_initiatives:
+        where_clauses.append("COALESCE(por_regional_dev_initiatives, '') ILIKE :rdi_pattern")
+        params["rdi_pattern"] = f"%{regional_dev_initiatives}%"
 
     apply_geo_filters(
         where_clauses, params,
@@ -205,6 +230,7 @@ def _build_ahloa_query(
         "m_area",
         "region",
         "construction_gc",
+        "pj_p_4225_construction_start_finish",
     ]
 
     all_columns = list(fixed_columns)
@@ -216,6 +242,23 @@ def _build_ahloa_query(
 
     columns_sql = ",\n            ".join(all_columns)
 
+    cx_filter_sql = ""
+    if cx_date_from or cx_date_to:
+        cx_expr = (
+            f"GREATEST("
+            f"COALESCE(pj_p_3710_ran_entitlement_complete_finish::date, '1900-01-01'),"
+            f"COALESCE(pj_p_4075_construction_ntp_submitted_to_gc_finish::date, '1900-01-01')"
+            f") + INTERVAL '{CX_START_OFFSET_DAYS} days'"
+        )
+        cx_parts = []
+        if cx_date_from:
+            cx_parts.append(f"{cx_expr} >= :cx_date_from")
+            params["cx_date_from"] = str(cx_date_from)
+        if cx_date_to:
+            cx_parts.append(f"{cx_expr} <= :cx_date_to")
+            params["cx_date_to"] = str(cx_date_to)
+        cx_filter_sql = "WHERE " + " AND ".join(cx_parts)
+
     query = text(f"""
     WITH filtered_records AS (
         SELECT DISTINCT ON (pj_project_id, s_site_id)
@@ -226,6 +269,7 @@ def _build_ahloa_query(
     )
     SELECT *, COUNT(*) OVER () AS total_count
     FROM filtered_records
+    {cx_filter_sql}
     ORDER BY s_site_id
     {pagination_sql}
     """)
@@ -233,25 +277,147 @@ def _build_ahloa_query(
     return query, params
 
 
+def _compute_scope_milestones(
+    row: dict,
+    cx_start: Optional[date],
+    today: date,
+    skipped_keys: set[str] | None = None,
+    ms_thresholds: list[dict] | None = None,
+) -> tuple[list[dict], dict]:
+    """Compute survey-phase milestones for a single site. Returns (milestones, summary)."""
+    spo_date = parse_date(row.get("ms_1321_talon_view_drone_svcs_spo_issued_date"))
+    survey_elig_val = (str(row.get("ms_1321_talon_view_drone_svcs_cpo_custom_field") or "")).strip()
+    survey_eligible = bool(survey_elig_val)
+
+    milestones_out = []
+    on_track_count = 0
+    delayed_count = 0
+    in_progress_count = 0
+    not_applicable_count = 0
+    total_ms = 0
+
+    for ms in AHLOA_MILESTONES:
+        ms_key = ms["key"]
+
+        if skipped_keys and ms_key in skipped_keys:
+            continue
+
+        total_ms += 1
+
+        if ms_key in ("survey_spo", "survey_complete") and not survey_eligible:
+            not_applicable_count += 1
+            milestones_out.append({
+                "key": ms_key,
+                "name": ms["name"],
+                "sort_order": ms["sort_order"],
+                "expected_days": ms.get("expected_days", 0),
+                "task_owner": ms.get("task_owner"),
+                "phase_type": ms.get("phase_type"),
+                "expected_date": None,
+                "actual_finish": None,
+                "status": "Not Applicable",
+                "delay_days": 0,
+            })
+            continue
+
+        actual_date, is_text, text_val, is_status, status_val = _get_milestone_actual(
+            row, ms_key,
+        )
+
+        status, delay, expected_date_str = _compute_milestone_status(
+            milestone=ms,
+            actual_date=actual_date,
+            is_text=is_text,
+            text_val=text_val,
+            is_status=is_status,
+            status_val=status_val,
+            cx_start=cx_start,
+            today=today,
+            spo_date=spo_date,
+        )
+
+        if status == "On Track":
+            on_track_count += 1
+        elif status == "Delayed":
+            delayed_count += 1
+        else:
+            in_progress_count += 1
+
+        milestones_out.append({
+            "key": ms_key,
+            "name": ms["name"],
+            "sort_order": ms["sort_order"],
+            "expected_days": ms.get("expected_days", 0),
+            "task_owner": ms.get("task_owner"),
+            "phase_type": ms.get("phase_type"),
+            "expected_date": expected_date_str,
+            "actual_finish": (
+                str(actual_date) if actual_date
+                else (text_val if is_text and text_val else
+                      (status_val if is_status else None))
+            ),
+            "status": status,
+            "delay_days": delay,
+        })
+
+    countable_ms = total_ms - not_applicable_count
+    if countable_ms > 0:
+        on_track_pct = round((on_track_count / countable_ms) * 100, 2)
+    else:
+        on_track_pct = 0
+
+    from app.services.gantt.logic import compute_overall_status
+    overall_status = compute_overall_status(on_track_count, countable_ms, ms_thresholds)
+
+    if not overall_status:
+        overall_status = "ON TRACK"
+
+    summary = {
+        "total": countable_ms,
+        "on_track": on_track_count,
+        "in_progress": in_progress_count,
+        "delayed": delayed_count,
+        "not_applicable": not_applicable_count,
+        "overall_status": overall_status,
+        "on_track_pct": on_track_pct,
+    }
+
+    return milestones_out, summary
+
+
 def get_ahloa_gantt_scope(
     db: Session,
+    config_db: Session | None = None,
     region: list[str] | None = None,
     market: list[str] | None = None,
     site_id: str = None,
     vendor: str = None,
     area: list[str] | None = None,
+    plan_type_include: list[str] | None = None,
+    regional_dev_initiatives: str | None = None,
     limit: int = None,
     offset: int = None,
+    consider_vendor_capacity: bool = False,
+    pace_constraint_flag: bool = False,
+    strict_pace_apply: bool = False,
+    user_id: str | None = None,
+    skipped_keys: set[str] | None = None,
+    user_skips: list[tuple[str, str | None]] | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ):
     """
-    Main AHLOA gantt endpoint — returns site-wise milestone-wise data.
+    AHLOA scope (survey) gantt — site-wise milestone-wise data.
 
-    For each site:
-      1. Calculate CX Start = Max(3710, 4075) + 50 days
-      2. For each milestone, compute expected date = CX Start + offset_weeks
-      3. Compare actual vs expected → On Track / In Progress / Delayed
+    Supports pace/vendor constraints: after initial computation, constraints
+    may shift CX start dates, then milestones are recomputed for affected sites.
     """
+    from app.services.gantt.service import _apply_pace_constraint, _apply_vendor_capacity
+    from app.services.ahloa.gantt_ahloa_construction import get_ahloa_milestone_thresholds
+
     today = date.today()
+
+    ms_thresholds = get_ahloa_milestone_thresholds(config_db) if config_db else []
 
     staging_columns = _get_all_staging_columns()
 
@@ -259,7 +425,10 @@ def get_ahloa_gantt_scope(
         staging_columns=staging_columns,
         region=region, market=market, site_id=site_id,
         vendor=vendor, area=area,
+        plan_type_include=plan_type_include,
+        regional_dev_initiatives=regional_dev_initiatives,
         limit=limit, offset=offset,
+        cx_date_from=start_date, cx_date_to=end_date,
     )
     result = db.execute(query, params)
     rows = [dict(r._mapping) for r in result]
@@ -270,94 +439,29 @@ def get_ahloa_gantt_scope(
         total_count = rows[0].get("total_count", 0)
         count = len(rows)
 
+    def _effective_skips(site_market: str) -> set[str] | None:
+        effective = set(skipped_keys) if skipped_keys else set()
+        if user_skips:
+            mkt_lower = site_market.strip().lower()
+            for ms_key, mkt in user_skips:
+                if mkt is None or mkt.strip().lower() == mkt_lower:
+                    effective.add(ms_key)
+        return effective or None
+
+    # --- Pass 1: build initial site list ---
     sites = []
+    row_lookup: dict[str, dict] = {}
     for row in rows:
-        cx_start = _compute_cx_start(row)
-        spo_date = parse_date(row.get("ms_1321_talon_view_drone_svcs_spo_issued_date"))
-        survey_elig_val = (str(row.get("ms_1321_talon_view_drone_svcs_cpo_custom_field") or "")).strip()
-        survey_eligible = bool(survey_elig_val)
+        cx_start, cx_source = _compute_cx_start(row, today)
 
-        milestones_out = []
-        on_track_count = 0
-        delayed_count = 0
-        in_progress_count = 0
-        not_applicable_count = 0
-        total_ms = 0
+        site_skips = _effective_skips(row.get("m_market") or "")
+        milestones_out, summary = _compute_scope_milestones(
+            row, cx_start, today, site_skips, ms_thresholds,
+        )
 
-        for ms in AHLOA_MILESTONES:
-            ms_key = ms["key"]
-            total_ms += 1
-
-            # survey_spo and survey_complete are NOT APPLICABLE if site is not survey eligible
-            if ms_key in ("survey_spo", "survey_complete") and not survey_eligible:
-                not_applicable_count += 1
-                milestones_out.append({
-                    "key": ms_key,
-                    "name": ms["name"],
-                    "sort_order": ms["sort_order"],
-                    "expected_days": ms.get("expected_days", 0),
-                    "task_owner": ms.get("task_owner"),
-                    "phase_type": ms.get("phase_type"),
-                    "expected_date": None,
-                    "actual_finish": None,
-                    "status": "Not Applicable",
-                    "delay_days": 0,
-                })
-                continue
-
-            actual_date, is_text, text_val, is_status, status_val = _get_milestone_actual(
-                row, ms_key,
-            )
-
-            status, delay, expected_date_str = _compute_milestone_status(
-                milestone=ms,
-                actual_date=actual_date,
-                is_text=is_text,
-                text_val=text_val,
-                is_status=is_status,
-                status_val=status_val,
-                cx_start=cx_start,
-                today=today,
-                spo_date=spo_date,
-            )
-
-            if status == "On Track":
-                on_track_count += 1
-            elif status == "Delayed":
-                delayed_count += 1
-            else:
-                in_progress_count += 1
-
-            milestones_out.append({
-                "key": ms_key,
-                "name": ms["name"],
-                "sort_order": ms["sort_order"],
-                "expected_days": ms.get("expected_days", 0),
-                "task_owner": ms.get("task_owner"),
-                "phase_type": ms.get("phase_type"),
-                "expected_date": expected_date_str,
-                "actual_finish": (
-                    str(actual_date) if actual_date
-                    else (text_val if is_text and text_val else
-                          (status_val if is_status else None))
-                ),
-                "status": status,
-                "delay_days": delay,
-            })
-
-        # Compute overall status (exclude NOT APPLICABLE from total)
-        countable_ms = total_ms - not_applicable_count
-        if countable_ms > 0:
-            on_track_pct = round((on_track_count / countable_ms) * 100, 2)
-        else:
-            on_track_pct = 0
-
-        if on_track_pct >= 60:
-            overall_status = "ON TRACK"
-        elif on_track_pct >= 30:
-            overall_status = "IN PROGRESS"
-        else:
-            overall_status = "CRITICAL"
+        gc_value = row.get("construction_gc") or ""
+        site_key = f"{row['s_site_id']}_{row.get('pj_project_id', '')}"
+        row_lookup[site_key] = row
 
         sites.append({
             "site_id": row["s_site_id"],
@@ -366,18 +470,69 @@ def get_ahloa_gantt_scope(
             "market": row.get("m_market") or "",
             "area": row.get("m_area") or "",
             "region": row.get("region") or "",
-            "vendor_name": row.get("construction_gc") or "",
+            "vendor_name": gc_value,
+            "gc_note": "GC not yet assigned." if not gc_value else None,
             "forecasted_cx_start_date": str(cx_start) if cx_start else None,
+            "forecasted_cx_source": cx_source,
             "milestones": milestones_out,
-            "overall_status": overall_status,
-            "on_track_pct": on_track_pct,
+            "overall_status": summary["overall_status"],
+            "on_track_pct": summary["on_track_pct"],
             "milestone_status_summary": {
-                "total": countable_ms,
-                "on_track": on_track_count,
-                "in_progress": in_progress_count,
-                "delayed": delayed_count,
-                "not_applicable": not_applicable_count,
+                "total": summary["total"],
+                "on_track": summary["on_track"],
+                "in_progress": summary["in_progress"],
+                "delayed": summary["delayed"],
+                "not_applicable": summary["not_applicable"],
             },
         })
+
+    # --- Pass 2: apply pace / vendor constraints ---
+    pre_cx = {f"{s['site_id']}_{s['project_id']}": s["forecasted_cx_start_date"] for s in sites}
+
+    if consider_vendor_capacity:
+        sites = _apply_vendor_capacity(sites, db)
+    if (pace_constraint_flag or strict_pace_apply) and user_id and config_db:
+        sites = _apply_pace_constraint(
+            sites, config_db, pace_constraint_flag, user_id,
+            strict_pace_apply=strict_pace_apply,
+        )
+
+    # --- Pass 2b: apply uploaded CX overrides ---
+    if user_id and config_db:
+        from app.services.macro_upload import get_upload_map
+        upload_map = get_upload_map(config_db, user_id, project_type="ahloa")
+        for site in sites:
+            uploaded_cx = upload_map.get(f"{site['site_id']}_{site['project_id']}")
+            if uploaded_cx:
+                site["forecasted_cx_start_date"] = uploaded_cx
+                site["forecasted_cx_source"] = "uploaded"
+
+    # --- Pass 3: recompute milestones for CX-shifted sites ---
+    for site in sites:
+        composite_key = f"{site['site_id']}_{site['project_id']}"
+        if site["forecasted_cx_start_date"] != pre_cx.get(composite_key):
+            new_cx = parse_date(site["forecasted_cx_start_date"])
+            if new_cx is None:
+                continue
+            site_key = f"{site['site_id']}_{site['project_id']}"
+            row = row_lookup.get(site_key)
+            if row is None:
+                continue
+            site_skips = _effective_skips(site.get("market") or "")
+            milestones_out, summary = _compute_scope_milestones(
+                row, new_cx, today, site_skips,
+            )
+            site["milestones"] = milestones_out
+            site["overall_status"] = summary["overall_status"]
+            site["on_track_pct"] = summary["on_track_pct"]
+            site["milestone_status_summary"] = {
+                "total": summary["total"],
+                "on_track": summary["on_track"],
+                "in_progress": summary["in_progress"],
+                "delayed": summary["delayed"],
+                "not_applicable": summary["not_applicable"],
+            }
+            if site["forecasted_cx_source"] != "uploaded":
+                site["forecasted_cx_source"] = "pace_adjusted"
 
     return sites, total_count, count

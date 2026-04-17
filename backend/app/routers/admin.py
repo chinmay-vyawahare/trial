@@ -14,7 +14,7 @@ and prereq tails are admin-only.
 """
 
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 from app.core.database import get_config_db, get_db, STAGING_TABLE
@@ -288,18 +288,51 @@ def _recompute_skip_aware_dependencies(db: Session):
 # Prerequisite CRUD (admin only)
 # ----------------------------------------------------------------
 
-@router.post("/prerequisites", response_model=MilestoneDefinitionCreateOut)
+@router.post("/prerequisites")
 def create_prerequisite(
     body: MilestoneDefinitionCreate,
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
     db: Session = Depends(get_config_db),
 ):
     """
-    Create a new prerequisite and insert it into the flow.
-
-    Accepts preceding_milestone_keys, following_milestone_keys, columns, etc.
-    Auto-syncs prereq_tails after creation.
+    Create a new prerequisite. Supports project_type=ahloa (uses AhloaMilestoneDefinition).
     """
-    # --- Validate key uniqueness ---
+    # --- AHLOA branch: simpler model ---
+    if project_type == "ahloa":
+        from app.models.ahloa import AhloaMilestoneDefinition, AhloaMilestoneColumn
+        existing = db.query(AhloaMilestoneDefinition).filter(AhloaMilestoneDefinition.key == body.key).first()
+        if existing:
+            raise HTTPException(409, f"AHLOA milestone '{body.key}' already exists")
+        max_order = max((r.sort_order for r in db.query(AhloaMilestoneDefinition).all()), default=0)
+        depends_on = None
+        if body.preceding_milestone_keys:
+            depends_on = body.preceding_milestone_keys[0] if len(body.preceding_milestone_keys) == 1 else json.dumps(body.preceding_milestone_keys)
+        ms = AhloaMilestoneDefinition(
+            key=body.key, name=body.name,
+            sort_order=max_order + 1,
+            expected_days=body.expected_days,
+            depends_on=depends_on,
+            start_gap_days=body.start_gap_days,
+            task_owner=body.task_owner,
+            phase_type=body.phase_type,
+        )
+        db.add(ms)
+        for idx, col in enumerate(body.columns, 1):
+            db.add(AhloaMilestoneColumn(
+                milestone_key=body.key,
+                column_name=col.column_name,
+                column_role=col.column_role,
+                logic=col.logic,
+                sort_order=idx,
+            ))
+        db.commit()
+        db.refresh(ms)
+        return {"id": ms.id, "key": ms.key, "name": ms.name, "sort_order": ms.sort_order,
+                "expected_days": ms.expected_days, "phase_type": ms.phase_type,
+                "task_owner": ms.task_owner, "project_type": "ahloa",
+                "columns": [{"column_name": c.column_name, "column_role": c.column_role, "logic": c.logic} for c in body.columns]}
+
+    # --- Macro (NTM) branch ---
     existing = db.query(MilestoneDefinition).filter(MilestoneDefinition.key == body.key).first()
     if existing:
         raise HTTPException(status_code=409, detail=f"Milestone key '{body.key}' already exists")
@@ -505,18 +538,12 @@ def skip_prerequisite(
     db: Session = Depends(get_config_db),
 ):
     """
-    Globally skip a prerequisite by setting is_skipped=True on the milestone definition.
-
-    This affects all users — skipped milestones are excluded from responses and counting.
+    Globally skip a prerequisite by setting is_skipped=True on MilestoneDefinition.
+    NTM/Macro only — AHLOA uses user-based skip via /skip-prerequisites endpoint.
     """
-    ms = (
-        db.query(MilestoneDefinition)
-        .filter(MilestoneDefinition.key == body.milestone_key)
-        .first()
-    )
+    ms = db.query(MilestoneDefinition).filter(MilestoneDefinition.key == body.milestone_key).first()
     if not ms:
         raise HTTPException(status_code=404, detail=f"Milestone '{body.milestone_key}' not found")
-
     ms.is_skipped = True
     db.flush()
     _recompute_skip_aware_dependencies(db)
@@ -528,7 +555,7 @@ def skip_prerequisite(
 
 @router.get("/skip-prerequisites", response_model=list[SkipPrerequisiteOut])
 def list_skipped_prerequisites(db: Session = Depends(get_config_db)):
-    """Return all globally skipped prerequisites."""
+    """Return all globally skipped prerequisites (NTM/Macro only)."""
     return (
         db.query(MilestoneDefinition)
         .filter(MilestoneDefinition.is_skipped == True)
@@ -542,17 +569,12 @@ def unskip_prerequisite(
     milestone_key: str,
     db: Session = Depends(get_config_db),
 ):
-    """Un-skip a single prerequisite globally."""
-    ms = (
-        db.query(MilestoneDefinition)
-        .filter(MilestoneDefinition.key == milestone_key)
-        .first()
-    )
+    """Un-skip a single prerequisite globally (NTM/Macro only)."""
+    ms = db.query(MilestoneDefinition).filter(MilestoneDefinition.key == milestone_key).first()
     if not ms:
         raise HTTPException(status_code=404, detail=f"Milestone '{milestone_key}' not found")
     if not ms.is_skipped:
         raise HTTPException(status_code=404, detail=f"Milestone '{milestone_key}' is not skipped")
-
     ms.is_skipped = False
     db.flush()
     _recompute_skip_aware_dependencies(db)
@@ -563,12 +585,8 @@ def unskip_prerequisite(
 
 @router.delete("/skip-prerequisites")
 def unskip_all_prerequisites(db: Session = Depends(get_config_db)):
-    """Un-skip all prerequisites globally."""
-    updated = (
-        db.query(MilestoneDefinition)
-        .filter(MilestoneDefinition.is_skipped == True)
-        .update({"is_skipped": False})
-    )
+    """Un-skip all prerequisites globally (NTM/Macro only)."""
+    updated = db.query(MilestoneDefinition).filter(MilestoneDefinition.is_skipped == True).update({"is_skipped": False})
     if updated == 0:
         raise HTTPException(status_code=404, detail="No skipped prerequisites found")
     db.flush()

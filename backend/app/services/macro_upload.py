@@ -1,8 +1,9 @@
 """
-Macro Planned Date Upload Service
+Excel Upload Service (unified for macro + ahloa).
 
 Parses CSV/Excel files and upserts rows into macro_uploaded_data table.
 Expected columns: SITE_ID, REGION, MARKET, PROJECT_ID, pj_p_4225_construction_start_finish
+project_type distinguishes macro vs ahloa uploads.
 """
 
 import io
@@ -52,10 +53,8 @@ def parse_upload_file(file_bytes: bytes, filename: str) -> pd.DataFrame:
     else:
         raise ValueError(f"Unsupported file type: {filename}. Use .csv, .xlsx, or .xls")
 
-    # Normalize column names (strip whitespace)
     df.columns = [c.strip() for c in df.columns]
 
-    # Validate required columns
     missing = [c for c in EXPECTED_COLUMNS if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {', '.join(missing)}")
@@ -63,14 +62,14 @@ def parse_upload_file(file_bytes: bytes, filename: str) -> pd.DataFrame:
     return df
 
 
-def upsert_uploaded_data(db: Session, df: pd.DataFrame, uploaded_by: str) -> dict:
+def upsert_uploaded_data(
+    db: Session, df: pd.DataFrame, uploaded_by: str,
+    project_type: str = "macro",
+) -> dict:
     """
     Upsert rows from DataFrame into macro_uploaded_data.
 
-    If a row with the same site_id and uploaded_by already exists, it is updated.
-    Otherwise a new row is inserted.
-
-    Returns summary: {inserted, updated, skipped, total}
+    Filters by (site_id, uploaded_by, project_type) for upsert matching.
     """
     inserted = 0
     updated = 0
@@ -84,9 +83,16 @@ def upsert_uploaded_data(db: Session, df: pd.DataFrame, uploaded_by: str) -> dic
 
         date_val = _parse_date(row.get("pj_p_4225_construction_start_finish"))
 
+        project_id = str(row.get("PROJECT_ID", "")).strip()
+
         existing = (
             db.query(MacroUploadedData)
-            .filter(MacroUploadedData.site_id == site_id, MacroUploadedData.uploaded_by == uploaded_by)
+            .filter(
+                MacroUploadedData.site_id == site_id,
+                MacroUploadedData.project_id == (project_id or None),
+                MacroUploadedData.uploaded_by == uploaded_by,
+                MacroUploadedData.project_type == project_type,
+            )
             .first()
         )
 
@@ -104,6 +110,7 @@ def upsert_uploaded_data(db: Session, df: pd.DataFrame, uploaded_by: str) -> dic
                 project_id=str(row.get("PROJECT_ID", "")).strip() or None,
                 pj_p_4225_construction_start_finish=date_val,
                 uploaded_by=uploaded_by,
+                project_type=project_type,
             )
             db.add(new_row)
             inserted += 1
@@ -116,3 +123,29 @@ def upsert_uploaded_data(db: Session, df: pd.DataFrame, uploaded_by: str) -> dic
         "skipped": skipped,
         "total": inserted + updated,
     }
+
+
+def get_upload_map(
+    db: Session, user_id: str, project_type: str = "macro",
+) -> dict[str, str]:
+    """Return {site_id_projectId: cx_date_str} for user's uploads filtered by project_type.
+
+    Key format: 'site_id' for backward compat with NTM (single project per site),
+    or 'site_id_project_id' when project_id is present.
+    """
+    rows = (
+        db.query(MacroUploadedData)
+        .filter(
+            MacroUploadedData.uploaded_by == user_id,
+            MacroUploadedData.project_type == project_type,
+        )
+        .all()
+    )
+    out = {}
+    for r in rows:
+        if r.site_id and r.pj_p_4225_construction_start_finish:
+            sid = r.site_id.strip()
+            pid = (r.project_id or "").strip()
+            key = f"{sid}_{pid}" if pid else sid
+            out[key] = str(r.pj_p_4225_construction_start_finish.date())
+    return out

@@ -362,19 +362,27 @@ def get_all_actual_columns(milestones: list[dict]) -> list[str]:
     return sorted(columns)
 
 
-def get_milestone_thresholds(db: Session) -> list[dict]:
+def get_milestone_thresholds(db: Session, project_type: str = "macro") -> list[dict]:
     """
-    Load milestone-level constraint thresholds (count-based) from DB.
-
-    Used to determine site overall status from pending milestone count.
-    Each dict: {"status_label": str, "color": str, "min_pct": float, "max_pct": float|None}
+    Load milestone-level constraint thresholds from DB.
+    Uses AhloaConstraintThreshold when project_type='ahloa'.
     """
-    rows = (
-        db.query(ConstraintThreshold)
-        .filter(ConstraintThreshold.constraint_type == "milestone")
-        .order_by(ConstraintThreshold.sort_order)
-        .all()
-    )
+    if project_type == "ahloa":
+        from app.models.ahloa import AhloaConstraintThreshold
+        rows = (
+            db.query(AhloaConstraintThreshold)
+            .filter(AhloaConstraintThreshold.constraint_type == "milestone",
+                    AhloaConstraintThreshold.project_type == "ahloa")
+            .order_by(AhloaConstraintThreshold.sort_order)
+            .all()
+        )
+    else:
+        rows = (
+            db.query(ConstraintThreshold)
+            .filter(ConstraintThreshold.constraint_type == "milestone")
+            .order_by(ConstraintThreshold.sort_order)
+            .all()
+        )
     return [
         {
             "status_label": r.status_label,
@@ -386,19 +394,27 @@ def get_milestone_thresholds(db: Session) -> list[dict]:
     ]
 
 
-def get_overall_thresholds(db: Session) -> list[dict]:
+def get_overall_thresholds(db: Session, project_type: str = "macro") -> list[dict]:
     """
-    Load dashboard-level constraint thresholds (count-based) from DB.
-
-    Used to determine dashboard overall status from on-track site count.
-    Each dict: {"status_label": str, "color": str, "min_pct": float, "max_pct": float|None}
+    Load dashboard-level constraint thresholds from DB.
+    Uses AhloaConstraintThreshold when project_type='ahloa'.
     """
-    rows = (
-        db.query(ConstraintThreshold)
-        .filter(ConstraintThreshold.constraint_type == "overall")
-        .order_by(ConstraintThreshold.sort_order)
-        .all()
-    )
+    if project_type == "ahloa":
+        from app.models.ahloa import AhloaConstraintThreshold
+        rows = (
+            db.query(AhloaConstraintThreshold)
+            .filter(AhloaConstraintThreshold.constraint_type == "overall",
+                    AhloaConstraintThreshold.project_type == "ahloa")
+            .order_by(AhloaConstraintThreshold.sort_order)
+            .all()
+        )
+    else:
+        rows = (
+            db.query(ConstraintThreshold)
+            .filter(ConstraintThreshold.constraint_type == "overall")
+            .order_by(ConstraintThreshold.sort_order)
+            .all()
+        )
     return [
         {
             "status_label": r.status_label,
