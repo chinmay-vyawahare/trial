@@ -6,6 +6,7 @@ from app.models.prerequisite import UserFilter, MilestoneDefinition
 from app.services.gantt import get_all_sites_gantt, get_dashboard_summary
 from app.services.gantt.milestones import get_user_expected_days_overrides
 from app.services.ahloa.gantt_ahloa_construction import get_ahloa_gantt
+from app.routers.ahloa import _load_user_skips
 
 router = APIRouter(prefix="/api/v1/schedular/gantt-charts", tags=["gantt-charts"])
 
@@ -155,7 +156,9 @@ def list_sites(
     region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives = _resolve_filters(
         config_db, user_id, region, market, site_id, vendor, area
     )
-
+    
+    user_skips = _load_user_skips(config_db, user_id) if user_id else set()
+    
     # --- AHLOA branch ---
     if project_type == "ahloa":
         if tab == "survey":
@@ -175,6 +178,7 @@ def list_sites(
                 consider_vendor_capacity=consider_vendor_capacity,
                 pace_constraint_flag=pace_constraint_flag,
                 user_id=user_id,
+                user_skips=user_skips,
             )
         else:
             sites, total_count, count = get_ahloa_gantt(
@@ -194,6 +198,9 @@ def list_sites(
                 strict_pace_apply=strict_pace_apply,
                 status=status,
                 user_id=user_id,
+                start_date=None,
+                end_date=None,
+                user_skips=user_skips,
             )
     else:
         # --- Macro (default) branch ---
