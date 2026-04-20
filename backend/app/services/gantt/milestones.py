@@ -226,18 +226,36 @@ def save_user_history_expected_days(
 
     is_actual = view_type == "actual"
 
+    # Load all existing rows for this user once. If duplicates already exist
+    # in the table (from prior bug), keep the oldest row and delete the rest
+    # so (user_id, milestone_key) collapses back to a single row.
+    existing_rows = (
+        db.query(UserHistoryExpectedDays)
+        .filter(UserHistoryExpectedDays.user_id == user_id)
+        .order_by(UserHistoryExpectedDays.id.asc())
+        .all()
+    )
+    existing_by_key: dict[str, UserHistoryExpectedDays] = {}
+    had_duplicates = False
+    for r in existing_rows:
+        if r.milestone_key in existing_by_key:
+            db.delete(r)
+            had_duplicates = True
+        else:
+            existing_by_key[r.milestone_key] = r
+    if had_duplicates:
+        db.flush()
+
+    # Dedup incoming list too — last value wins if the same key appears twice.
+    items_by_key: dict[str, dict] = {}
     for item in history_results:
+        items_by_key[item["milestone_key"]] = item
+
+    for mkey, item in items_by_key.items():
         computed = item.get("history_expected_days")
         effective = computed if computed is not None else 0
 
-        existing = (
-            db.query(UserHistoryExpectedDays)
-            .filter(
-                UserHistoryExpectedDays.user_id == user_id,
-                UserHistoryExpectedDays.milestone_key == item["milestone_key"],
-            )
-            .first()
-        )
+        existing = existing_by_key.get(mkey)
         if existing:
             existing.milestone_name = item.get("milestone_name")
             existing.sample_count = item.get("sample_count", 0)
@@ -252,7 +270,7 @@ def save_user_history_expected_days(
         else:
             row = UserHistoryExpectedDays(
                 user_id=user_id,
-                milestone_key=item["milestone_key"],
+                milestone_key=mkey,
                 milestone_name=item.get("milestone_name"),
                 history_expected_days=(0 if is_actual else effective),
                 back_days=(computed if is_actual else None),
@@ -261,6 +279,7 @@ def save_user_history_expected_days(
                 date_to=date_to,
             )
             db.add(row)
+            existing_by_key[mkey] = row
 
     db.commit()
 

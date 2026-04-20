@@ -244,7 +244,11 @@ class UserHistoryExpectedDays(ConfigBase):
     MilestoneDefinition. Each user gets their own set of history-based values.
     """
     __tablename__ = "user_history_expected_days"
-    __table_args__ = {"schema": _S}
+    __table_args__ = (
+        UniqueConstraint("user_id", "milestone_key",
+                         name="uq_user_history_expected_days_user_ms"),
+        {"schema": _S},
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(100), nullable=False, index=True)
