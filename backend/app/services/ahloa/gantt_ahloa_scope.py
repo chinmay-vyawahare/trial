@@ -448,22 +448,19 @@ def get_ahloa_gantt_scope(
                     effective.add(ms_key)
         return effective or None
 
-    # --- Pass 1: build initial site list ---
-    sites = []
+    # =================================================================
+    # PHASE 1: Build light site list with CX dates (no milestones yet)
+    # =================================================================
+    light_sites = []
     row_lookup: dict[str, dict] = {}
     for row in rows:
         cx_start, cx_source = _compute_cx_start(row, today)
-
-        site_skips = _effective_skips(row.get("m_market") or "")
-        milestones_out, summary = _compute_scope_milestones(
-            row, cx_start, today, site_skips, ms_thresholds,
-        )
 
         gc_value = row.get("construction_gc") or ""
         site_key = f"{row['s_site_id']}_{row.get('pj_project_id', '')}"
         row_lookup[site_key] = row
 
-        sites.append({
+        light_sites.append({
             "site_id": row["s_site_id"],
             "project_id": row.get("pj_project_id") or "",
             "project_name": row.get("pj_project_name") or "",
@@ -474,65 +471,64 @@ def get_ahloa_gantt_scope(
             "gc_note": "GC not yet assigned." if not gc_value else None,
             "forecasted_cx_start_date": str(cx_start) if cx_start else None,
             "forecasted_cx_source": cx_source,
-            "milestones": milestones_out,
-            "overall_status": summary["overall_status"],
-            "on_track_pct": summary["on_track_pct"],
-            "milestone_status_summary": {
-                "total": summary["total"],
-                "on_track": summary["on_track"],
-                "in_progress": summary["in_progress"],
-                "delayed": summary["delayed"],
-                "not_applicable": summary["not_applicable"],
-            },
         })
 
-    # --- Pass 2: apply pace / vendor constraints ---
-    pre_cx = {f"{s['site_id']}_{s['project_id']}": s["forecasted_cx_start_date"] for s in sites}
+    # =================================================================
+    # PHASE 2: Settle CX dates — vendor + excel + pace BEFORE milestones
+    # =================================================================
 
+    # 2a. Vendor capacity
     if consider_vendor_capacity:
-        sites = _apply_vendor_capacity(sites, db)
-    if (pace_constraint_flag or strict_pace_apply) and user_id and config_db:
-        sites = _apply_pace_constraint(
-            sites, config_db, pace_constraint_flag, user_id,
-            strict_pace_apply=strict_pace_apply,
-        )
+        light_sites = _apply_vendor_capacity(light_sites, db)
 
-    # --- Pass 2b: apply uploaded CX overrides ---
+    # 2b. Excel CX overrides
     if user_id and config_db:
         from app.services.macro_upload import get_upload_map
         upload_map = get_upload_map(config_db, user_id, project_type="ahloa")
-        for site in sites:
+        for site in light_sites:
             uploaded_cx = upload_map.get(f"{site['site_id']}_{site['project_id']}")
             if uploaded_cx:
                 site["forecasted_cx_start_date"] = uploaded_cx
                 site["forecasted_cx_source"] = "uploaded"
 
-    # --- Pass 3: recompute milestones for CX-shifted sites ---
-    for site in sites:
-        composite_key = f"{site['site_id']}_{site['project_id']}"
-        if site["forecasted_cx_start_date"] != pre_cx.get(composite_key):
-            new_cx = parse_date(site["forecasted_cx_start_date"])
-            if new_cx is None:
-                continue
-            site_key = f"{site['site_id']}_{site['project_id']}"
-            row = row_lookup.get(site_key)
-            if row is None:
-                continue
-            site_skips = _effective_skips(site.get("market") or "")
-            milestones_out, summary = _compute_scope_milestones(
-                row, new_cx, today, site_skips,
-            )
-            site["milestones"] = milestones_out
-            site["overall_status"] = summary["overall_status"]
-            site["on_track_pct"] = summary["on_track_pct"]
-            site["milestone_status_summary"] = {
-                "total": summary["total"],
-                "on_track": summary["on_track"],
-                "in_progress": summary["in_progress"],
-                "delayed": summary["delayed"],
-                "not_applicable": summary["not_applicable"],
-            }
-            if site["forecasted_cx_source"] != "uploaded":
-                site["forecasted_cx_source"] = "pace_adjusted"
+    # 2c. Pace constraints
+    if (pace_constraint_flag or strict_pace_apply) and user_id and config_db:
+        light_sites = _apply_pace_constraint(
+            light_sites, config_db, pace_constraint_flag, user_id,
+            strict_pace_apply=strict_pace_apply,
+        )
+
+    # =================================================================
+    # PHASE 3: Compute milestones ONCE with settled CX dates
+    # =================================================================
+    sites = []
+    for site in light_sites:
+        settled_cx = parse_date(site["forecasted_cx_start_date"])
+        site_key = f"{site['site_id']}_{site['project_id']}"
+        row = row_lookup.get(site_key)
+        if row is None:
+            site["milestones"] = []
+            site["overall_status"] = "CRITICAL"
+            site["on_track_pct"] = 0
+            site["milestone_status_summary"] = {"total": 0, "on_track": 0, "in_progress": 0, "delayed": 0, "not_applicable": 0}
+            sites.append(site)
+            continue
+
+        site_skips = _effective_skips(site.get("market") or "")
+        milestones_out, summary = _compute_scope_milestones(
+            row, settled_cx, today, site_skips, ms_thresholds,
+        )
+
+        site["milestones"] = milestones_out
+        site["overall_status"] = summary["overall_status"]
+        site["on_track_pct"] = summary["on_track_pct"]
+        site["milestone_status_summary"] = {
+            "total": summary["total"],
+            "on_track": summary["on_track"],
+            "in_progress": summary["in_progress"],
+            "delayed": summary["delayed"],
+            "not_applicable": summary["not_applicable"],
+        }
+        sites.append(site)
 
     return sites, total_count, count

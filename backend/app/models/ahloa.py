@@ -115,4 +115,19 @@ class AhloaUserSkippedPrerequisite(ConfigBase):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class AhloaUserExpectedDays(ConfigBase):
+    """Per-user SLA overrides for AHLOA milestone expected_days."""
+    __tablename__ = "ahloa_user_expected_days"
+    __table_args__ = (
+        UniqueConstraint("user_id", "milestone_key", name="uq_ahloa_ued_user_ms"),
+        {"schema": _S},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    milestone_key = Column(String(50), nullable=False)
+    expected_days = Column(Integer, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 

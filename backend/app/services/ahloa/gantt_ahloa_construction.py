@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.core.database import STAGING_TABLE
 from app.core.filters import apply_geo_filters
 from app.models.ahloa import AhloaMilestoneDefinition, AhloaMilestoneColumn, AhloaConstraintThreshold
-from app.services.gantt.logic import compute_overall_status, get_milestone_range_for_status
+from app.services.gantt.logic import compute_overall_status
 from app.services.gantt.utils import parse_date
 
 logger = logging.getLogger(__name__)
@@ -447,12 +447,13 @@ def _compute_site_milestones(
     today: date,
     ms_thresholds: list[dict],
     skipped_keys: set[str] | None = None,
+    user_expected_days_overrides: dict[str, int] | None = None,
 ) -> tuple[list[dict], dict]:
     """
     Compute milestones + status summary for a single AHLOA site.
 
     Returns (milestones_out, status_summary) where status_summary has keys:
-      total, on_track, in_progress, delayed, overall_status, on_track_pct, milestone_range
+      total, on_track, in_progress, delayed, overall_status, on_track_pct
     """
     milestones_out = []
     on_track_count = 0
@@ -468,12 +469,17 @@ def _compute_site_milestones(
 
         total_ms += 1
 
+        # Apply user SLA override if present
+        effective_ms = ms
+        if user_expected_days_overrides and ms_key in user_expected_days_overrides:
+            effective_ms = {**ms, "expected_days": user_expected_days_overrides[ms_key]}
+
         actual_date, is_text, text_val, is_status, status_val = _get_milestone_actual(
             row, ms_key, column_map=column_map, nas_data=nas_data,
         )
 
         status, delay, expected_date_str = _compute_milestone_status(
-            milestone=ms,
+            milestone=effective_ms,
             actual_date=actual_date,
             is_text=is_text,
             text_val=text_val,
@@ -495,7 +501,7 @@ def _compute_site_milestones(
             "key": ms_key,
             "name": ms["name"],
             "sort_order": ms["sort_order"],
-            "expected_days": ms.get("expected_days", 0),
+            "expected_days": effective_ms.get("expected_days", 0),
             "task_owner": ms.get("task_owner"),
             "phase_type": ms.get("phase_type"),
             "expected_date": expected_date_str,
@@ -512,11 +518,9 @@ def _compute_site_milestones(
     if blocked:
         overall_status = "Blocked"
         on_track_pct = 0
-        milestone_range = f"0-{total_ms}/{total_ms}"
     else:
         overall_status = compute_overall_status(on_track_count, total_ms, ms_thresholds)
         on_track_pct = round((on_track_count / total_ms * 100), 2) if total_ms > 0 else 0
-        milestone_range = get_milestone_range_for_status(overall_status, total_ms, ms_thresholds) if ms_thresholds else f"{on_track_count}/{total_ms}"
 
     status_summary = {
         "total": total_ms,
@@ -525,7 +529,6 @@ def _compute_site_milestones(
         "delayed": delayed_count,
         "overall_status": overall_status,
         "on_track_pct": on_track_pct,
-        "milestone_range": milestone_range,
     }
 
     return milestones_out, status_summary
@@ -564,6 +567,15 @@ def get_ahloa_gantt(
 
     today = date.today()
 
+    # Load user SLA overrides for AHLOA
+    user_ed_overrides = {}
+    if user_id:
+        from app.models.ahloa import AhloaUserExpectedDays
+        ed_rows = config_db.query(AhloaUserExpectedDays).filter(
+            AhloaUserExpectedDays.user_id == user_id
+        ).all()
+        user_ed_overrides = {r.milestone_key: r.expected_days for r in ed_rows if r.expected_days is not None}
+
     ahloa_milestones = get_ahloa_milestones(db)
     column_map = get_ahloa_column_map(db)
     ms_thresholds = get_ahloa_milestone_thresholds(config_db)
@@ -601,8 +613,10 @@ def get_ahloa_gantt(
                     effective.add(ms_key)
         return effective or None
 
-    # --- Pass 1: build initial site list with milestones ---
-    sites = []
+    # =================================================================
+    # PHASE 1: Build light site list with CX dates (no milestones yet)
+    # =================================================================
+    light_sites = []
     row_lookup: dict[str, dict] = {}
     for row in rows:
         cx_start, cx_source = _compute_cx_start(row, today)
@@ -615,18 +629,11 @@ def get_ahloa_gantt(
             if end_date and cx_start > end_date:
                 continue
 
-        site_skips = _effective_skips(row.get("m_market") or "")
-
-        milestones_out, summary = _compute_site_milestones(
-            row, cx_start, ahloa_milestones, column_map,
-            nas_data, today, ms_thresholds, site_skips,
-        )
-
         gc_value = row.get("construction_gc") or ""
         site_key = f"{row['s_site_id']}_{row.get('pj_project_id', '')}"
         row_lookup[site_key] = row
 
-        sites.append({
+        light_sites.append({
             "site_id": row["s_site_id"],
             "project_id": row.get("pj_project_id") or "",
             "project_name": row.get("pj_project_name") or "",
@@ -639,66 +646,67 @@ def get_ahloa_gantt(
             "delay_code": row.get("pj_construction_complete_delay_code") or "",
             "forecasted_cx_start_date": str(cx_start) if cx_start else None,
             "forecasted_cx_source": cx_source,
-            "milestones": milestones_out,
-            "overall_status": summary["overall_status"],
-            "on_track_pct": summary["on_track_pct"],
-            "milestone_range": summary["milestone_range"],
-            "milestone_status_summary": {
-                "total": summary["total"],
-                "on_track": summary["on_track"],
-                "in_progress": summary["in_progress"],
-                "delayed": summary["delayed"],
-            },
         })
 
-    # --- Pass 2: apply pace / vendor constraints ---
-    pre_cx = {f"{s['site_id']}_{s['project_id']}": s["forecasted_cx_start_date"] for s in sites}
+    # =================================================================
+    # PHASE 2: Settle CX dates — vendor capacity + excel + pace
+    #          (all BEFORE milestone computation)
+    # =================================================================
 
+    # 2a. Vendor capacity
     if consider_vendor_capacity:
-        sites = _apply_vendor_capacity(sites, db)
-    if (pace_constraint_flag or strict_pace_apply) and user_id:
-        sites = _apply_pace_constraint(
-            sites, config_db, pace_constraint_flag, user_id,
-            strict_pace_apply=strict_pace_apply,
-        )
+        light_sites = _apply_vendor_capacity(light_sites, db)
 
-    # --- Pass 2b: apply uploaded CX overrides ---
+    # 2b. Excel CX overrides
     if user_id:
         from app.services.macro_upload import get_upload_map
         upload_map = get_upload_map(config_db, user_id, project_type="ahloa")
-        for site in sites:
+        for site in light_sites:
             uploaded_cx = upload_map.get(f"{site['site_id']}_{site['project_id']}")
             if uploaded_cx:
                 site["forecasted_cx_start_date"] = uploaded_cx
                 site["forecasted_cx_source"] = "uploaded"
 
-    # --- Pass 3: recompute milestones for sites whose CX start changed ---
-    for site in sites:
-        composite_key = f"{site['site_id']}_{site['project_id']}"
-        if site["forecasted_cx_start_date"] != pre_cx.get(composite_key):
-            new_cx = parse_date(site["forecasted_cx_start_date"])
-            if new_cx is None:
-                continue
-            site_key = f"{site['site_id']}_{site['project_id']}"
-            row = row_lookup.get(site_key)
-            if row is None:
-                continue
-            site_skips = _effective_skips(site.get("market") or "")
-            milestones_out, summary = _compute_site_milestones(
-                row, new_cx, ahloa_milestones, column_map,
-                nas_data, today, ms_thresholds, site_skips,
-            )
-            site["milestones"] = milestones_out
-            site["overall_status"] = summary["overall_status"]
-            site["on_track_pct"] = summary["on_track_pct"]
-            site["milestone_range"] = summary["milestone_range"]
-            site["milestone_status_summary"] = {
-                "total": summary["total"],
-                "on_track": summary["on_track"],
-                "in_progress": summary["in_progress"],
-                "delayed": summary["delayed"],
-            }
-            if site["forecasted_cx_source"] != "uploaded":
-                site["forecasted_cx_source"] = "pace_adjusted"
+    # 2c. Pace constraints
+    if (pace_constraint_flag or strict_pace_apply) and user_id:
+        light_sites = _apply_pace_constraint(
+            light_sites, config_db, pace_constraint_flag, user_id,
+            strict_pace_apply=strict_pace_apply,
+        )
+
+    # =================================================================
+    # PHASE 3: Compute milestones ONCE with settled CX dates
+    # =================================================================
+    sites = []
+    for site in light_sites:
+        settled_cx = parse_date(site["forecasted_cx_start_date"])
+        site_key = f"{site['site_id']}_{site['project_id']}"
+        row = row_lookup.get(site_key)
+        if row is None or settled_cx is None:
+            # Keep site in output but with no milestones
+            site["milestones"] = []
+            site["overall_status"] = "CRITICAL"
+            site["on_track_pct"] = 0
+            site["milestone_status_summary"] = {"total": 0, "on_track": 0, "in_progress": 0, "delayed": 0}
+            sites.append(site)
+            continue
+
+        site_skips = _effective_skips(site.get("market") or "")
+        milestones_out, summary = _compute_site_milestones(
+            row, settled_cx, ahloa_milestones, column_map,
+            nas_data, today, ms_thresholds, site_skips,
+            user_expected_days_overrides=user_ed_overrides,
+        )
+
+        site["milestones"] = milestones_out
+        site["overall_status"] = summary["overall_status"]
+        site["on_track_pct"] = summary["on_track_pct"]
+        site["milestone_status_summary"] = {
+            "total": summary["total"],
+            "on_track": summary["on_track"],
+            "in_progress": summary["in_progress"],
+            "delayed": summary["delayed"],
+        }
+        sites.append(site)
 
     return sites, total_count, count

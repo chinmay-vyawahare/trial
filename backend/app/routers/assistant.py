@@ -56,7 +56,7 @@ class ResumeRequest(BaseModel):
 
 
 @router.post("/assistant/chat")
-async def chat(
+def chat(
     body: ChatRequest,
     user_id: str = Query(..., description="User ID (required)"),
     thread_id: str = Query(..., description="Thread ID for conversation isolation"),
