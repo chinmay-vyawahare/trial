@@ -232,9 +232,9 @@ def build_dashboard_query(
     return query, params
 
 
-def get_geo_hierarchy(db: Session) -> list[dict]:
+def get_geo_hierarchy(db: Session, project_type: str = "macro") -> list[dict]:
     """Return distinct region → area → market mappings from the staging table."""
-    base_where, params = _build_base_where()
+    base_where, params = _build_base_where(project_type)
     q = text(
         f"""
         SELECT DISTINCT region, m_area, m_market
@@ -305,8 +305,8 @@ def _build_hierarchy_optimized(rows):
     return result
 
 
-def get_region_hierarchy(db: Session, region: str = None, area: str = None, market: str = None):
-    base_where, params = _build_base_where()
+def get_region_hierarchy(db: Session, region: str = None, area: str = None, market: str = None, project_type: str = "macro"):
+    base_where, params = _build_base_where(project_type)
 
     # build filters dynamically
     filters = {

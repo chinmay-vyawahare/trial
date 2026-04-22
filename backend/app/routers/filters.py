@@ -25,8 +25,9 @@ def get_hierarchy(
     region: str = None,
     area: str = None,
     market: str = None,
+    project_type: str = "macro",
 ):
-    return get_region_hierarchy(db, region, area, market)
+    return get_region_hierarchy(db, region, area, market, project_type=project_type)
 
 
 @router.get("/regions")

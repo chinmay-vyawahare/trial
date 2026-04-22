@@ -9,12 +9,20 @@ All create / update / delete operations are in the admin router.
 """
 
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_config_db
 from app.models.prerequisite import MilestoneDefinition, MilestoneColumn, PrereqTail, GanttConfig
 from app.schemas.gantt import MilestoneDefinitionOut, MilestoneColumnOut
+
+
+def _get_milestone_models(project_type: str):
+    """Return (DefinitionModel, ColumnModel) for the given project_type."""
+    if project_type == "ahloa":
+        from app.models.ahloa import AhloaMilestoneDefinition, AhloaMilestoneColumn
+        return AhloaMilestoneDefinition, AhloaMilestoneColumn
+    return MilestoneDefinition, MilestoneColumn
 
 router = APIRouter(
     prefix="/api/v1/schedular/prerequisites",
@@ -97,16 +105,21 @@ def _enrich_with_dependencies(rows: list[MilestoneDefinition], columns_by_key: d
 
 
 @router.get("", response_model=list[MilestoneDefinitionOut])
-def list_prerequisites(db: Session = Depends(get_config_db)):
+def list_prerequisites(
+    project_type: str = Query("macro", description="Project type: 'macro' or 'ahloa'"),
+    db: Session = Depends(get_config_db),
+):
     """Return every milestone definition ordered by sort_order."""
+    DefModel, ColModel = _get_milestone_models(project_type)
+
     rows = (
-        db.query(MilestoneDefinition)
-        .order_by(MilestoneDefinition.sort_order)
+        db.query(DefModel)
+        .order_by(DefModel.sort_order)
         .all()
     )
     # Load all columns and group by milestone_key
-    all_columns = db.query(MilestoneColumn).order_by(MilestoneColumn.sort_order).all()
-    columns_by_key: dict[str, list[MilestoneColumn]] = {}
+    all_columns = db.query(ColModel).order_by(ColModel.sort_order).all()
+    columns_by_key: dict[str, list] = {}
     for col in all_columns:
         columns_by_key.setdefault(col.milestone_key, []).append(col)
 

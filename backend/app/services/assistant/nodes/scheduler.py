@@ -12,17 +12,29 @@ from sqlalchemy import text
 
 from app.core.database import STAGING_TABLE
 from app.services.assistant.llm import get_openai_client, LLM_MODEL
-from app.services.assistant.tools import API_REGISTRY, FILTER_TOOLS
+from app.services.assistant.tools import get_api_registry, FILTER_TOOLS
 from app.services.gantt import get_filter_options
 from app.services.gantt.queries import get_geo_hierarchy
 
 logger = logging.getLogger(__name__)
 
-_BASE_WHERE = (
+_BASE_WHERE_MACRO = (
     "smp_name = 'NTM' "
     "AND COALESCE(TRIM(construction_gc), '') != '' "
     "AND pj_a_4225_construction_start_finish IS NULL"
 )
+
+_BASE_WHERE_AHLOA = (
+    "pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%' "
+    "AND por_release_version = 'Radio Upgrade NR' "
+    "AND por_plan_added_date > '2025-03-28' "
+    "AND pj_a_4225_construction_start_finish IS NULL"
+)
+
+
+def _base_where(project_type: str) -> str:
+    return _BASE_WHERE_AHLOA if project_type == "ahloa" else _BASE_WHERE_MACRO
+
 
 SCHEDULER_PROMPT = """You are a filter management assistant for Nokia's construction project tracker.
 
@@ -31,6 +43,12 @@ site, vendor, plan type, dev initiatives) and return the correct API call for th
 frontend to execute.
 
 You do NOT execute anything. You only return instructions for the frontend.
+
+## PROJECT TYPE
+
+The current project type is: **{project_type}**
+All endpoints you return for skip/unskip operations must match this project type — the
+registry below has already been tailored for it.
 
 ## TOOLS YOU CAN CALL
 
@@ -139,23 +157,7 @@ You already validated it in the previous turn. Just return the save action direc
 5b. When user asks to change a NON-geo filter (vendor, site_id):
    - Call the relevant value tool, match, and save. No hierarchy check needed.
 
-5c. When user asks to REMOVE or DISABLE a prerequisite/milestone:
-   - The user may say "remove", "disable", "skip", or similar words — all mean the same: remove/disable the milestone.
-   - Call `get_available_prerequisites` to fetch all milestones with their current status.
-   - Match the user's request to the correct milestone by name (fuzzy match OK to find it).
-   - **CRITICAL: Use the EXACT `key` value from the tool result in the action params. Never modify, rename, or guess the key. The key must match the DB exactly (e.g. "steel", "3925", "site_walk", "cpo").**
-   - If the milestone is already removed/disabled, inform the user.
-   - If not removed, return a POST action to remove it:
-     Example: {{"message": "Removing 'Steel Received (If applicable)' prerequisite. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites", "params": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}]}}
-
-5d. When user asks to ADD or ENABLE a prerequisite, or asks which prerequisites are removed/disabled:
-   - The user may say "add", "enable", "unskip", or similar words — all mean the same: re-enable the milestone.
-   - Call `get_available_prerequisites` to fetch current status.
-   - **CRITICAL: Always use the EXACT `key` from the tool result, not the user's wording.**
-   - To add/enable: return a DELETE action:
-     Example: {{"message": "Enabling 'Steel Received (If applicable)' prerequisite.", "actions": [{{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/steel", "params": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}]}}
-   - To enable all: {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>", "params": {{"user_id": "<actual_user_id>"}}}}
-   - To list removed/disabled: show the removed milestones in the message with empty actions.
+{skip_rules}
 
 6. When user asks to change a gate check (plan_type_include or regional_dev_initiatives):
    - Use the same POST `/api/v1/schedular/user-filters` endpoint
@@ -188,55 +190,100 @@ You already validated it in the previous turn. Just return the save action direc
 15. NEVER include action details (endpoints, params, JSON) in the "message" field. The message is shown to the user in the UI — keep it human-readable. Actions go ONLY in the "actions" array.
 """
 
+_MACRO_SKIP_RULES = """5c. When user asks to REMOVE or DISABLE a prerequisite/milestone:
+   - The user may say "remove", "disable", "skip", or similar words — all mean the same: remove/disable the milestone.
+   - Call `get_available_prerequisites` to fetch all milestones with their current status.
+   - Match the user's request to the correct milestone by name (fuzzy match OK to find it).
+   - **CRITICAL: Use the EXACT `key` value from the tool result in the action params. Never modify, rename, or guess the key. The key must match the DB exactly (e.g. "steel", "3925", "site_walk", "cpo").**
+   - If the milestone is already removed/disabled, inform the user.
+   - If not removed, return a POST action to remove it:
+     Example: {{"message": "Removing 'Steel Received (If applicable)' prerequisite. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=macro", "params": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}]}}
+
+5d. When user asks to ADD or ENABLE a prerequisite, or asks which prerequisites are removed/disabled:
+   - The user may say "add", "enable", "unskip", or similar words — all mean the same: re-enable the milestone.
+   - Call `get_available_prerequisites` to fetch current status.
+   - **CRITICAL: Always use the EXACT `key` from the tool result, not the user's wording.**
+   - To add/enable: return a DELETE action:
+     Example: {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/steel?project_type=macro", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "steel"}}}}
+   - To enable all: {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>?project_type=macro", "params": {{"user_id": "<actual_user_id>"}}}}
+   - To list removed/disabled: show the removed milestones in the message with empty actions.
+"""
+
+_AHLOA_SKIP_RULES = """5c. When user asks to REMOVE or DISABLE an AHLOA prerequisite/milestone:
+   - The user may say "remove", "disable", "skip", or similar words — all mean the same: remove/disable the milestone.
+   - Call `get_available_prerequisites` to fetch all AHLOA milestones with their current status.
+   - Match the user's request to the correct milestone by name (fuzzy match OK to find it).
+   - **CRITICAL: Use the EXACT `key` value from the tool result. Never modify, rename, or guess the key.**
+   - AHLOA supports **market-wise skip**: if the user specifies a market (e.g. "skip NTP for Dallas"),
+     include `"market": "<market_name>"` in the POST body. If the user does NOT mention a market, omit
+     `market` (or send null) so the skip applies to ALL markets for that user.
+     * Before accepting a market value, call `get_available_markets` to validate it exists.
+   - If the milestone is already removed for that scope, inform the user.
+   - If not removed, return a POST action:
+     Example (all markets): {{"message": "Removing 'NTP' prerequisite for all markets. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}]}}
+     Example (one market): {{"message": "Removing 'NTP' prerequisite for market 'Dallas'.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp", "market": "Dallas"}}}}]}}
+
+5d. When user asks to ADD or ENABLE an AHLOA prerequisite, or asks which prerequisites are removed/disabled:
+   - The user may say "add", "enable", "unskip", or similar words.
+   - Call `get_available_prerequisites` to fetch current status.
+   - **CRITICAL: Always use the EXACT `key` from the tool result.**
+   - To enable for a specific market, append `&market=<name>` to the DELETE URL.
+   - To enable the all-markets entry, do NOT append a `market` query param.
+     Example (market-scoped): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa&market=Dallas", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
+     Example (all markets): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
+   - To enable all for the user: {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>?project_type=ahloa", "params": {{"user_id": "<actual_user_id>"}}}}
+   - To list removed/disabled: show them in the message with empty actions.
+"""
+
 MAX_TOOL_ROUNDS = 7
 
 
 # ── Tool execution helpers ─────────────────────────────────────────────
 
-def _exec_get_available_regions(db: Session) -> list[str]:
-    filters = get_filter_options(db)
+def _exec_get_available_regions(db: Session, project_type: str = "macro") -> list[str]:
+    filters = get_filter_options(db, project_type)
     return filters.get("regions", [])
 
 
-def _exec_get_available_markets(db: Session) -> list[str]:
-    filters = get_filter_options(db)
+def _exec_get_available_markets(db: Session, project_type: str = "macro") -> list[str]:
+    filters = get_filter_options(db, project_type)
     return filters.get("markets", [])
 
 
-def _exec_get_available_areas(db: Session) -> list[str]:
-    filters = get_filter_options(db)
+def _exec_get_available_areas(db: Session, project_type: str = "macro") -> list[str]:
+    filters = get_filter_options(db, project_type)
     return filters.get("areas", [])
 
 
-def _exec_get_available_sites(db: Session) -> list[str]:
-    filters = get_filter_options(db)
+def _exec_get_available_sites(db: Session, project_type: str = "macro") -> list[str]:
+    filters = get_filter_options(db, project_type)
     return filters.get("site_ids", [])
 
 
-def _exec_get_available_vendors(db: Session) -> list[str]:
-    filters = get_filter_options(db)
+def _exec_get_available_vendors(db: Session, project_type: str = "macro") -> list[str]:
+    filters = get_filter_options(db, project_type)
     return filters.get("vendors", [])
 
 
-def _exec_get_available_plan_types(db: Session) -> list[str]:
+def _exec_get_available_plan_types(db: Session, project_type: str = "macro") -> list[str]:
     rows = db.execute(text(
         f"SELECT DISTINCT por_plan_type FROM {STAGING_TABLE} "
-        f"WHERE {_BASE_WHERE} AND por_plan_type IS NOT NULL ORDER BY por_plan_type"
+        f"WHERE {_base_where(project_type)} AND por_plan_type IS NOT NULL ORDER BY por_plan_type"
     ))
     return [r[0] for r in rows]
 
 
-def _exec_get_available_dev_initiatives(db: Session) -> list[str]:
+def _exec_get_available_dev_initiatives(db: Session, project_type: str = "macro") -> list[str]:
     rows = db.execute(text(
         f"SELECT DISTINCT por_regional_dev_initiatives FROM {STAGING_TABLE} "
-        f"WHERE {_BASE_WHERE} AND por_regional_dev_initiatives IS NOT NULL ORDER BY por_regional_dev_initiatives"
+        f"WHERE {_base_where(project_type)} AND por_regional_dev_initiatives IS NOT NULL ORDER BY por_regional_dev_initiatives"
     ))
     return [r[0] for r in rows]
 
 
-def _exec_get_geolocation_hierarchy(db: Session) -> dict:
+def _exec_get_geolocation_hierarchy(db: Session, project_type: str = "macro") -> dict:
     """Return geo hierarchy grouped as {region: {area: [markets]}}."""
-    rows = get_geo_hierarchy(db)
+    rows = get_geo_hierarchy(db, project_type)
     hierarchy: dict[str, dict[str, list[str]]] = {}
     for r in rows:
         region = r["region"]
@@ -246,8 +293,49 @@ def _exec_get_geolocation_hierarchy(db: Session) -> dict:
     return hierarchy
 
 
-def _exec_get_available_prerequisites(db: Session, user_id: str = None) -> list[dict]:
-    """Fetch all milestones with their skip status for the user."""
+def _exec_get_available_prerequisites(
+    db: Session,
+    user_id: str = None,
+    project_type: str = "macro",
+) -> list[dict]:
+    """Fetch all milestones with their skip status for the user, scoped to project_type."""
+    if project_type == "ahloa":
+        from app.models.ahloa import AhloaMilestoneDefinition, AhloaUserSkippedPrerequisite
+
+        milestones = (
+            db.query(AhloaMilestoneDefinition)
+            .filter(AhloaMilestoneDefinition.is_skipped == False)
+            .order_by(AhloaMilestoneDefinition.sort_order)
+            .all()
+        )
+
+        skipped_entries: list[tuple[str, str | None]] = []
+        if user_id:
+            rows = (
+                db.query(
+                    AhloaUserSkippedPrerequisite.milestone_key,
+                    AhloaUserSkippedPrerequisite.market,
+                )
+                .filter(AhloaUserSkippedPrerequisite.user_id == user_id)
+                .all()
+            )
+            skipped_entries = [(r[0], r[1]) for r in rows]
+
+        skipped_keys_any = {k for k, _ in skipped_entries}
+        skipped_by_key: dict[str, list[str | None]] = {}
+        for k, m in skipped_entries:
+            skipped_by_key.setdefault(k, []).append(m)
+
+        return [
+            {
+                "key": ms.key,
+                "name": ms.name,
+                "is_skipped": ms.key in skipped_keys_any,
+                "skipped_markets": skipped_by_key.get(ms.key, []),
+            }
+            for ms in milestones
+        ]
+
     from app.models.prerequisite import MilestoneDefinition, UserSkippedPrerequisite
 
     milestones = (
@@ -289,13 +377,21 @@ TOOL_EXECUTORS = {
 }
 
 
-def _build_scheduler_prompt(user_id: str, user_filters: dict, chat_summary: str) -> str:
-    registry_text = json.dumps(API_REGISTRY, indent=2)
+def _build_scheduler_prompt(
+    user_id: str,
+    user_filters: dict,
+    chat_summary: str,
+    project_type: str,
+) -> str:
+    registry_text = json.dumps(get_api_registry(project_type), indent=2)
     user_filters_text = json.dumps(user_filters, indent=2)
+    skip_rules = _AHLOA_SKIP_RULES if project_type == "ahloa" else _MACRO_SKIP_RULES
 
-    prompt = SCHEDULER_PROMPT.replace("{api_registry}", registry_text)
+    prompt = SCHEDULER_PROMPT.replace("{project_type}", project_type)
+    prompt = prompt.replace("{api_registry}", registry_text)
     prompt = prompt.replace("{user_filters}", user_filters_text)
     prompt = prompt.replace("{chat_summary}", chat_summary)
+    prompt = prompt.replace("{skip_rules}", skip_rules)
     prompt += f"\n\nCurrent user_id: {user_id}"
     return prompt
 
@@ -308,15 +404,16 @@ def handle_scheduler(
     db: Session,
     recent_messages: list[dict] | None = None,
     config_db: Session = None,
+    project_type: str = "macro",
 ) -> dict:
     """Handle scheduling-related requests via LLM with tool calling."""
     client = get_openai_client()
     model = LLM_MODEL
 
     logger.info("  [SCHEDULER] Starting scheduler agent ...")
-    logger.info("  [SCHEDULER] Model: %s", model)
+    logger.info("  [SCHEDULER] Model: %s | project_type=%s", model, project_type)
 
-    system_prompt = _build_scheduler_prompt(user_id, user_filters, chat_summary)
+    system_prompt = _build_scheduler_prompt(user_id, user_filters, chat_summary, project_type)
     messages = [
         {"role": "system", "content": system_prompt},
     ]
@@ -355,9 +452,9 @@ def handle_scheduler(
                 if executor:
                     try:
                         if fn_name == "get_available_prerequisites":
-                            result = executor(config_db or db, user_id=user_id)
+                            result = executor(config_db or db, user_id=user_id, project_type=project_type)
                         else:
-                            result = executor(db)
+                            result = executor(db, project_type=project_type)
                         tool_result = json.dumps(result)
                         result_preview = tool_result[:150] + "..." if len(tool_result) > 150 else tool_result
                         logger.info(

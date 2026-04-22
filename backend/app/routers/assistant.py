@@ -60,6 +60,7 @@ def chat(
     body: ChatRequest,
     user_id: str = Query(..., description="User ID (required)"),
     thread_id: str = Query(..., description="Thread ID for conversation isolation"),
+    project_type: str = Query("macro", description="Project type: 'macro' (default) or 'ahloa'"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -71,6 +72,10 @@ def chat(
 
     if not body.message or not body.message.strip():
         raise HTTPException(status_code=400, detail="message is required and cannot be empty.")
+
+    project_type = (project_type or "macro").strip().lower()
+    if project_type not in ("macro", "ahloa"):
+        raise HTTPException(status_code=400, detail="project_type must be 'macro' or 'ahloa'.")
 
     user_id = user_id.strip()
     thread_id = thread_id.strip()
@@ -120,6 +125,7 @@ def chat(
             thread_id=thread_id,
             db=db,
             config_db=config_db,
+            project_type=project_type,
         )
     except Exception as e:
         logger.exception(f"Assistant error for user '{user_id}': {e}")

@@ -10,7 +10,7 @@ Two things live here:
 
 # ── API REGISTRY (unchanged — frontend-facing endpoints) ────────────────
 
-API_REGISTRY = {
+_BASE_API_REGISTRY = {
     "get_user_filters": {
         "method": "GET",
         "endpoint": "/api/v1/schedular/user-filters/{user_id}",
@@ -38,9 +38,12 @@ API_REGISTRY = {
             "regional_dev_initiatives": "string | null — gate check, free-text ILIKE pattern",
         },
     },
+}
+
+_MACRO_SKIP_REGISTRY = {
     "skip_prerequisite": {
         "method": "POST",
-        "endpoint": "/api/v1/schedular/skip-prerequisites",
+        "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=macro",
         "description": "Remove/disable a prerequisite milestone for a user. The milestone will be treated as instantly complete (zero duration) and downstream milestones recalculate.",
         "params": {
             "user_id": "string — required",
@@ -49,20 +52,66 @@ API_REGISTRY = {
     },
     "unskip_prerequisite": {
         "method": "DELETE",
-        "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}/{milestone_key}",
+        "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}/{milestone_key}?project_type=macro",
         "description": "Add/enable a previously removed prerequisite milestone for a user.",
-        "params": {
+        "pathparams": {
             "user_id": "string — path param",
             "milestone_key": "string — path param",
         },
     },
     "unskip_all_prerequisites": {
         "method": "DELETE",
-        "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}",
+        "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}?project_type=macro",
         "description": "Add/enable all removed prerequisites for a user.",
         "params": {"user_id": "string — path param"},
     },
 }
+
+_AHLOA_SKIP_REGISTRY = {
+    "skip_prerequisite": {
+        "method": "POST",
+        "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa",
+        "description": "Remove/disable an AHLOA prerequisite milestone for a user. Optional market param scopes the skip to a specific market; null/omitted means the skip applies to all markets.",
+        "params": {
+            "user_id": "string — required",
+            "milestone_key": "string — required, the key of the milestone to remove/disable",
+            "market": "string | null — optional, scope the skip to one market; null = all markets",
+        },
+    },
+    "unskip_prerequisite": {
+        "method": "DELETE",
+        "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}/{milestone_key}?project_type=ahloa",
+        "description": "Add/enable a previously removed AHLOA prerequisite milestone for a user. Append &market=<name> to unskip a market-scoped entry; omit it to unskip the all-markets entry.",
+        "pathparams": {
+            "user_id": "string — path param",
+            "milestone_key": "string — path param",
+        },
+        "params": {
+            "market": "string | null — optional query param; omit to unskip the all-markets entry",
+        },
+    },
+    "unskip_all_prerequisites": {
+        "method": "DELETE",
+        "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}?project_type=ahloa",
+        "description": "Add/enable all removed AHLOA prerequisites for a user (across all markets).",
+        "params": {"user_id": "string — path param"},
+    },
+}
+
+
+def get_api_registry(project_type: str = "macro") -> dict:
+    """Return the API registry tailored to the requested project type."""
+    registry = dict(_BASE_API_REGISTRY)
+    if project_type == "ahloa":
+        registry.update(_AHLOA_SKIP_REGISTRY)
+    else:
+        registry.update(_MACRO_SKIP_REGISTRY)
+    return registry
+
+
+# Backwards-compatible default (macro) — kept for any legacy import sites.
+API_REGISTRY = get_api_registry("macro")
+
 
 # ── LLM TOOL DEFINITIONS (OpenAI function-calling format) ──────────────
 # The LLM calls these *during* a conversation turn to fetch filter values

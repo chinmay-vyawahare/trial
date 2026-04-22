@@ -94,17 +94,19 @@ def run_assistant(
     thread_id: str,
     db: Session,
     config_db: Session,
+    project_type: str = "macro",
 ) -> dict:
     logger.info(
         "\n"
         "==============================================================\n"
         "  ASSISTANT REQUEST\n"
         "==============================================================\n"
-        "  User ID   : %s\n"
-        "  Thread ID : %s\n"
-        "  Message   : %s\n"
+        "  User ID      : %s\n"
+        "  Thread ID    : %s\n"
+        "  Project Type : %s\n"
+        "  Message      : %s\n"
         "==============================================================",
-        user_id, thread_id, user_message,
+        user_id, thread_id, project_type, user_message,
     )
 
     user_filters = _get_user_filters(config_db, user_id)
@@ -121,6 +123,7 @@ def run_assistant(
         "user_message": user_message,
         "user_id": user_id,
         "thread_id": thread_id,
+        "project_type": project_type,
         "chat_summary": chat_summary,
         "recent_messages": recent_messages,
         "user_filters": user_filters,
