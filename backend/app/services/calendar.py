@@ -50,31 +50,43 @@ def _fetch_rows(db, milestone_columns, planned_start_col, region, market, site_i
     return [dict(r._mapping) for r in result]
 
 
-def _filter_rows_by_forecast(rows, milestones_config, prereq_tails, cx_start_offset_days, planned_start_col, skipped_keys, start_date, end_date):
+def _filter_rows_by_forecast(rows, milestones_config, prereq_tails, cx_start_offset_days, planned_start_col, skipped_keys, start_date, end_date, uploaded_pf_overrides_map=None):
     """
     Pass 1: Lightweight — compute only the forecasted_cx_start date for each row
     and keep only those within [start_date, end_date].
     """
     filtered = []
     for row in rows:
+        site_pf_overrides = None
+        if uploaded_pf_overrides_map:
+            site_pf_overrides = uploaded_pf_overrides_map.get(
+                ((row.get("s_site_id") or "").strip(), (row.get("pj_project_id") or "").strip())
+            )
         forecast = compute_forecasted_cx_start_only(
             row, milestones_config, prereq_tails, cx_start_offset_days,
             planned_start_col, skipped_keys=skipped_keys,
+            planned_finish_overrides=site_pf_overrides,
         )
         if forecast and start_date <= forecast <= end_date:
             filtered.append(row)
     return filtered
 
 
-def _build_sites(rows, config_db, ms_thresholds, skipped_keys, user_expected_days_overrides):
+def _build_sites(rows, config_db, ms_thresholds, skipped_keys, user_expected_days_overrides, uploaded_pf_overrides_map=None):
     """
     Pass 2: Full milestone computation only for pre-filtered rows.
     """
     sites = []
     for row in rows:
+        site_pf_overrides = None
+        if uploaded_pf_overrides_map:
+            site_pf_overrides = uploaded_pf_overrides_map.get(
+                ((row.get("s_site_id") or "").strip(), (row.get("pj_project_id") or "").strip())
+            )
         milestones, forecasted_cx_start = compute_milestones_for_site(
             row, config_db, skipped_keys=skipped_keys,
             user_expected_days_overrides=user_expected_days_overrides,
+            planned_finish_overrides=site_pf_overrides,
         )
         if not milestones:
             continue
@@ -178,14 +190,24 @@ def get_calendar_sites(
     # Fetch all rows matching geographic/gate filters (no pagination — calendar filters in Python)
     rows = _fetch_rows(db, milestone_columns, planned_start_col, region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives)
 
+    # Load uploaded per-milestone pf overrides (keyed by site_id+project_id).
+    uploaded_pf_overrides_map = {}
+    if user_id:
+        from app.services.macro_milestone_upload import get_user_milestone_pf_overrides_map
+        uploaded_pf_overrides_map = get_user_milestone_pf_overrides_map(config_db, user_id)
+
     # Pass 1: fast forecast date filter
     filtered_rows = _filter_rows_by_forecast(
         rows, milestones_config, prereq_tails, cx_start_offset_days,
         planned_start_col, skipped_keys, start_date, end_date,
+        uploaded_pf_overrides_map=uploaded_pf_overrides_map,
     )
 
     # Pass 2: full computation only for rows in range
-    sites = _build_sites(filtered_rows, config_db, ms_thresholds, skipped_keys, user_expected_days_overrides)
+    sites = _build_sites(
+        filtered_rows, config_db, ms_thresholds, skipped_keys, user_expected_days_overrides,
+        uploaded_pf_overrides_map=uploaded_pf_overrides_map,
+    )
 
     sites = _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_constraint_flag, user_id, status, strict_pace_apply=strict_pace_apply)
 
@@ -264,14 +286,25 @@ def get_calendar_history_sites(
     # Fetch all rows matching geographic/gate filters
     rows = _fetch_rows(db, milestone_columns, planned_start_col, region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives)
 
+    # Load uploaded per-milestone pf overrides (forecast-view only; actual view
+    # is handled elsewhere via actual_overrides).
+    uploaded_pf_overrides_map = {}
+    if user_id and view_type != "actual":
+        from app.services.macro_milestone_upload import get_user_milestone_pf_overrides_map
+        uploaded_pf_overrides_map = get_user_milestone_pf_overrides_map(config_db, user_id)
+
     # Pass 1: fast forecast date filter
     filtered_rows = _filter_rows_by_forecast(
         rows, milestones_config, prereq_tails, cx_start_offset_days,
         planned_start_col, skipped_keys, start_date, end_date,
+        uploaded_pf_overrides_map=uploaded_pf_overrides_map,
     )
 
     # Pass 2: full computation only for rows in range
-    sites = _build_sites(filtered_rows, config_db, ms_thresholds, skipped_keys, history_overrides)
+    sites = _build_sites(
+        filtered_rows, config_db, ms_thresholds, skipped_keys, history_overrides,
+        uploaded_pf_overrides_map=uploaded_pf_overrides_map,
+    )
 
     sites = _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_constraint_flag, user_id, status, strict_pace_apply=strict_pace_apply)
 

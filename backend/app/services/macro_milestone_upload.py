@@ -460,6 +460,35 @@ def get_user_milestone_actuals_map(
     return out
 
 
+def get_user_milestone_pf_overrides_map(
+    db: Session, user_id: str
+) -> dict[tuple[str, str], dict[str, date]]:
+    """
+    Same source as get_user_milestone_actuals_map but parses each payload into
+    {milestone_key: date} per site, for use as planned_finish overrides in the
+    forecast view.
+
+    Date extraction:
+      - single / max columns → value is ISO date string
+      - with_status columns  → value is {"date": "...", "status": "..."}
+      - text columns         → skipped (no date semantics)
+    """
+    from app.services.gantt.utils import parse_date as _parse_date
+
+    raw = get_user_milestone_actuals_map(db, user_id)
+    out: dict[tuple[str, str], dict[str, date]] = {}
+    for site_key, payload in raw.items():
+        per_site: dict[str, date] = {}
+        for ms_key, val in payload.items():
+            raw_date = val.get("date") if isinstance(val, dict) else val
+            parsed = _parse_date(raw_date)
+            if parsed is not None:
+                per_site[ms_key] = parsed
+        if per_site:
+            out[site_key] = per_site
+    return out
+
+
 def delete_user_uploads(db: Session, user_id: str) -> int:
     """Delete all milestone-upload rows for a user. Returns rows deleted."""
     n = (

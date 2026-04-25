@@ -17,7 +17,8 @@ Given a user message, classify it into EXACTLY ONE of these intents:
 1. "greeting" — greetings, small talk, thank you, goodbye, how are you, pleasantries,
    or any casual/non-work message that doesn't relate to filters or simulation.
 
-2. "scheduler" — anything related to viewing or changing FILTERS or PREREQUISITES:
+2. "scheduler" — anything related to viewing or changing FILTERS or PREREQUISITES,
+   or asking about the user's AI Excel upload data:
    - Setting/changing/clearing filters (region, market, area, vendor, site, plan type, dev initiatives)
    - Asking what filter values are available ("list markets", "what regions exist?")
    - Asking about the user's current/saved filters
@@ -27,6 +28,10 @@ Given a user message, classify it into EXACTLY ONE of these intents:
    - Adding/enabling previously removed prerequisite milestones ("add NTP", "enable steel received")
    - Asking which prerequisites/milestones are removed or disabled
    - Listing available prerequisites or milestones
+   - Asking about the AI Excel upload / uploaded notes / extracted CX dates
+     ("what did I upload", "show my uploaded sites", "which sites are blocked",
+      "what is the CX for site X", "list blocked sites with reasons",
+      "summarize my Excel upload", "what notes did I upload")
 
 3. "simulation" — anything else work-related that is NOT about filters or prerequisites:
    - What-if scenarios, simulating changes

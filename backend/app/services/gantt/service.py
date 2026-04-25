@@ -51,6 +51,61 @@ def _apply_uploaded_overrides(sites: list[dict], config_db: Session, user_id: st
     return sites
 
 
+def _apply_ai_based_overrides(sites: list[dict], config_db: Session, user_id: str) -> list[dict]:
+    """
+    Override forecasted_cx_start_date and delay_code from AI-extracted Excel notes.
+
+    Same shape as `_apply_uploaded_overrides` but reads from ai_based_excel_upload.
+    For each (site_id, project_id) match:
+      - If forecasted_cx_start_date is present, replace site's forecasted CX date.
+      - If blocked_reason is present, set the site's delay_code to it (signals
+        a block on that site+project to downstream consumers).
+    """
+    from app.models.prerequisite import AIBasedExcelUpload
+
+    rows = (
+        config_db.query(AIBasedExcelUpload)
+        .filter(AIBasedExcelUpload.uploaded_by == user_id)
+        .all()
+    )
+    if not rows:
+        return sites
+
+    # Build lookup: (site_id, project_id) -> {cx, is_blocked, blocked_reason}
+    ai_lookup: dict[tuple[str, str], dict] = {}
+    for r in rows:
+        if not r.site_id:
+            continue
+        cx = None
+        if r.forecasted_cx_start_date:
+            cx = r.forecasted_cx_start_date
+            cx = cx.date() if hasattr(cx, "date") else cx
+        ai_lookup[(r.site_id.strip(), (r.project_id or "").strip())] = {
+            "cx": cx,
+            "is_blocked": bool(r.is_blocked),
+            "blocked_reason": (r.blocked_reason or "").strip() or None,
+        }
+
+    if not ai_lookup:
+        return sites
+
+    for site in sites:
+        site_id = (site.get("site_id") or "").strip()
+        project_id = (site.get("project_id") or "").strip()
+        key = (site_id, project_id)
+        rec = ai_lookup.get(key)
+        if not rec:
+            continue
+        if rec["cx"]:
+            site["forecasted_cx_start_date"] = str(rec["cx"])
+            site["forecasted_cx_source"] = "ai_excel"
+        if rec["blocked_reason"]:
+            site["pj_construction_complete_delay_code"] = rec["blocked_reason"]
+            site["delay_code"] = rec["blocked_reason"]
+
+    return sites
+
+
 
 def _apply_pace_constraint(
     sites: list[dict],
@@ -369,10 +424,23 @@ def get_all_sites_gantt(
     # Forecast-only path beyond this point — actual view returned above.
     today = date.today()
 
+    # Load user-uploaded per-milestone dates (keyed by site_id+project_id) and
+    # use them as planned_finish overrides. The override pushes the milestone's
+    # pf to the uploaded date; downstream milestones anchor on the new pf via
+    # the existing dep_anchors chain math, cascading the shift forward.
+    uploaded_pf_overrides_map: dict[tuple[str, str], dict[str, date]] = {}
+    if user_id:
+        from app.services.macro_milestone_upload import get_user_milestone_pf_overrides_map
+        uploaded_pf_overrides_map = get_user_milestone_pf_overrides_map(config_db, user_id)
+
     for row in rows:
+        site_pf_overrides = uploaded_pf_overrides_map.get(
+            ((row.get("s_site_id") or "").strip(), (row.get("pj_project_id") or "").strip())
+        )
         milestones, forecasted_cx_start = compute_milestones_for_site(
             row, config_db, skipped_keys=skipped_keys,
             user_expected_days_overrides=user_expected_days_overrides,
+            planned_finish_overrides=site_pf_overrides,
         )
         if not milestones:
             continue
@@ -452,6 +520,7 @@ def get_all_sites_gantt(
         # Override forecasted_cx_start_date from user-uploaded data if available
     if user_id:
         sites = _apply_uploaded_overrides(sites, config_db, user_id, project_type="macro")
+        sites = _apply_ai_based_overrides(sites, config_db, user_id)
 
     # Sort by forecasted_cx_start_date descending (latest first, nulls at bottom)
     sites.sort(
@@ -537,6 +606,7 @@ def _run_actual_two_phase(
 
     if user_id:
         light_sites = _apply_uploaded_overrides(light_sites, config_db, user_id, project_type="macro")
+        light_sites = _apply_ai_based_overrides(light_sites, config_db, user_id)
 
     total_count = len(light_sites)
 
@@ -569,13 +639,14 @@ def _run_actual_two_phase(
 
     today = date.today()
 
-    # Load user-uploaded per-milestone actuals (keyed by site_id+project_id).
-    # When a site+project has an uploaded payload, those milestone values
-    # take precedence over the staging-DB columns during compute.
-    uploaded_actuals_map: dict[tuple[str, str], dict] = {}
+    # Load user-uploaded per-milestone planned_finish overrides
+    # (keyed by site_id+project_id). The uploaded date is treated as the new
+    # planned_finish for that milestone and cascades to connected upcoming
+    # descendants (those without a staging actual_finish).
+    uploaded_pf_overrides_map: dict[tuple[str, str], dict[str, date]] = {}
     if user_id:
-        from app.services.macro_milestone_upload import get_user_milestone_actuals_map
-        uploaded_actuals_map = get_user_milestone_actuals_map(config_db, user_id)
+        from app.services.macro_milestone_upload import get_user_milestone_pf_overrides_map
+        uploaded_pf_overrides_map = get_user_milestone_pf_overrides_map(config_db, user_id)
 
     # --- Stage 5: milestone compute per page site against SETTLED cx ---
     sites_out: list[dict] = []
@@ -588,7 +659,7 @@ def _run_actual_two_phase(
         if settled_cx is None:
             continue
 
-        site_actual_overrides = uploaded_actuals_map.get(
+        site_pf_overrides = uploaded_pf_overrides_map.get(
             ((row.get("s_site_id") or "").strip(), (row.get("pj_project_id") or "").strip())
         )
 
@@ -598,7 +669,7 @@ def _run_actual_two_phase(
             user_expected_days_overrides=user_expected_days_overrides,
             user_back_days_overrides=user_back_days_overrides,
             cx_override=settled_cx,
-            actual_overrides=site_actual_overrides,
+            planned_finish_overrides=site_pf_overrides,
         )
         if not milestones:
             continue
@@ -633,6 +704,33 @@ def _run_actual_two_phase(
                     suggested_forecast_cx_start = temp
                     suggested_comment = f"Suggested {suggested_forecast_cx_start} due to delay in {blocker['name']}"
 
+            # Trigger 2: an upload-driven cascade has pushed a missing
+            # milestone's planned_finish past the pinned CX. Surface the
+            # latest such pf as the suggested CX, naming the driving
+            # commitment in the comment.
+            if site_pf_overrides:
+                overshoot = [
+                    m for m in missing
+                    if m.get("planned_finish")
+                    and parse_date(m["planned_finish"])
+                    and parse_date(m["planned_finish"]) > settled_cx
+                ]
+                if overshoot:
+                    binding = max(overshoot, key=lambda m: parse_date(m["planned_finish"]))
+                    binding_pf = parse_date(binding["planned_finish"])
+                    if not suggested_forecast_cx_start or binding_pf > suggested_forecast_cx_start:
+                        # Driver = the milestone whose own upload caused this
+                        # binding tail to overshoot. Walk up dep chain from
+                        # the binding milestone until we hit a key in the
+                        # override map; fall back to binding's name.
+                        driver_name = binding.get("name") or binding["key"]
+                        for m in countable:
+                            if m["key"] in site_pf_overrides:
+                                driver_name = m.get("name") or m["key"]
+                                break
+                        suggested_forecast_cx_start = binding_pf
+                        suggested_comment = f"Suggested {suggested_forecast_cx_start} due to commitment on {driver_name}"
+
         site_dict = {
             "vendor_name": row.get("construction_gc") or "",
             "site_id": row["s_site_id"],
@@ -642,8 +740,14 @@ def _run_actual_two_phase(
             "area": row.get("m_area") or "",
             "region": row.get("region") or "",
             "delay_comments": row.get("pj_construction_start_delay_comments") or "",
-            "delay_code": row.get("pj_construction_complete_delay_code") or "",
+            # Prefer AI-extracted blocked_reason if present (set by
+            # _apply_ai_based_overrides), else fall back to staging column.
+            "delay_code": light.get("pj_construction_complete_delay_code")
+                or row.get("pj_construction_complete_delay_code") or "",
+            "pj_construction_complete_delay_code": light.get("pj_construction_complete_delay_code")
+                or row.get("pj_construction_complete_delay_code") or "",
             "forecasted_cx_start_date": light["forecasted_cx_start_date"],
+            "forecasted_cx_source": light.get("forecasted_cx_source"),
             "note": light.get("note"),
             "milestones": [
                 {k: v for k, v in m.items() if k != "is_virtual"}

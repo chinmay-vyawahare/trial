@@ -19,7 +19,7 @@ import logging
 import uuid
 from typing import Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func, distinct
@@ -31,6 +31,8 @@ from app.services.assistant.service import run_assistant
 from app.services.assistant.nodes.simulation import resume_tool_stream, simulate_tool_stream
 from app.services.assistant.nodes.planner import classify_intent
 from app.services.assistant.service import _get_recent_messages, _summarize_history, _save_messages
+from app.services.ai_excel_upload import ingest_ai_excel, build_summary_message
+from app.services.excel_through_ai import InvalidExcelColumnsError
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +58,12 @@ class ResumeRequest(BaseModel):
 
 
 @router.post("/assistant/chat")
-def chat(
-    body: ChatRequest,
+async def chat(
     user_id: str = Query(..., description="User ID (required)"),
     thread_id: str = Query(..., description="Thread ID for conversation isolation"),
     project_type: str = Query("macro", description="Project type: 'macro' (default) or 'ahloa'"),
+    message: Optional[str] = Form(None, description="User message (required when no file is attached)"),
+    file: Optional[UploadFile] = File(None, description="Optional Excel/CSV — when present, the AI extractor runs and the chat message is auto-generated as a confirmation"),
     db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
@@ -70,16 +73,80 @@ def chat(
     if not thread_id or not thread_id.strip():
         raise HTTPException(status_code=400, detail="thread_id is required and cannot be empty.")
 
-    if not body.message or not body.message.strip():
-        raise HTTPException(status_code=400, detail="message is required and cannot be empty.")
-
+    user_id = user_id.strip()
+    thread_id = thread_id.strip()
     project_type = (project_type or "macro").strip().lower()
     if project_type not in ("macro", "ahloa"):
         raise HTTPException(status_code=400, detail="project_type must be 'macro' or 'ahloa'.")
 
-    user_id = user_id.strip()
-    thread_id = thread_id.strip()
-    message = body.message.strip()
+    # ---- File path: bypass intent / agent and run the AI Excel extractor ----
+    if file is not None:
+        try:
+            file_bytes = await file.read()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to read uploaded file: {e}")
+
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+        try:
+            result = ingest_ai_excel(
+                file_bytes=file_bytes,
+                filename=file.filename or "upload.xlsx",
+                db=config_db,
+                uploaded_by=user_id,
+            )
+        except InvalidExcelColumnsError as e:
+            # Friendly response — render as a chat message rather than a 4xx
+            msg = str(e)
+            user_msg = (message or "").strip() or f"[uploaded {file.filename}]"
+            config_db.add(ChatHistory(
+                user_id=user_id, thread_id=thread_id,
+                role="user", content=user_msg,
+            ))
+            config_db.add(ChatHistory(
+                user_id=user_id, thread_id=thread_id,
+                role="assistant",
+                content=json.dumps({"message": msg, "actions": [], "source": "ai_excel_upload"}),
+            ))
+            config_db.commit()
+            return {
+                "message": msg,
+                "actions": [],
+                "source": "ai_excel_upload",
+                "error": "invalid_columns",
+            }
+        except Exception as e:
+            logger.exception(f"AI Excel ingest failed for user '{user_id}': {e}")
+            raise HTTPException(status_code=500, detail=f"AI Excel extraction failed: {e}")
+
+        confirmation = build_summary_message(result)
+
+        # Persist to chat history (mirrors the regular chat-save pattern).
+        user_msg = (message or "").strip() or f"[uploaded {file.filename}]"
+        config_db.add(ChatHistory(
+            user_id=user_id, thread_id=thread_id,
+            role="user", content=user_msg,
+        ))
+        config_db.add(ChatHistory(
+            user_id=user_id, thread_id=thread_id,
+            role="assistant",
+            content=json.dumps({"message": confirmation, "actions": [], "source": "ai_excel_upload"}),
+        ))
+        config_db.commit()
+
+        return {
+            "message": confirmation,
+            "actions": [],
+            "source": "ai_excel_upload",
+            "summary": result,
+        }
+
+    # ---- No-file path: existing chat flow ----
+    if not message or not message.strip():
+        raise HTTPException(status_code=400, detail="message is required when no file is attached.")
+
+    message = message.strip()
 
     # Classify intent first — if simulation, stream SSE events directly
     recent_messages = _get_recent_messages(config_db, user_id, thread_id)

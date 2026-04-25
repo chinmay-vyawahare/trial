@@ -240,6 +240,7 @@ def _compute_planned_dates(
     milestones: List[Dict],
     skipped_keys: set | None = None,
     row: Dict | None = None,
+    planned_finish_overrides: Dict[str, date] | None = None,
 ):
     """
     Compute planned start/finish for every milestone from the dependency chain.
@@ -258,9 +259,22 @@ def _compute_planned_dates(
     When *row* is provided and a predecessor has an actual finish date (non-text),
     actual_finish + 1 day is used as the planned start for the following milestone
     instead of the computed planned_finish + gap.
+
+    When *planned_finish_overrides* contains a milestone key, that milestone's
+    pf is replaced with the override date and ps is pulled back to
+    pf - expected_days (duration preserved). Downstream milestones anchor on
+    the overridden pf via the existing dep_anchors logic, so the shift
+    cascades through the dependency chain automatically.
+
+    Overrides are applied only to upcoming milestones — when a milestone's
+    originally-computed pf is already in the past (< today), the override is
+    skipped and the baseline pf/ps is kept. Past milestones are historical
+    record and are not moved retroactively.
     """
     skipped = skipped_keys or set()
     dates = {}
+    overrides = planned_finish_overrides or {}
+    today = date.today()
     expected_by_key = {m["key"]: m["expected_days"] for m in milestones}
 
     # Pre-compute actual finish dates for all milestones (non-text only)
@@ -285,10 +299,13 @@ def _compute_planned_dates(
             expected = ms["expected_days"]
 
         if dep is None:
-            dates[key] = {
-                "ps": origin_date,
-                "pf": origin_date + timedelta(days=expected) if expected > 0 else origin_date,
-            }
+            ps = origin_date
+            pf = origin_date + timedelta(days=expected) if expected > 0 else origin_date
+            override = overrides.get(key)
+            if override is not None and pf >= today:
+                pf = override
+                ps = pf - timedelta(days=expected) if expected > 0 else pf
+            dates[key] = {"ps": ps, "pf": pf}
             continue
 
         # Normalise to list so single and multi-dependency paths share logic
@@ -307,6 +324,12 @@ def _compute_planned_dates(
             continue
         ps = max(dep_anchors)
         pf = ps + timedelta(days=expected)
+
+        override = overrides.get(key)
+        if override is not None and pf >= today:
+            pf = override
+            ps = pf - timedelta(days=expected) if expected > 0 else pf
+
         dates[key] = {"ps": ps, "pf": pf}
 
     return dates
@@ -479,6 +502,81 @@ def _compute_planned_dates_backward_from_db(
     return dates
 
 
+def _apply_pf_overrides_actual(
+    dates: Dict[str, Dict],
+    milestones_config: List[Dict],
+    row: Dict,
+    overrides: Dict[str, date],
+    skipped_keys: set | None,
+) -> tuple[Dict[str, Dict], Dict[str, str]]:
+    """
+    Post-pass for actual view: apply user-uploaded planned_finish overrides
+    on top of the baseline backward-computed *dates*.
+
+    Behaviour:
+      - For each milestone in topological order, inherit the max delta from
+        its immediate parents (cascade through dep DAG).
+      - If the milestone already has a staging actual_finish, the cascade
+        stops here (delta = 0) — reality wins over commitment.
+      - If the milestone has its own override, set its delta so that
+        shifted_pf = override (composes with inherited parent delta).
+      - Apply non-zero deltas: pf += delta, ps += delta. Duration preserved.
+
+    Returns (mutated *dates*, override_source map {key: milestone_name}).
+    """
+    if not overrides:
+        return dates, {}
+
+    skipped = skipped_keys or set()
+
+    # Build "has staging actual" set — used as the cascade-stop gate
+    has_actual: set[str] = set()
+    for ms in milestones_config:
+        actual, is_text, text_val, skip = _get_actual_date(row, ms)
+        if (actual is not None and not is_text) or skip:
+            has_actual.add(ms["key"])
+
+    # Walk in topological (sort_order) order: predecessors before dependents.
+    cumulative_delta: Dict[str, int] = {k: 0 for k in dates}
+    override_source: Dict[str, str] = {}
+
+    for ms in milestones_config:
+        key = ms["key"]
+        if key not in dates or key in skipped:
+            continue
+
+        # Stop cascade at staging actuals — reality beats commitment.
+        if key in has_actual:
+            cumulative_delta[key] = 0
+            continue
+
+        # Inherit max delta across immediate parents.
+        dep = ms.get("depends_on")
+        dep_list = [] if dep is None else (dep if isinstance(dep, list) else [dep])
+        parent_delta = max(
+            (cumulative_delta.get(d, 0) for d in dep_list if d in cumulative_delta),
+            default=0,
+        )
+
+        # Own override (if present) is absolute: shifted_pf must equal override.
+        if key in overrides:
+            shifted_baseline_pf = dates[key]["pf"] + timedelta(days=parent_delta)
+            own_delta = (overrides[key] - shifted_baseline_pf).days
+            cumulative_delta[key] = parent_delta + own_delta
+            override_source[key] = ms.get("name", key)
+        else:
+            cumulative_delta[key] = parent_delta
+
+    # Apply accumulated shifts.
+    for k, d_ in cumulative_delta.items():
+        if d_ == 0 or k not in dates:
+            continue
+        dates[k]["pf"] += timedelta(days=d_)
+        dates[k]["ps"] += timedelta(days=d_)
+
+    return dates, override_source
+
+
 def compute_milestones_for_site_actual(
     row: Dict,
     db: Session,
@@ -486,7 +584,7 @@ def compute_milestones_for_site_actual(
     user_expected_days_overrides: dict | None = None,
     user_back_days_overrides: dict | None = None,
     cx_override: date | None = None,
-    actual_overrides: dict | None = None,
+    planned_finish_overrides: Dict[str, date] | None = None,
 ) -> tuple[List[Dict], Optional[date]]:
     """
     Actual-view milestone computation.
@@ -543,6 +641,13 @@ def compute_milestones_for_site_actual(
                     ps = pf - timedelta(days=expected) if expected > 0 else pf
                     dates[k] = {"ps": ps, "pf": pf}
 
+    # Apply user-uploaded planned_finish overrides + cascade to descendants.
+    # Cascade stops at any descendant that already has a staging actual_finish.
+    if planned_finish_overrides:
+        dates, _override_source = _apply_pf_overrides_actual(
+            dates, milestones_config, row, planned_finish_overrides, skipped_keys,
+        )
+
     skipped = skipped_keys or set()
     preceding_map, following_map = _build_dependency_maps(milestones_config, skipped_keys=skipped)
     milestones = []
@@ -560,10 +665,7 @@ def compute_milestones_for_site_actual(
         if key in skipped:
             continue
 
-        if actual_overrides and key in actual_overrides:
-            actual, is_text, text_val, skip = _apply_actual_override(ms, actual_overrides[key])
-        else:
-            actual, is_text, text_val, skip = _get_actual_date(row, ms)
+        actual, is_text, text_val, skip = _get_actual_date(row, ms)
 
         back_days = (cx_start_date - pf).days if pf else None
 
@@ -686,6 +788,7 @@ def compute_forecasted_cx_start_only(
     cx_start_offset_days: int,
     planned_start_col: str,
     skipped_keys: set | None = None,
+    planned_finish_overrides: Dict[str, date] | None = None,
 ) -> Optional[date]:
     """
     Lightweight version — computes only the forecasted_cx_start date for a row
@@ -696,7 +799,11 @@ def compute_forecasted_cx_start_only(
     if origin_date is None:
         return None
 
-    dates = _compute_planned_dates(origin_date, milestones_config, skipped_keys=skipped_keys, row=row)
+    dates = _compute_planned_dates(
+        origin_date, milestones_config,
+        skipped_keys=skipped_keys, row=row,
+        planned_finish_overrides=planned_finish_overrides,
+    )
 
     skipped = skipped_keys or set()
 
@@ -745,6 +852,7 @@ def compute_milestones_for_site(
     db: Session,
     skipped_keys: set | None = None,
     user_expected_days_overrides: dict | None = None,
+    planned_finish_overrides: Dict[str, date] | None = None,
 ) -> tuple[List[Dict], Optional[date]]:
     today = date.today()
 
@@ -757,7 +865,11 @@ def compute_milestones_for_site(
     if origin_date is None:
         return [], None
 
-    dates = _compute_planned_dates(origin_date, milestones_config, skipped_keys=skipped_keys, row=row)
+    dates = _compute_planned_dates(
+        origin_date, milestones_config,
+        skipped_keys=skipped_keys, row=row,
+        planned_finish_overrides=planned_finish_overrides,
+    )
 
     skipped = skipped_keys or set()
     preceding_map, following_map = _build_dependency_maps(milestones_config, skipped_keys=skipped)

@@ -364,6 +364,33 @@ def _exec_get_available_prerequisites(
     ]
 
 
+def _exec_get_ai_excel_upload_data(config_db, user_id: str, **kwargs):
+    """Return all AI-Excel-extracted rows for the given user."""
+    from app.models.prerequisite import AIBasedExcelUpload
+    rows = (
+        config_db.query(AIBasedExcelUpload)
+        .filter(AIBasedExcelUpload.uploaded_by == user_id)
+        .order_by(AIBasedExcelUpload.site_id)
+        .all()
+    )
+    return [
+        {
+            "site_id": r.site_id,
+            "project_id": r.project_id,
+            "region": r.region,
+            "market": r.market,
+            "forecasted_cx_start_date": (
+                r.forecasted_cx_start_date.date().isoformat()
+                if r.forecasted_cx_start_date else None
+            ),
+            "is_blocked": bool(r.is_blocked),
+            "blocked_reason": r.blocked_reason,
+            "uploaded_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
 TOOL_EXECUTORS = {
     "get_available_regions": _exec_get_available_regions,
     "get_available_markets": _exec_get_available_markets,
@@ -374,6 +401,7 @@ TOOL_EXECUTORS = {
     "get_available_dev_initiatives": _exec_get_available_dev_initiatives,
     "get_geolocation_hierarchy": _exec_get_geolocation_hierarchy,
     "get_available_prerequisites": _exec_get_available_prerequisites,
+    "get_ai_excel_upload_data": _exec_get_ai_excel_upload_data,
 }
 
 
@@ -453,6 +481,8 @@ def handle_scheduler(
                     try:
                         if fn_name == "get_available_prerequisites":
                             result = executor(config_db or db, user_id=user_id, project_type=project_type)
+                        elif fn_name == "get_ai_excel_upload_data":
+                            result = executor(config_db or db, user_id=user_id)
                         else:
                             result = executor(db, project_type=project_type)
                         tool_result = json.dumps(result)

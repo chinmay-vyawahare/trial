@@ -11,7 +11,7 @@ from openai import OpenAI
 
 # LLM config — Nokia gateway structure with OpenAI base URL
 LLM_BASE_URL = "https://api.openai.com/v1"
-LLM_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
+LLM_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1")
 LLM_API_KEY = os.getenv("OPENAI_API_KEY", "NONE")
 LLM_HEADERS = {
     "api-key": LLM_API_KEY,

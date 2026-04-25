@@ -333,6 +333,40 @@ class MacroUploadedData(ConfigBase):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class AIBasedExcelUpload(ConfigBase):
+    """
+    AI-extracted per-site data from Excel "Notes/Remarks" notes.
+
+    The AI assistant runs an LLM over each row's note and extracts:
+      - forecasted_cx_start_date
+      - is_blocked
+      - blocked_reason
+
+    Persisted per (uploaded_by, site_id, project_id). Applied as overrides
+    in the gantt response by `_apply_ai_based_overrides` — same shape as
+    `_apply_uploaded_overrides`, plus surfacing blocked_reason as the
+    site's delay_code.
+    """
+    __tablename__ = "ai_based_excel_upload"
+    __table_args__ = (
+        UniqueConstraint("site_id", "project_id", "uploaded_by",
+                         name="uq_ai_excel_site_proj_user"),
+        {"schema": _S},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    site_id = Column(String(100), nullable=False, index=True)
+    region = Column(String(200), nullable=True)
+    market = Column(String(200), nullable=True)
+    project_id = Column(String(200), nullable=True)
+    forecasted_cx_start_date = Column(DateTime, nullable=True)
+    is_blocked = Column(Boolean, nullable=True, default=False)
+    blocked_reason = Column(String(2000), nullable=True)
+    uploaded_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class MacroMilestoneUploadedData(ConfigBase):
     """
     Uploaded per-milestone actual dates for Macro sites.

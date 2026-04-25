@@ -37,7 +37,7 @@ from app.routers import ahloa
 from app.routers import macro_upload
 from app.routers import macro_milestone_upload
 from app.routers import skip_prerequisites
-from app.models.prerequisite import MacroUploadedData, MacroMilestoneUploadedData
+from app.models.prerequisite import MacroUploadedData, MacroMilestoneUploadedData, AIBasedExcelUpload
 from app.models.ahloa import AhloaUserSkippedPrerequisite, AhloaUserExpectedDays
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ ConfigBase.metadata.create_all(bind=config_engine, tables=[
     PaceConstraint.__table__,
     MacroUploadedData.__table__,
     MacroMilestoneUploadedData.__table__,
+    AIBasedExcelUpload.__table__,
     AhloaUserSkippedPrerequisite.__table__,
     AhloaUserExpectedDays.__table__,
 ])

@@ -190,4 +190,12 @@ FILTER_TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_ai_excel_upload_data",
+            "description": "Fetch all AI-extracted per-site rows the user has uploaded via the chat (Excel notes processed by the LLM). Returns a list of {site_id, project_id, region, market, forecasted_cx_start_date, is_blocked, blocked_reason, uploaded_at}. Call this when the user asks about their uploaded notes/Excel, the AI-calculated CX dates, blocked sites and reasons, or wants a summary of what they previously uploaded.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
