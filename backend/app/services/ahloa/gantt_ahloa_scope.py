@@ -455,6 +455,9 @@ def get_ahloa_gantt_scope(
     row_lookup: dict[str, dict] = {}
     for row in rows:
         cx_start, cx_source = _compute_cx_start(row, today)
+        
+        if cx_start < today:
+            continue  # skip sites with past CX start after initial computation
 
         gc_value = row.get("construction_gc") or ""
         site_key = f"{row['s_site_id']}_{row.get('pj_project_id', '')}"

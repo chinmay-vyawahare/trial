@@ -620,7 +620,9 @@ def get_ahloa_gantt(
     row_lookup: dict[str, dict] = {}
     for row in rows:
         cx_start, cx_source = _compute_cx_start(row, today)
-
+        if cx_start < today:
+            continue  # skip sites with past CX start after initial computation
+        
         if start_date or end_date:
             if cx_start is None:
                 continue
