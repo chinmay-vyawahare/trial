@@ -266,10 +266,8 @@ def _compute_planned_dates(
     the overridden pf via the existing dep_anchors logic, so the shift
     cascades through the dependency chain automatically.
 
-    Overrides are applied only to upcoming milestones — when a milestone's
-    originally-computed pf is already in the past (< today), the override is
-    skipped and the baseline pf/ps is kept. Past milestones are historical
-    record and are not moved retroactively.
+    Overrides apply regardless of whether the originally-computed pf is past
+    or future — uploaded actuals are treated as the source of truth.
     """
     skipped = skipped_keys or set()
     dates = {}
@@ -302,7 +300,7 @@ def _compute_planned_dates(
             ps = origin_date
             pf = origin_date + timedelta(days=expected) if expected > 0 else origin_date
             override = overrides.get(key)
-            if override is not None and pf >= today:
+            if override is not None:
                 pf = override
                 ps = pf - timedelta(days=expected) if expected > 0 else pf
             dates[key] = {"ps": ps, "pf": pf}
@@ -326,7 +324,7 @@ def _compute_planned_dates(
         pf = ps + timedelta(days=expected)
 
         override = overrides.get(key)
-        if override is not None and pf >= today:
+        if override is not None:
             pf = override
             ps = pf - timedelta(days=expected) if expected > 0 else pf
 
