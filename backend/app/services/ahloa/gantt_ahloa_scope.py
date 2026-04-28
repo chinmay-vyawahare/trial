@@ -494,11 +494,11 @@ def get_ahloa_gantt_scope(
                 site["forecasted_cx_start_date"] = uploaded_cx
                 site["forecasted_cx_source"] = "uploaded"
 
-    # 2c. Pace constraints
+    # 2c. Pace constraints (AHLOA-scoped)
     if (pace_constraint_flag or strict_pace_apply) and user_id and config_db:
         light_sites = _apply_pace_constraint(
             light_sites, config_db, pace_constraint_flag, user_id,
-            strict_pace_apply=strict_pace_apply,
+            strict_pace_apply=strict_pace_apply, project_type="ahloa",
         )
 
     # =================================================================

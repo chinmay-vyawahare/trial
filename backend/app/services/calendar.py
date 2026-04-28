@@ -144,7 +144,10 @@ def _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_con
             site["excluded_due_to_crew_shortage"] = False
 
     if (pace_constraint_flag or strict_pace_apply) and user_id:
-        sites = _apply_pace_constraint(sites, config_db, pace_constraint_flag, user_id, strict_pace_apply=strict_pace_apply)
+        sites = _apply_pace_constraint(
+            sites, config_db, pace_constraint_flag, user_id,
+            strict_pace_apply=strict_pace_apply, project_type="macro",
+        )
     else:
         for site in sites:
             site["excluded_due_to_pace_constraint"] = False

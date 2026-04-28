@@ -113,10 +113,13 @@ def _apply_pace_constraint(
     pace_constraint_flag: bool,
     user_id: str,
     strict_pace_apply: bool = False,
+    project_type: str = "macro",
 ) -> list[dict]:
     """
-    Apply pace constraints to sites for a specific user_id.
-    Same logic for both NTM and AHLOA — user's constraints apply by geo matching.
+    Apply pace constraints to sites for a specific user_id, scoped to the
+    given project_type. Constraints saved under a different project_type are
+    ignored — a MACRO gantt does not pick up AHLOA pace rules and vice versa.
+    Same matching logic in both worlds — user's constraints apply by geo.
     """
     from app.models.prerequisite import PaceConstraint
 
@@ -125,6 +128,7 @@ def _apply_pace_constraint(
 
     constraints = config_db.query(PaceConstraint).filter(
         PaceConstraint.user_id == user_id,
+        PaceConstraint.project_type == project_type,
     ).all()
 
     if not constraints:
@@ -510,13 +514,16 @@ def get_all_sites_gantt(
         for site in sites:
             site["excluded_due_to_crew_shortage"] = False
 
-    # Apply pace constraints for user if enabled
+    # Apply pace constraints for user if enabled (MACRO scope)
     if (pace_constraint_flag or strict_pace_apply) and user_id:
-        sites = _apply_pace_constraint(sites, config_db, pace_constraint_flag, user_id, strict_pace_apply=strict_pace_apply)
+        sites = _apply_pace_constraint(
+            sites, config_db, pace_constraint_flag, user_id,
+            strict_pace_apply=strict_pace_apply, project_type="macro",
+        )
     else:
         for site in sites:
             site["excluded_due_to_pace_constraint"] = False
-            
+
         # Override forecasted_cx_start_date from user-uploaded data if available
     if user_id:
         sites = _apply_uploaded_overrides(sites, config_db, user_id, project_type="macro")
@@ -598,7 +605,7 @@ def _run_actual_two_phase(
     if (pace_constraint_flag or strict_pace_apply) and user_id:
         light_sites = _apply_pace_constraint(
             light_sites, config_db, pace_constraint_flag, user_id,
-            strict_pace_apply=strict_pace_apply,
+            strict_pace_apply=strict_pace_apply, project_type="macro",
         )
     else:
         for s in light_sites:

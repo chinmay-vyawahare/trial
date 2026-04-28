@@ -11,7 +11,7 @@ GET  /{user_id} retrieves the saved gate checks for a user.
 import json
 from pydantic import BaseModel
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import get_db, get_config_db, STAGING_TABLE
@@ -19,11 +19,28 @@ from app.models.prerequisite import UserFilter
 
 router = APIRouter(prefix="/api/v1/schedular/gate-checks", tags=["gate-checks"])
 
-_BASE_WHERE = (
-    "smp_name = 'NTM'"
+_MACRO_BASE_WHERE = (
+    "smp_name = 'NTM' "
     "AND COALESCE(TRIM(construction_gc), '') != '' "
     "AND pj_a_4225_construction_start_finish IS NULL"
 )
+
+_AHLOA_BASE_WHERE = (
+    "pj_hard_cost_vendor_assignment_po ILIKE '%NOKIA%' "
+    "AND por_release_version = 'Radio Upgrade NR' "
+    "AND por_plan_added_date > '2025-03-28' "
+    "AND pj_a_4225_construction_start_finish IS NULL"
+)
+
+
+def _base_where_for(project_type: str) -> str:
+    """Pick the staging-row filter clause for the given project_type."""
+    pt = (project_type or "macro").strip().lower()
+    if pt == "ahloa":
+        return _AHLOA_BASE_WHERE
+    if pt == "macro":
+        return _MACRO_BASE_WHERE
+    raise HTTPException(status_code=400, detail="project_type must be 'macro' or 'ahloa'.")
 
 
 # ----------------------------------------------------------------
@@ -47,13 +64,17 @@ class GateCheckOut(BaseModel):
 # ----------------------------------------------------------------
 
 @router.get("/por_plan_type")
-def get_por_plan_type(db: Session = Depends(get_db)):
-    """Return all distinct por_plan_type values."""
+def get_por_plan_type(
+    project_type: str = Query("macro", description="'macro' (default) or 'ahloa'"),
+    db: Session = Depends(get_db),
+):
+    """Return all distinct por_plan_type values for the given project_type."""
+    base_where = _base_where_for(project_type)
     q = text(
         f"""
         SELECT DISTINCT por_plan_type
         FROM {STAGING_TABLE}
-        WHERE {_BASE_WHERE} AND por_plan_type IS NOT NULL
+        WHERE {base_where} AND por_plan_type IS NOT NULL
         ORDER BY por_plan_type
         """
     )
@@ -61,13 +82,17 @@ def get_por_plan_type(db: Session = Depends(get_db)):
 
 
 @router.get("/por_regional_dev_initiatives")
-def get_por_regional_dev_initiatives(db: Session = Depends(get_db)):
-    """Return all distinct por_regional_dev_initiatives values."""
+def get_por_regional_dev_initiatives(
+    project_type: str = Query("macro", description="'macro' (default) or 'ahloa'"),
+    db: Session = Depends(get_db),
+):
+    """Return all distinct por_regional_dev_initiatives values for the given project_type."""
+    base_where = _base_where_for(project_type)
     q = text(
         f"""
         SELECT DISTINCT por_regional_dev_initiatives
         FROM {STAGING_TABLE}
-        WHERE {_BASE_WHERE} AND por_regional_dev_initiatives IS NOT NULL
+        WHERE {base_where} AND por_regional_dev_initiatives IS NOT NULL
         ORDER BY por_regional_dev_initiatives
         """
     )

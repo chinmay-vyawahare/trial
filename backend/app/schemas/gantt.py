@@ -292,6 +292,7 @@ class PaceConstraintOut(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    project_type: str = "macro"        # "macro" or "ahloa"
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     market: Optional[str] = None
@@ -301,6 +302,7 @@ class PaceConstraintOut(BaseModel):
 
 class PaceConstraintCreate(BaseModel):
     user_id: str
+    project_type: str = "macro"        # "macro" or "ahloa"
     start_date: Optional[str] = None   # "YYYY-MM-DD", optional — defaults to current week
     end_date: Optional[str] = None     # "YYYY-MM-DD", optional — defaults to current week
     market: Optional[str] = None
@@ -309,6 +311,7 @@ class PaceConstraintCreate(BaseModel):
     max_sites: int = 5
 
 class PaceConstraintUpdate(BaseModel):
+    project_type: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     market: Optional[str] = None

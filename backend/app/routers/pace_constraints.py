@@ -53,10 +53,22 @@ def _validate_single_geo_level(region, area, market):
         )
 
 
+def _normalize_project_type(value: str | None) -> str:
+    """Normalize and validate the project_type — only 'macro' or 'ahloa' allowed."""
+    pt = (value or "macro").strip().lower()
+    if pt not in ("macro", "ahloa"):
+        raise HTTPException(
+            status_code=400,
+            detail="project_type must be 'macro' or 'ahloa'.",
+        )
+    return pt
+
+
 def _validate_geo_hierarchy(
     staging_db: Session,
     config_db: Session,
     user_id: str,
+    project_type: str,
     body_region: str | None,
     body_area: str | None,
     body_market: str | None,
@@ -65,9 +77,11 @@ def _validate_geo_hierarchy(
     """
     Validate that the new/updated constraint does not conflict with existing ones.
 
-    Hierarchy: region (highest) → area → market (lowest).
+    Hierarchy: region (highest) → area → market (lowest). Hierarchy and
+    duplicate-conflict checks are scoped to the same project_type — a MACRO
+    constraint and an AHLOA constraint on the same geo do not conflict.
     """
-    geo = get_geo_hierarchy(staging_db)
+    geo = get_geo_hierarchy(staging_db, project_type=project_type)
 
     # Build lookups (all lowercase)
     market_to_area: dict[str, str] = {}
@@ -82,8 +96,15 @@ def _validate_geo_hierarchy(
         market_to_region[m] = r
         area_to_region[a] = r
 
-    # Existing constraints for this user
-    existing = config_db.query(PaceConstraint).filter(PaceConstraint.user_id == user_id).all()
+    # Existing constraints for this user, restricted to the same project_type
+    existing = (
+        config_db.query(PaceConstraint)
+        .filter(
+            PaceConstraint.user_id == user_id,
+            PaceConstraint.project_type == project_type,
+        )
+        .all()
+    )
     if exclude_id:
         existing = [c for c in existing if c.id != exclude_id]
 
@@ -147,12 +168,18 @@ def _validate_geo_hierarchy(
 # ----------------------------------------------------------------
 
 @router.get("/geo-hierarchy")
-def get_geo_hierarchy_endpoint(db: Session = Depends(get_db)):
+def get_geo_hierarchy_endpoint(
+    project_type: str = Query("macro", description="'macro' or 'ahloa'"),
+    db: Session = Depends(get_db),
+):
     """
-    Return the region → area → market hierarchy from the staging table.
-    Used by the frontend to populate geo dropdowns.
+    Return the region → area → market hierarchy from the staging table,
+    filtered to rows visible under the given project_type. The frontend must
+    pass the project_type for which the user is creating a pace constraint,
+    otherwise AHLOA-only regions/markets won't appear in the dropdown.
     """
-    geo = get_geo_hierarchy(db)
+    pt = _normalize_project_type(project_type)
+    geo = get_geo_hierarchy(db, project_type=pt)
     hierarchy: dict[str, dict[str, list[str]]] = {}
     for row in geo:
         hierarchy.setdefault(row["region"], {}).setdefault(row["area"], []).append(row["market"])
@@ -162,20 +189,22 @@ def get_geo_hierarchy_endpoint(db: Session = Depends(get_db)):
 @router.get("", response_model=list[PaceConstraintOut])
 def list_pace_constraints(
     user_id: str = Query(..., description="User ID"),
+    project_type: str | None = Query(
+        None,
+        description="Optional 'macro' or 'ahloa' filter. Omit to list across both.",
+    ),
     db: Session = Depends(get_config_db),
 ):
     """
-    List all pace constraints for a user.
+    List a user's pace constraints, optionally filtered by project_type.
 
     If a constraint has no start_date/end_date, the response fills in
     the next ISO week (Monday–Sunday) so the frontend always sees dates.
     """
-    rows = (
-        db.query(PaceConstraint)
-        .filter(PaceConstraint.user_id == user_id)
-        .order_by(PaceConstraint.start_date)
-        .all()
-    )
+    q = db.query(PaceConstraint).filter(PaceConstraint.user_id == user_id)
+    if project_type is not None:
+        q = q.filter(PaceConstraint.project_type == _normalize_project_type(project_type))
+    rows = q.order_by(PaceConstraint.start_date).all()
 
     monday, sunday = _next_week_range()
     result = []
@@ -195,12 +224,17 @@ def create_pace_constraint(
     staging_db: Session = Depends(get_db),
     config_db: Session = Depends(get_config_db),
 ):
-    """Create a new pace constraint for a user."""
+    """Create a new pace constraint for a user, scoped to body.project_type."""
+    pt = _normalize_project_type(body.project_type)
+
     # Validate single geo level
     _validate_single_geo_level(body.region, body.area, body.market)
 
-    # Validate geo hierarchy conflicts against existing constraints
-    _validate_geo_hierarchy(staging_db, config_db, body.user_id, body.region, body.area, body.market)
+    # Validate geo hierarchy conflicts against existing constraints (same project_type)
+    _validate_geo_hierarchy(
+        staging_db, config_db, body.user_id, pt,
+        body.region, body.area, body.market,
+    )
 
     # Validate date pairing — both or neither
     if bool(body.start_date) != bool(body.end_date):
@@ -228,6 +262,7 @@ def create_pace_constraint(
 
     row = PaceConstraint(
         user_id=body.user_id,
+        project_type=pt,
         start_date=sd,
         end_date=ed,
         market=body.market,
@@ -260,12 +295,19 @@ def update_pace_constraint(
 
     updates = body.model_dump(exclude_unset=True)
 
+    # Resolve effective project_type (existing row's value unless explicitly changed)
+    new_project_type = _normalize_project_type(updates.get("project_type", row.project_type))
+    updates["project_type"] = new_project_type
+
     # Validate geo if any geo field is being changed
     new_region = updates.get("region", row.region)
     new_area = updates.get("area", row.area)
     new_market = updates.get("market", row.market)
     _validate_single_geo_level(new_region, new_area, new_market)
-    _validate_geo_hierarchy(staging_db, config_db, user_id, new_region, new_area, new_market, exclude_id=entry_id)
+    _validate_geo_hierarchy(
+        staging_db, config_db, user_id, new_project_type,
+        new_region, new_area, new_market, exclude_id=entry_id,
+    )
 
     for date_field in ("start_date", "end_date"):
         if date_field in updates and updates[date_field] is not None:

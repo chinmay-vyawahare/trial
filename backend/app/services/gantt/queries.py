@@ -269,37 +269,26 @@ def _build_base_where(project_type: str = "macro"):
 
 
 def _build_hierarchy_optimized(rows):
-    tree = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
+    """Build region → area → market → vendor → sites tree."""
+    tree = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(set))))
 
-    for region, area, market, vendor in rows:
-        tree[region][area][market].add(vendor)
+    for region, area, market, vendor, site_id in rows:
+        tree[region][area][market][vendor].add(site_id)
 
     result = []
-
     for region, areas in tree.items():
-        region_obj = {
-            "region": region,
-            "areas": []
-        }
-
-        region_areas = region_obj["areas"]
-
+        region_obj = {"region": region, "areas": []}
         for area, markets in areas.items():
-            area_obj = {
-                "area": area,
-                "markets": []
-            }
-
-            area_markets = area_obj["markets"]
-
+            area_obj = {"area": area, "markets": []}
             for market, vendors in markets.items():
-                area_markets.append({
-                    "market": market,
-                    "vendors": [{"vendor": v} for v in sorted(vendors)]
-                })
-
-            region_areas.append(area_obj)
-
+                market_obj = {"market": market, "vendors": []}
+                for vendor, sites in sorted(vendors.items()):
+                    market_obj["vendors"].append({
+                        "vendor": vendor,
+                        "sites": [{"site_id": s} for s in sorted(sites)],
+                    })
+                area_obj["markets"].append(market_obj)
+            region_obj["areas"].append(area_obj)
         result.append(region_obj)
 
     return result
@@ -331,13 +320,15 @@ def get_region_hierarchy(db: Session, region: str = None, area: str = None, mark
             region,
             m_area,
             m_market,
-            construction_gc
+            construction_gc,
+            s_site_id
         FROM {STAGING_TABLE}
         WHERE {where_clause}
             AND region IS NOT NULL
             AND m_area IS NOT NULL
             AND m_market IS NOT NULL
             AND construction_gc IS NOT NULL
+            AND s_site_id IS NOT NULL
     """)
 
     rows = db.execute(query, params).fetchall()

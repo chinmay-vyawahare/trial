@@ -284,18 +284,20 @@ class GcCapacityMarketTrial(ConfigBase):
 
 class PaceConstraint(ConfigBase):
     """
-    Per-user pace constraints — how many sites can START within a date range
-    for a given market/area/region scope.
+    Per-user, per-project_type pace constraints — how many sites can START
+    within a date range for a given market/area/region scope.
 
     Each user manages their own pace constraints. When the gantt chart is
     generated with consider_pace_constraints=True, only that user's
-    constraints are applied.
+    constraints whose project_type matches the active gantt are applied
+    (a MACRO gantt does not pick up AHLOA pace rules and vice versa).
     """
     __tablename__ = "pace_constraints"
     __table_args__ = {"schema": _S}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(100), nullable=False, index=True)
+    project_type = Column(String(20), nullable=False, server_default="macro", index=True)
     start_date = Column(DateTime, nullable=True)
     end_date = Column(DateTime, nullable=True)
     market = Column(String(200), nullable=True)

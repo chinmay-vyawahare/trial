@@ -34,7 +34,8 @@ def get_weekly_status_counts(
     user_skips: list | None = None,
 ) -> list[dict]:
     """
-    Return weekly status counts grouped by ISO week/year, with region breakdown.
+    Return weekly status counts grouped by ISO week/year, nested as
+    region → area → market → status counts.
 
     Each entry:
       {
@@ -45,20 +46,11 @@ def get_weekly_status_counts(
         "total": 5,
         "status_counts": {
           "EAST": {
-            "ON TRACK": 2,
-            "IN PROGRESS": 1,
-            "CRITICAL": 0,
-            "Blocked": 0,
-            "Excluded - Crew Shortage": 0,
-            "Excluded - Pace Constraint": 0,
-          },
-          "WEST": {
-            "ON TRACK": 0,
-            "IN PROGRESS": 0,
-            "CRITICAL": 1,
-            "Blocked": 0,
-            "Excluded - Crew Shortage": 0,
-            "Excluded - Pace Constraint": 1,
+            "NY": {
+              "New York": {
+                "ON TRACK": 2, "IN PROGRESS": 1, "CRITICAL": 0, "Blocked": 0
+              }
+            }
           }
         }
       }
@@ -117,12 +109,13 @@ def get_weekly_status_counts(
         "ON TRACK", "IN PROGRESS", "CRITICAL","Blocked", 
     ]
 
-    # Group by (year, week) -> region -> status counts
+    # Group by (year, week) -> region -> area -> market -> status counts
     weekly = {}
     for site in sites:
         forecast = site.get("forecasted_cx_start_date")
         if not forecast:
             continue
+
         try:
             fd = date.fromisoformat(str(forecast))
         except (ValueError, TypeError):
@@ -131,36 +124,54 @@ def get_weekly_status_counts(
         iso = fd.isocalendar()
         key = (iso.year, iso.week)
 
+        # Extract hierarchy
         region_name = site.get("Region") or site.get("region") or "Unknown"
+        area_name = site.get("Area") or site.get("area") or "Unknown"
+        market_name = site.get("Market") or site.get("market") or "Unknown"
+
         site_status = site.get("overall_status", "")
 
+        # Initialize hierarchy
         if key not in weekly:
             weekly[key] = {}
 
         if region_name not in weekly[key]:
-            weekly[key][region_name] = {s: 0 for s in ALL_STATUSES}
+            weekly[key][region_name] = {}
 
-        if site_status not in weekly[key][region_name]:
-            weekly[key][region_name][site_status] = 0
+        if area_name not in weekly[key][region_name]:
+            weekly[key][region_name][area_name] = {}
 
-        weekly[key][region_name][site_status] += 1
+        if market_name not in weekly[key][region_name][area_name]:
+            weekly[key][region_name][area_name][market_name] = {
+                s: 0 for s in ALL_STATUSES
+            }
 
-    # Sort by year, week and build result
+        if site_status not in weekly[key][region_name][area_name][market_name]:
+            weekly[key][region_name][area_name][market_name][site_status] = 0
+
+        weekly[key][region_name][area_name][market_name][site_status] += 1
+
+    # Build result
     result = []
+
     for (year, week), regional_counts in sorted(weekly.items()):
-        # Compute the Monday of this ISO week
         try:
             week_start = date.fromisocalendar(year, week, 1)
             week_end = date.fromisocalendar(year, week, 7)
         except ValueError:
-            continue  # skip invalid week
+            continue
 
-        # Safe total calculation
-        total = sum(
-            sum(status.values())
-            for status in regional_counts.values()
-            if isinstance(status, dict)
-        )
+        def recursive_sum(d):
+            """Recursively sum all integers in a nested dict."""
+            total = 0
+            if isinstance(d, dict):
+                for v in d.values():
+                    total += recursive_sum(v)
+            elif isinstance(d, int):
+                total += d
+            return total
+
+        total = recursive_sum(regional_counts)
 
         result.append({
             "week": week,

@@ -20,6 +20,7 @@ from app.services.gantt.milestones import (
 )
 from app.services.weekly_status import get_weekly_status_counts
 from app.models.prerequisite import MilestoneDefinition, UserFilter
+from app.routers.sites import _resolve_filters
 
 router = APIRouter(
     prefix="/api/v1/schedular/dashboard",
@@ -76,7 +77,10 @@ def dashboard_summary(
     """
     skipped_keys = _get_skipped_keys(config_db)
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
-    plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
+
+    region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives = _resolve_filters(
+        config_db, user_id, region, market, site_id, vendor, area
+    )
 
     user_skips = None
     if project_type == "ahloa" and user_id:
@@ -231,6 +235,10 @@ def weekly_status_user_override(
     user_ed_overrides = get_user_expected_days_overrides(config_db, user_id) if user_id and sla_type == "user_based" else {}
     plan_type_include, regional_dev_initiatives = _get_gate_checks(config_db, user_id)
 
+    region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives = _resolve_filters(
+        config_db, user_id, region, market, site_id, vendor, area
+    )
+    
     user_skips = None
     if project_type == "ahloa" and user_id:
         from app.models.ahloa import AhloaUserSkippedPrerequisite
