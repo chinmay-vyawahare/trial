@@ -138,7 +138,9 @@ def _build_sites(rows, config_db, ms_thresholds, skipped_keys, user_expected_day
 def _apply_post_filters(sites, db, config_db, consider_vendor_capacity, pace_constraint_flag, user_id, status, strict_pace_apply=False):
     """Apply vendor capacity, pace constraint, and status filters."""
     if consider_vendor_capacity:
-        sites = _apply_vendor_capacity(sites, db)
+        sites = _apply_vendor_capacity(
+            sites, db, config_db=config_db, user_id=user_id, project_type="macro",
+        )
     else:
         for site in sites:
             site["excluded_due_to_crew_shortage"] = False

@@ -603,13 +603,30 @@ def get_ahloa_gantt(
     site_ids = [row["s_site_id"] for row in rows]
     nas_data = _fetch_nas_data(db, site_ids)
 
-    def _effective_skips(site_market: str) -> set[str] | None:
-        """Merge global admin skips with per-user market-wise skips."""
+    def _effective_skips(site_market: str, site_area: str = "") -> set[str] | None:
+        """Merge global admin skips with per-user market/area-wise skips.
+
+        user_skips entries are 3-tuples (milestone_key, market_or_None, area_or_None).
+        A row matches a site when:
+          - market matches the site's market, OR
+          - area matches the site's area, OR
+          - both market and area are NULL (skip applies to all markets)
+        """
         effective = set(skipped_keys) if skipped_keys else set()
         if user_skips:
-            mkt_lower = site_market.strip().lower()
-            for ms_key, mkt in user_skips:
-                if mkt is None or mkt.strip().lower() == mkt_lower:
+            mkt_lower = (site_market or "").strip().lower()
+            area_lower = (site_area or "").strip().lower()
+            for entry in user_skips:
+                # Backward compat: accept either 2-tuple (key, market) or 3-tuple
+                if len(entry) == 2:
+                    ms_key, mkt = entry
+                    ar = None
+                else:
+                    ms_key, mkt, ar = entry
+                mkt_match = mkt is not None and mkt.strip().lower() == mkt_lower
+                area_match = ar is not None and ar.strip().lower() == area_lower
+                global_match = (mkt is None and ar is None)
+                if mkt_match or area_match or global_match:
                     effective.add(ms_key)
         return effective or None
 
@@ -650,16 +667,7 @@ def get_ahloa_gantt(
             "forecasted_cx_source": cx_source,
         })
 
-    # =================================================================
-    # PHASE 2: Settle CX dates — vendor capacity + excel + pace
-    #          (all BEFORE milestone computation)
-    # =================================================================
-
-    # 2a. Vendor capacity
-    if consider_vendor_capacity:
-        light_sites = _apply_vendor_capacity(light_sites, db)
-
-    # 2b. Excel CX overrides
+    # 2a. Excel CX overrides
     if user_id:
         from app.services.macro_upload import get_upload_map
         upload_map = get_upload_map(config_db, user_id, project_type="ahloa")
@@ -669,11 +677,22 @@ def get_ahloa_gantt(
                 site["forecasted_cx_start_date"] = uploaded_cx
                 site["forecasted_cx_source"] = "uploaded"
 
-    # 2c. Pace constraints (AHLOA-scoped)
+    # 2b. Pace constraints (AHLOA-scoped)
     if (pace_constraint_flag or strict_pace_apply) and user_id:
         light_sites = _apply_pace_constraint(
             light_sites, config_db, pace_constraint_flag, user_id,
             strict_pace_apply=strict_pace_apply, project_type="ahloa",
+        )
+
+    # =================================================================
+    # PHASE 2: Settle CX dates — vendor capacity + excel + pace
+    #          (all BEFORE milestone computation)
+    # =================================================================
+
+    # 2c. Vendor capacity (also pulls user windows when user_id provided)
+    if consider_vendor_capacity:
+        light_sites = _apply_vendor_capacity(
+            light_sites, db, config_db=config_db, user_id=user_id, project_type="ahloa",
         )
 
     # =================================================================
@@ -693,7 +712,7 @@ def get_ahloa_gantt(
             sites.append(site)
             continue
 
-        site_skips = _effective_skips(site.get("market") or "")
+        site_skips = _effective_skips(site.get("market") or "", site.get("area") or "")
         milestones_out, summary = _compute_site_milestones(
             row, settled_cx, ahloa_milestones, column_map,
             nas_data, today, ms_thresholds, site_skips,

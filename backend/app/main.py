@@ -19,14 +19,15 @@ from app.models.prerequisite import (
     PrerequisiteTemplate, SitePrerequisiteOverride,
     ConstraintThreshold, VendorCapacity,
     UserFilter, ChatHistory, UserExpectedDays,
-    PaceConstraint,
+    PaceConstraint, GcCapacityWindow,
 )
 from app.routers import sites, filters, gate_checks
 from app.routers import prerequisites, constraints, admin
 from app.routers import assistant, user_filters, sla_history
 from app.routers import user_expected_days
 from app.routers import export, dashboard
-from app.routers import gc_capacity, pace_constraints, calendar
+from app.routers import pace_constraints, calendar
+from app.routers import gc_capacity_window
 from app.routers import analytics
 from app.init_milestone_data import init_milestone_data
 from app.services.assistant.nodes.simulation import set_main_loop
@@ -51,6 +52,7 @@ ConfigBase.metadata.create_all(bind=config_engine, tables=[
     ChatHistory.__table__,
     UserExpectedDays.__table__,
     PaceConstraint.__table__,
+    GcCapacityWindow.__table__,
     MacroUploadedData.__table__,
     MacroMilestoneUploadedData.__table__,
     AIBasedExcelUpload.__table__,
@@ -90,8 +92,8 @@ app.include_router(assistant.router)
 app.include_router(user_filters.router)
 app.include_router(admin.router)
 app.include_router(export.router)
-app.include_router(gc_capacity.router)
 app.include_router(pace_constraints.router)
+app.include_router(gc_capacity_window.router)
 app.include_router(analytics.router)
 app.include_router(cx_forecast_summary.router)
 app.include_router(cx_actual_summary.router)

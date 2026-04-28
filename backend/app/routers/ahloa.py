@@ -117,8 +117,12 @@ def _resolve_filters(
     return region, market, site_id, vendor, area, plan_type_include, regional_dev_initiatives
 
 
-def _load_user_skips(config_db: Session, user_id: str | None) -> list[tuple[str, str | None]]:
-    """Load AHLOA per-user market-wise skips as [(milestone_key, market|None)]."""
+def _load_user_skips(config_db: Session, user_id: str | None) -> list[tuple[str, str | None, str | None]]:
+    """Load AHLOA per-user skips as [(milestone_key, market|None, area|None)].
+
+    At most ONE of market/area is set per row (router enforces this).
+    Both NULL = global skip across all markets for this user.
+    """
     if not user_id:
         return []
     from app.models.ahloa import AhloaUserSkippedPrerequisite
@@ -127,7 +131,7 @@ def _load_user_skips(config_db: Session, user_id: str | None) -> list[tuple[str,
         .filter(AhloaUserSkippedPrerequisite.user_id == user_id)
         .all()
     )
-    return [(r.milestone_key, r.market) for r in rows]
+    return [(r.milestone_key, r.market, r.area) for r in rows]
 
 
 # ----------------------------------------------------------------

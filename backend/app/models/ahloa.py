@@ -98,13 +98,17 @@ class AhloaConstraintThreshold(ConfigBase):
 
 
 class AhloaUserSkippedPrerequisite(ConfigBase):
-    """Per-user, per-market skipped prerequisite for AHLOA.
+    """Per-user, per-geo skipped prerequisite for AHLOA.
 
-    market=NULL means the skip applies to all markets for that user.
+    At most ONE of (market, area) may be set:
+      - market=X, area=NULL  → skip applies to that one market
+      - area=X,   market=NULL → skip applies to every market under that area
+      - both NULL            → skip applies to all markets for that user
+    Both set is rejected by the API as a single-geo-level validation error.
     """
     __tablename__ = "ahloa_user_skipped_prerequisites"
     __table_args__ = (
-        UniqueConstraint("user_id", "milestone_key", "market", name="uq_ahloa_skip_user_ms_market"),
+        UniqueConstraint("user_id", "milestone_key", "market", "area", name="uq_ahloa_skip_user_ms_geo"),
         {"schema": _S},
     )
 
@@ -112,6 +116,7 @@ class AhloaUserSkippedPrerequisite(ConfigBase):
     user_id = Column(String(100), nullable=False, index=True)
     milestone_key = Column(String(50), nullable=False)
     market = Column(String(200), nullable=True)
+    area = Column(String(200), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 

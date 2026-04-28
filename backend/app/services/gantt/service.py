@@ -289,54 +289,165 @@ def _apply_pace_constraint(
     return sites
 
 
-def _apply_vendor_capacity(sites: list[dict], db: Session) -> list[dict]:
+def _apply_vendor_capacity(
+    sites: list[dict],
+    db: Session,
+    config_db: Session | None = None,
+    user_id: str | None = None,
+    project_type: str = "macro",
+) -> list[dict]:
     """
-    Apply vendor capacity constraints from public.gc_capacity_market_trial table.
+    Apply vendor capacity constraints, gated by `consider_vendor_capacity`
+    at the call site. Source of truth is the per-user windows table
+    (pwc_agent_utility_schema.gc_capacity_windows).
 
-    For each vendor+market+day combination, if the vendor has more sites starting
-    on that day than their day_wise_gc_capacity, keep the first N and mark the
-    rest as excluded_due_to_crew_shortage=True.
+    Each window defines a recurring [start, end) bucket of length
+    (end-start).days that repeats forward forever. Within each bucket, only
+    `max_sites` matching sites (region/area/market + vendor_name) are kept;
+    overflow cascades into the next bucket and is marked
+    excluded_due_to_crew_shortage=True (mirrors pace constraint cascade).
+
+    project_type scopes the user windows to either MACRO or AHLOA gantts.
     """
-    from app.models.prerequisite import GcCapacityMarketTrial
+    excluded_indices: set[int] = set()
 
-    # Load all capacity rules from public schema (pre-populated, read-only)
-    capacity_rows = db.query(GcCapacityMarketTrial).all()
-    if not capacity_rows:
-        return sites
+    # Initialize the flag for every site (needed even when no windows exist)
+    for site in sites:
+        site["excluded_due_to_crew_shortage"] = False
 
-    # Build lookup: (gc_company_lower, market_lower) -> day_wise_capacity
-    cap_lookup = {}
-    for r in capacity_rows:
-        key = (r.gc_company.strip().lower(), r.market.strip().lower())
-        cap_lookup[key] = r.day_wise_gc_capacity
+    # User-defined windows (cascading) — the only source of vendor capacity now.
+    if config_db is not None and user_id:
+        from app.models.prerequisite import GcCapacityWindow
 
-    # Group sites by (vendor, market, forecast_date)
-    groups: dict[tuple[str, str, str], list[int]] = defaultdict(list)
-    for idx, site in enumerate(sites):
-        vendor_name = (site.get("vendor_name") or "").strip().lower()
-        market_name = (site.get("market") or "").strip().lower()
-        forecast_date = site.get("forecasted_cx_start_date") or ""
-        if vendor_name and market_name and forecast_date:
-            groups[(vendor_name, market_name, forecast_date)].append(idx)
+        windows = (
+            config_db.query(GcCapacityWindow)
+            .filter(
+                GcCapacityWindow.user_id == user_id,
+                GcCapacityWindow.project_type == project_type,
+            )
+            .all()
+        )
 
-    # For each (vendor, market, day) group, check capacity
-    excluded_indices = set()
-    for (vendor_key, market_key, _), indices in groups.items():
-        capacity = cap_lookup.get((vendor_key, market_key))
-        if capacity is None or len(indices) <= capacity:
-            continue
+        if windows:
+            # Preprocess: parse forecast date + normalize match keys
+            for site in sites:
+                forecast = site.get("forecasted_cx_start_date")
+                try:
+                    site["_fd"] = date.fromisoformat(str(forecast)) if forecast else None
+                except Exception:
+                    site["_fd"] = None
+                site.setdefault("note", "")
+                site["_m"] = (site.get("market") or "").strip().lower()
+                site["_a"] = (site.get("area") or "").strip().lower()
+                site["_r"] = (site.get("region") or "").strip().lower()
+                site["_v"] = (site.get("vendor_name") or "").strip().lower()
 
-        # More sites than capacity on this day — exclude excess
-        for i in indices[capacity:]:
-            excluded_indices.add(i)
+            for w in windows:
+                if not w.start_date or not w.end_date:
+                    continue
+                wstart = w.start_date.date()
+                wend = w.end_date.date()
+                window_days = (wend - wstart).days
+                if window_days <= 0:
+                    continue
 
-    # Tag sites
+                w_market = (w.market or "").strip().lower()
+                w_area = (w.area or "").strip().lower()
+                w_region = (w.region or "").strip().lower()
+                w_vendor = (w.vendor_name or "").strip().lower()
+                max_sites = w.max_sites
+
+                geo_indices: list[int] = []
+                for idx, site in enumerate(sites):
+                    fd = site.get("_fd")
+                    if not fd or fd < wstart:
+                        continue
+                    if w_market and site["_m"] != w_market:
+                        continue
+                    if w_area and site["_a"] != w_area:
+                        continue
+                    if w_region and site["_r"] != w_region:
+                        continue
+                    if w_vendor and site["_v"] != w_vendor:
+                        continue
+                    geo_indices.append(idx)
+
+                if not geo_indices:
+                    continue
+
+                # Bucket by recurring window index
+                buckets: dict[int, list[int]] = defaultdict(list)
+                for idx in geo_indices:
+                    fd = sites[idx]["_fd"]
+                    bidx = (fd - wstart).days // window_days
+                    buckets[bidx].append(idx)
+
+                processed = sorted(buckets.keys())
+                pos = 0
+                while pos < len(processed):
+                    b_idx = processed[pos]
+                    in_bucket = buckets[b_idx]
+                    current_window_start = wstart + timedelta(days=b_idx * window_days)
+
+                    if len(in_bucket) > max_sites:
+                        # ── Overflow: cascade excess to next bucket ──
+                        in_bucket.sort(key=lambda i: sites[i]["_fd"])
+                        keep = in_bucket[:max_sites]
+                        overflow = in_bucket[max_sites:]
+                        buckets[b_idx] = keep
+
+                        next_idx = b_idx + 1
+                        next_window_start = wstart + timedelta(days=next_idx * window_days)
+                        for i in overflow:
+                            excluded_indices.add(i)
+                            sites[i]["_fd"] = next_window_start
+                            sites[i]["forecasted_cx_start_date"] = str(next_window_start)
+                            buckets[next_idx].append(i)
+
+                        if next_idx not in set(processed):
+                            processed.append(next_idx)
+                            processed.sort()
+
+                    elif len(in_bucket) < max_sites:
+                        # ── Underflow: pull earliest sites from future buckets ──
+                        needed = max_sites - len(in_bucket)
+                        future_candidates: list[tuple[int, date]] = []
+                        for fb_idx in processed[pos + 1:]:
+                            for i in buckets[fb_idx]:
+                                future_candidates.append((i, sites[i]["_fd"]))
+                        future_candidates.sort(key=lambda x: x[1])
+
+                        pulled = 0
+                        for i, _ in future_candidates:
+                            if pulled >= needed:
+                                break
+                            # Remove from its current future bucket
+                            for fb_idx in processed[pos + 1:]:
+                                if i in buckets[fb_idx]:
+                                    buckets[fb_idx].remove(i)
+                                    break
+                            # Move site forward to current bucket
+                            original_date = sites[i]["forecasted_cx_start_date"]
+                            sites[i]["_fd"] = current_window_start
+                            sites[i]["forecasted_cx_start_date"] = str(current_window_start)
+                            sites[i]["note"] = (
+                                f"Pulled from {original_date} to fill vendor capacity window"
+                            )
+                            buckets[b_idx].append(i)
+                            pulled += 1
+
+                    pos += 1
+
+            # Cleanup scratch keys
+            for site in sites:
+                for k in ("_fd", "_m", "_a", "_r", "_v"):
+                    site.pop(k, None)
+
+    # Tag final exclusion flag
     for idx, site in enumerate(sites):
         if idx in excluded_indices:
             site["excluded_due_to_crew_shortage"] = True
             site["exclude_reason"] = "Excluded - Crew Shortage"
-        else:
-            site["excluded_due_to_crew_shortage"] = False
 
     return sites
 
@@ -507,14 +618,13 @@ def get_all_sites_gantt(
 
         sites.append(site_dict)
 
-    # Apply vendor capacity constraints if requested
-    if consider_vendor_capacity:
-        sites = _apply_vendor_capacity(sites, db)
-    else:
-        for site in sites:
-            site["excluded_due_to_crew_shortage"] = False
-
+    # Apply vendor capacity constraints if requested (also pulls user windows)
     # Apply pace constraints for user if enabled (MACRO scope)
+
+    if user_id:
+        sites = _apply_uploaded_overrides(sites, config_db, user_id, project_type="macro")
+        sites = _apply_ai_based_overrides(sites, config_db, user_id)
+
     if (pace_constraint_flag or strict_pace_apply) and user_id:
         sites = _apply_pace_constraint(
             sites, config_db, pace_constraint_flag, user_id,
@@ -524,10 +634,14 @@ def get_all_sites_gantt(
         for site in sites:
             site["excluded_due_to_pace_constraint"] = False
 
+    if consider_vendor_capacity:
+        sites = _apply_vendor_capacity(
+            sites, db, config_db=config_db, user_id=user_id, project_type="macro",
+        )
+    else:
+        for site in sites:
+            site["excluded_due_to_crew_shortage"] = False
         # Override forecasted_cx_start_date from user-uploaded data if available
-    if user_id:
-        sites = _apply_uploaded_overrides(sites, config_db, user_id, project_type="macro")
-        sites = _apply_ai_based_overrides(sites, config_db, user_id)
 
     # Sort by forecasted_cx_start_date descending (latest first, nulls at bottom)
     sites.sort(
@@ -597,7 +711,9 @@ def _run_actual_two_phase(
 
     # --- Stage 2: constraints ---
     if consider_vendor_capacity:
-        light_sites = _apply_vendor_capacity(light_sites, db)
+        light_sites = _apply_vendor_capacity(
+            light_sites, db, config_db=config_db, user_id=user_id, project_type="macro",
+        )
     else:
         for s in light_sites:
             s["excluded_due_to_crew_shortage"] = False

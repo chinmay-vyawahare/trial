@@ -88,7 +88,7 @@ def dashboard_summary(
         rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
             AhloaUserSkippedPrerequisite.user_id == user_id
         ).all()
-        user_skips = [(r.milestone_key, r.market) for r in rows]
+        user_skips = [(r.milestone_key, r.market, r.area) for r in rows]
 
     return get_dashboard_summary(
         db,
@@ -245,7 +245,7 @@ def weekly_status_user_override(
         rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
             AhloaUserSkippedPrerequisite.user_id == user_id
         ).all()
-        user_skips = [(r.milestone_key, r.market) for r in rows]
+        user_skips = [(r.milestone_key, r.market, r.area) for r in rows]
 
     weeks = get_weekly_status_counts(
         db,

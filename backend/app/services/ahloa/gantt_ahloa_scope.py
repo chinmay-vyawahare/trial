@@ -439,12 +439,22 @@ def get_ahloa_gantt_scope(
         total_count = rows[0].get("total_count", 0)
         count = len(rows)
 
-    def _effective_skips(site_market: str) -> set[str] | None:
+    def _effective_skips(site_market: str, site_area: str = "") -> set[str] | None:
+        """Merge admin global skips with per-user market/area-wise skips."""
         effective = set(skipped_keys) if skipped_keys else set()
         if user_skips:
-            mkt_lower = site_market.strip().lower()
-            for ms_key, mkt in user_skips:
-                if mkt is None or mkt.strip().lower() == mkt_lower:
+            mkt_lower = (site_market or "").strip().lower()
+            area_lower = (site_area or "").strip().lower()
+            for entry in user_skips:
+                if len(entry) == 2:
+                    ms_key, mkt = entry
+                    ar = None
+                else:
+                    ms_key, mkt, ar = entry
+                mkt_match = mkt is not None and mkt.strip().lower() == mkt_lower
+                area_match = ar is not None and ar.strip().lower() == area_lower
+                global_match = (mkt is None and ar is None)
+                if mkt_match or area_match or global_match:
                     effective.add(ms_key)
         return effective or None
 
@@ -476,14 +486,6 @@ def get_ahloa_gantt_scope(
             "forecasted_cx_source": cx_source,
         })
 
-    # =================================================================
-    # PHASE 2: Settle CX dates — vendor + excel + pace BEFORE milestones
-    # =================================================================
-
-    # 2a. Vendor capacity
-    if consider_vendor_capacity:
-        light_sites = _apply_vendor_capacity(light_sites, db)
-
     # 2b. Excel CX overrides
     if user_id and config_db:
         from app.services.macro_upload import get_upload_map
@@ -502,6 +504,16 @@ def get_ahloa_gantt_scope(
         )
 
     # =================================================================
+    # PHASE 2: Settle CX dates — vendor + excel + pace BEFORE milestones
+    # =================================================================
+
+    # 2a. Vendor capacity (also pulls user windows when user_id provided)
+    if consider_vendor_capacity:
+        light_sites = _apply_vendor_capacity(
+            light_sites, db, config_db=config_db, user_id=user_id, project_type="ahloa",
+        )
+        
+    # =================================================================
     # PHASE 3: Compute milestones ONCE with settled CX dates
     # =================================================================
     sites = []
@@ -517,7 +529,7 @@ def get_ahloa_gantt_scope(
             sites.append(site)
             continue
 
-        site_skips = _effective_skips(site.get("market") or "")
+        site_skips = _effective_skips(site.get("market") or "", site.get("area") or "")
         milestones_out, summary = _compute_scope_milestones(
             row, settled_cx, today, site_skips, ms_thresholds,
         )

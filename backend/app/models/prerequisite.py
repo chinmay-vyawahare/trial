@@ -263,25 +263,6 @@ class UserHistoryExpectedDays(ConfigBase):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
-class GcCapacityMarketTrial(ConfigBase):
-    """
-    GC (vendor) capacity per market — predefined read-only table in public schema.
-
-    Records how many sites a vendor can work on in parallel per market.
-    Used to flag sites as excluded_due_to_crew_shortage when vendor has more
-    assigned sites than their parallel capacity allows.
-
-    NOTE: This table is NOT managed by this app — it is pre-populated externally.
-    """
-    __tablename__ = "gc_capacity_market_trial"
-    __table_args__ = {"schema": "public", "keep_existing": True}
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    gc_company = Column(String(200), nullable=False)
-    market = Column(String(200), nullable=False)
-    day_wise_gc_capacity = Column(Integer, nullable=False, default=10)
-
-
 class PaceConstraint(ConfigBase):
     """
     Per-user, per-project_type pace constraints — how many sites can START
@@ -303,6 +284,35 @@ class PaceConstraint(ConfigBase):
     market = Column(String(200), nullable=True)
     area = Column(String(200), nullable=True)
     region = Column(String(200), nullable=True)
+    max_sites = Column(Integer, nullable=False, default=5)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class GcCapacityWindow(ConfigBase):
+    """
+    Per-user, per-project_type GC vendor capacity windows.
+
+    Same shape as PaceConstraint but adds vendor_name. The (start_date, end_date)
+    pair sets a recurring window — window length = (end - start).days, repeated
+    forward forever. Within each window, only `max_sites` matching sites are
+    allowed; overflow cascades to the next window (mirroring pace constraint).
+
+    Consumed by `_apply_vendor_capacity` when consider_vendor_capacity=True
+    AND a user_id is provided. No new flag — folded under the existing one.
+    """
+    __tablename__ = "gc_capacity_windows"
+    __table_args__ = {"schema": _S}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    project_type = Column(String(20), nullable=False, server_default="macro", index=True)
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    market = Column(String(200), nullable=True)
+    area = Column(String(200), nullable=True)
+    region = Column(String(200), nullable=True)
+    vendor_name = Column(String(200), nullable=True)
     max_sites = Column(Integer, nullable=False, default=5)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

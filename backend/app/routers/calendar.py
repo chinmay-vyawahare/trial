@@ -107,7 +107,7 @@ def get_calendar(
         rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
             AhloaUserSkippedPrerequisite.user_id == user_id
         ).all()
-        user_skips = [(r.milestone_key, r.market) for r in rows]
+        user_skips = [(r.milestone_key, r.market, r.area) for r in rows]
 
     filtered_sites = get_calendar_gantt_sites(
         db=db,

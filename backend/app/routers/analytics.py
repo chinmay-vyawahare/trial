@@ -109,7 +109,7 @@ def pending_milestones_auto(
         rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
             AhloaUserSkippedPrerequisite.user_id == user_id
         ).all()
-        user_skips = [(r.milestone_key, r.market) for r in rows]
+        user_skips = [(r.milestone_key, r.market, r.area) for r in rows]
 
     data = get_pending_milestones_auto(
         db, config_db,
@@ -244,7 +244,7 @@ def pending_by_milestone_auto(
         rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
             AhloaUserSkippedPrerequisite.user_id == user_id
         ).all()
-        user_skips = [(r.milestone_key, r.market) for r in rows]
+        user_skips = [(r.milestone_key, r.market, r.area) for r in rows]
 
     data = get_pending_by_milestone_auto(
         db, config_db,
@@ -389,7 +389,7 @@ def drilldown_auto(
         rows = config_db.query(AhloaUserSkippedPrerequisite).filter(
             AhloaUserSkippedPrerequisite.user_id == user_id
         ).all()
-        user_skips = [(r.milestone_key, r.market) for r in rows]
+        user_skips = [(r.milestone_key, r.market, r.area) for r in rows]
 
     sites, blocked = drilldown_sites_auto(
         db, config_db,
