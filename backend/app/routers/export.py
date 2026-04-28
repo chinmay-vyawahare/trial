@@ -39,13 +39,16 @@ def export_gantt_to_csv(
     config_db: Session = Depends(get_config_db),
     sla_type: str = Query("default", description="SLA type to use: 'default' or 'user_based' (requires user_id)"),
     view_type: str = Query("forecast", description="View type: 'forecast' (default) or 'actual'"),
+    project_type: str = Query("macro", description="'macro' (default) or 'ahloa'"),
+    tab: str = Query("construction", description="AHLOA tab: 'construction' or 'survey' (ignored for macro)"),
 ):
     """
     Export gantt chart data as a downloadable CSV file.
 
-    - With user_id: applies that user's saved filters
-    - Without user_id: exports all sites (no filters)
-    - Supports all gantt chart filters (region, market, vendor, etc.)
+    - project_type=macro (default): exports the MACRO gantt.
+    - project_type=ahloa: exports the AHLOA gantt; tab selects construction/survey.
+    - With user_id: applies that user's saved filters.
+    - Without user_id: exports all sites (no filters).
     """
     try:
         csv_content = export_gantt_csv(
@@ -63,13 +66,19 @@ def export_gantt_to_csv(
             status=status,
             sla_type=sla_type,
             view_type=view_type,
+            project_type=project_type,
+            tab=tab,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Failed to export gantt CSV: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate CSV export.")
 
     # Stream the CSV as a downloadable file
-    filename = f"gantt_chart_{user_id}.csv" if user_id else "gantt_chart_all.csv"
+    pt = (project_type or "macro").strip().lower()
+    suffix = pt if pt == "macro" else f"ahloa_{(tab or 'construction').strip().lower()}"
+    filename = f"gantt_chart_{suffix}_{user_id}.csv" if user_id else f"gantt_chart_{suffix}_all.csv"
 
     return StreamingResponse(
         io.StringIO(csv_content),

@@ -20,6 +20,19 @@ from app.services.gantt.service import get_history_gantt
 from app.services.gantt.milestones import get_user_expected_days_overrides
 
 
+def _load_ahloa_user_skips(config_db: Session, user_id: str | None) -> list | None:
+    """Load AHLOA per-user prereq skips, mirroring the gantt route's behavior."""
+    if not user_id:
+        return None
+    from app.models.ahloa import AhloaUserSkippedPrerequisite
+    rows = (
+        config_db.query(AhloaUserSkippedPrerequisite)
+        .filter(AhloaUserSkippedPrerequisite.user_id == user_id)
+        .all()
+    )
+    return [(r.milestone_key, r.market) for r in rows]
+
+
 def _get_user_filters(config_db: Session, user_id: str) -> dict:
     """Load saved filters for a user. Returns dict of filter values."""
     row = config_db.query(UserFilter).filter(UserFilter.user_id == user_id).first()
@@ -68,14 +81,18 @@ def export_gantt_csv(
     status: str | None = None,
     sla_type: str = "default",
     view_type: str = "forecast",
+    project_type: str = "macro",
+    tab: str = "construction",
 ) -> str:
     """
     Build a CSV string of the full gantt chart.
 
+    project_type controls which gantt service is used:
+      - "macro" (default) → MACRO gantt (get_all_sites_gantt).
+      - "ahloa"           → AHLOA gantt; tab="construction" (default) or "survey".
+
     If user_id is provided, applies that user's saved filters (merged with explicit params).
     Otherwise exports all sites with no filters.
-
-    Returns the CSV content as a string.
     """
     # Resolve saved filters (gate-checks like plan_type, dev_initiatives)
     filters = {}
@@ -93,27 +110,60 @@ def export_gantt_csv(
     final_vendor = vendor or filters.get("vendor")
     final_area = area or filters.get("area")
 
-    # Fetch all gantt data (no pagination — full export)
-    sites, total_count, count = get_all_sites_gantt(
-        db,
-        config_db,
-        region=final_region,
-        market=final_market,
-        site_id=final_site_id,
-        vendor=final_vendor,
-        area=final_area,
-        plan_type_include=filters.get("plan_type_include"),
-        regional_dev_initiatives=filters.get("regional_dev_initiatives"),
-        limit=None,
-        offset=None,
-        skipped_keys=skipped_keys,
-        user_expected_days_overrides=user_ed_overrides,
-        consider_vendor_capacity=consider_vendor_capacity,
-        pace_constraint_flag=pace_constraint_flag,
-        user_id=user_id,
-        strict_pace_apply=strict_pace_apply,
-        view_type=view_type,
-    )
+    pt = (project_type or "macro").strip().lower()
+    if pt not in ("macro", "ahloa"):
+        raise ValueError("project_type must be 'macro' or 'ahloa'.")
+
+    if pt == "ahloa":
+        user_skips = _load_ahloa_user_skips(config_db, user_id)
+        if (tab or "construction").strip().lower() == "survey":
+            from app.services.ahloa.gantt_ahloa_scope import get_ahloa_gantt_scope
+            sites, _, _ = get_ahloa_gantt_scope(
+                db=db, config_db=config_db,
+                region=final_region, market=final_market,
+                site_id=final_site_id, vendor=final_vendor, area=final_area,
+                plan_type_include=filters.get("plan_type_include"),
+                regional_dev_initiatives=filters.get("regional_dev_initiatives"),
+                consider_vendor_capacity=consider_vendor_capacity,
+                pace_constraint_flag=pace_constraint_flag,
+                strict_pace_apply=strict_pace_apply,
+                user_id=user_id, user_skips=user_skips,
+            )
+        else:
+            from app.services.ahloa.gantt_ahloa_construction import get_ahloa_gantt
+            sites, _, _ = get_ahloa_gantt(
+                db=db, config_db=config_db,
+                region=final_region, market=final_market,
+                site_id=final_site_id, vendor=final_vendor, area=final_area,
+                plan_type_include=filters.get("plan_type_include"),
+                regional_dev_initiatives=filters.get("regional_dev_initiatives"),
+                consider_vendor_capacity=consider_vendor_capacity,
+                pace_constraint_flag=pace_constraint_flag,
+                strict_pace_apply=strict_pace_apply,
+                user_id=user_id, user_skips=user_skips,
+            )
+    else:
+        # MACRO path
+        sites, _total_count, _count = get_all_sites_gantt(
+            db,
+            config_db,
+            region=final_region,
+            market=final_market,
+            site_id=final_site_id,
+            vendor=final_vendor,
+            area=final_area,
+            plan_type_include=filters.get("plan_type_include"),
+            regional_dev_initiatives=filters.get("regional_dev_initiatives"),
+            limit=None,
+            offset=None,
+            skipped_keys=skipped_keys,
+            user_expected_days_overrides=user_ed_overrides,
+            consider_vendor_capacity=consider_vendor_capacity,
+            pace_constraint_flag=pace_constraint_flag,
+            user_id=user_id,
+            strict_pace_apply=strict_pace_apply,
+            view_type=view_type,
+        )
 
     # Post-filter by status if requested
     if status:
@@ -171,6 +221,8 @@ def _build_csv(sites: list[dict], milestone_names: list[str]) -> str:
         "Vendor",
         "All Prerequisites Complete Date",
         "Forecasted CX Start",
+        "Suggested Forecast CX Start",   # populated only by MACRO actual view
+        "Suggested Comment",             # populated only by MACRO actual view
         "Overall Status",
         "On Track %",
         "Total Milestones",
@@ -217,6 +269,8 @@ def _build_csv(sites: list[dict], milestone_names: list[str]) -> str:
             site.get("vendor_name", ""),
             all_prereq_date,
             site.get("forecasted_cx_start_date", ""),
+            site.get("suggested_forecast_cx_start", "") or "",
+            site.get("suggested_comment", "") or "",
             site.get("overall_status", ""),
             site.get("on_track_pct", ""),
             summary.get("total", ""),
