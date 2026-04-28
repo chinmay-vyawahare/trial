@@ -60,7 +60,13 @@ ConfigBase.metadata.create_all(bind=config_engine, tables=[
 
 init_milestone_data()
 
-app = FastAPI(title="Nokia Schedular App", version="1.0.0")
+from app.core.response import DateFormattedJSONResponse
+
+app = FastAPI(
+    title="Nokia Schedular App",
+    version="1.0.0",
+    default_response_class=DateFormattedJSONResponse,
+)
 
 app.add_middleware(
     CORSMiddleware,
