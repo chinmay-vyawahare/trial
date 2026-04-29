@@ -214,25 +214,33 @@ _AHLOA_SKIP_RULES = """5c. When user asks to REMOVE or DISABLE an AHLOA prerequi
    - Call `get_available_prerequisites` to fetch all AHLOA milestones with their current status.
    - Match the user's request to the correct milestone by name (fuzzy match OK to find it).
    - **CRITICAL: Use the EXACT `key` value from the tool result. Never modify, rename, or guess the key.**
-   - AHLOA supports **market-wise skip**: if the user specifies a market (e.g. "skip NTP for Dallas"),
-     include `"market": "<market_name>"` in the POST body. If the user does NOT mention a market, omit
-     `market` (or send null) so the skip applies to ALL markets for that user.
-     * Before accepting a market value, call `get_available_markets` to validate it exists.
+   - AHLOA supports **geo-scoped skip** at TWO levels: **market** OR **area** (mutually exclusive — only one geo level per skip, never both).
+     * If the user specifies a market (e.g. "skip NTP for Dallas"), include `"market": "<market_name>"` in the POST body.
+       Before accepting a market value, call `get_available_markets` to validate it exists.
+     * If the user specifies an area (e.g. "skip NTP for Urban area"), include `"area": "<area_name>"` in the POST body.
+       Before accepting an area value, call `get_available_areas` to validate it exists.
+     * If the user mentions BOTH a market and an area, ask them to pick ONE — the API rejects skips that set both.
+     * If the user does NOT mention either, omit both (or send null for both) so the skip applies GLOBALLY (all markets and areas).
+   - When ambiguous wording could mean market or area (e.g. "for Dallas"), prefer the value tool that resolves it: try `get_available_markets` first; if not found, try `get_available_areas`. If still not found, ask the user to clarify.
    - If the milestone is already removed for that scope, inform the user.
    - If not removed, return a POST action:
-     Example (all markets): {{"message": "Removing 'NTP' prerequisite for all markets. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}]}}
-     Example (one market): {{"message": "Removing 'NTP' prerequisite for market 'Dallas'.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp", "market": "Dallas"}}}}]}}
+     Example (global / all markets+areas): {{"message": "Removing 'NTP' prerequisite globally. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}]}}
+     Example (market-scoped): {{"message": "Removing 'NTP' prerequisite for market 'Dallas'.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp", "market": "Dallas"}}}}]}}
+     Example (area-scoped): {{"message": "Removing 'NTP' prerequisite for area 'Urban'.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp", "area": "Urban"}}}}]}}
 
 5d. When user asks to ADD or ENABLE an AHLOA prerequisite, or asks which prerequisites are removed/disabled:
    - The user may say "add", "enable", "unskip", or similar words.
    - Call `get_available_prerequisites` to fetch current status.
    - **CRITICAL: Always use the EXACT `key` from the tool result.**
-   - To enable for a specific market, append `&market=<name>` to the DELETE URL.
-   - To enable the all-markets entry, do NOT append a `market` query param.
+   - The DELETE URL geo scope must match how the skip was created — pass at most ONE of `market` / `area` (never both):
+     * To enable for a specific market, append `&market=<name>` to the DELETE URL.
+     * To enable for a specific area, append `&area=<name>` to the DELETE URL.
+     * To enable the global (no-geo) entry, do NOT append `market` or `area`.
      Example (market-scoped): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa&market=Dallas", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
-     Example (all markets): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
-   - To enable all for the user: {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>?project_type=ahloa", "params": {{"user_id": "<actual_user_id>"}}}}
-   - To list removed/disabled: show them in the message with empty actions.
+     Example (area-scoped): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa&area=Urban", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
+     Example (global): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
+   - To enable all for the user (across markets AND areas): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>?project_type=ahloa", "params": {{"user_id": "<actual_user_id>"}}}}
+   - To list removed/disabled: show them in the message with empty actions, including the geo scope (market/area/global) for each.
 """
 
 MAX_TOOL_ROUNDS = 7
@@ -309,29 +317,35 @@ def _exec_get_available_prerequisites(
             .all()
         )
 
-        skipped_entries: list[tuple[str, str | None]] = []
+        skipped_entries: list[tuple[str, str | None, str | None]] = []
         if user_id:
             rows = (
                 db.query(
                     AhloaUserSkippedPrerequisite.milestone_key,
                     AhloaUserSkippedPrerequisite.market,
+                    AhloaUserSkippedPrerequisite.area,
                 )
                 .filter(AhloaUserSkippedPrerequisite.user_id == user_id)
                 .all()
             )
-            skipped_entries = [(r[0], r[1]) for r in rows]
+            skipped_entries = [(r[0], r[1], r[2]) for r in rows]
 
-        skipped_keys_any = {k for k, _ in skipped_entries}
-        skipped_by_key: dict[str, list[str | None]] = {}
-        for k, m in skipped_entries:
-            skipped_by_key.setdefault(k, []).append(m)
+        skipped_keys_any = {k for k, _, _ in skipped_entries}
+        skipped_scopes_by_key: dict[str, list[dict]] = {}
+        for k, m, a in skipped_entries:
+            scope = (
+                {"scope": "market", "market": m} if m
+                else {"scope": "area", "area": a} if a
+                else {"scope": "global"}
+            )
+            skipped_scopes_by_key.setdefault(k, []).append(scope)
 
         return [
             {
                 "key": ms.key,
                 "name": ms.name,
                 "is_skipped": ms.key in skipped_keys_any,
-                "skipped_markets": skipped_by_key.get(ms.key, []),
+                "skipped_scopes": skipped_scopes_by_key.get(ms.key, []),
             }
             for ms in milestones
         ]

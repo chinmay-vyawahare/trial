@@ -71,29 +71,31 @@ _AHLOA_SKIP_REGISTRY = {
     "skip_prerequisite": {
         "method": "POST",
         "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa",
-        "description": "Remove/disable an AHLOA prerequisite milestone for a user. Optional market param scopes the skip to a specific market; null/omitted means the skip applies to all markets.",
+        "description": "Remove/disable an AHLOA prerequisite milestone for a user. Optional market OR area param scopes the skip to a specific geo level (only ONE of market/area may be set per skip — never both). Null/omitted on both means the skip applies globally (all markets and areas).",
         "params": {
             "user_id": "string — required",
             "milestone_key": "string — required, the key of the milestone to remove/disable",
-            "market": "string | null — optional, scope the skip to one market; null = all markets",
+            "market": "string | null — optional, scope the skip to one market; mutually exclusive with area",
+            "area": "string | null — optional, scope the skip to one area; mutually exclusive with market",
         },
     },
     "unskip_prerequisite": {
         "method": "DELETE",
         "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}/{milestone_key}?project_type=ahloa",
-        "description": "Add/enable a previously removed AHLOA prerequisite milestone for a user. Append &market=<name> to unskip a market-scoped entry; omit it to unskip the all-markets entry.",
+        "description": "Add/enable a previously removed AHLOA prerequisite milestone for a user. Append &market=<name> to unskip a market-scoped entry, &area=<name> to unskip an area-scoped entry, or neither to unskip the global entry. Only ONE of market/area may be supplied.",
         "pathparams": {
             "user_id": "string — path param",
             "milestone_key": "string — path param",
         },
         "params": {
-            "market": "string | null — optional query param; omit to unskip the all-markets entry",
+            "market": "string | null — optional query param; mutually exclusive with area",
+            "area": "string | null — optional query param; mutually exclusive with market",
         },
     },
     "unskip_all_prerequisites": {
         "method": "DELETE",
         "endpoint": "/api/v1/schedular/skip-prerequisites/{user_id}?project_type=ahloa",
-        "description": "Add/enable all removed AHLOA prerequisites for a user (across all markets).",
+        "description": "Add/enable all removed AHLOA prerequisites for a user (across all markets and areas).",
         "params": {"user_id": "string — path param"},
     },
 }
