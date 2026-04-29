@@ -215,29 +215,41 @@ _AHLOA_SKIP_RULES = """5c. When user asks to REMOVE or DISABLE an AHLOA prerequi
    - Match the user's request to the correct milestone by name (fuzzy match OK to find it).
    - **CRITICAL: Use the EXACT `key` value from the tool result. Never modify, rename, or guess the key.**
    - AHLOA supports **geo-scoped skip** at TWO levels: **market** OR **area** (mutually exclusive — only one geo level per skip, never both).
-     * If the user specifies a market (e.g. "skip NTP for Dallas"), include `"market": "<market_name>"` in the POST body.
-       Before accepting a market value, call `get_available_markets` to validate it exists.
-     * If the user specifies an area (e.g. "skip NTP for Urban area"), include `"area": "<area_name>"` in the POST body.
-       Before accepting an area value, call `get_available_areas` to validate it exists.
-     * If the user mentions BOTH a market and an area, ask them to pick ONE — the API rejects skips that set both.
-     * If the user does NOT mention either, omit both (or send null for both) so the skip applies GLOBALLY (all markets and areas).
-   - When ambiguous wording could mean market or area (e.g. "for Dallas"), prefer the value tool that resolves it: try `get_available_markets` first; if not found, try `get_available_areas`. If still not found, ask the user to clarify.
+
+   **MANDATORY GEO VALIDATION (do this BEFORE generating any skip action):**
+   Whenever the user mentions a place name (e.g. "for dallas", "for tx", "in chicago"):
+     1. ALWAYS call `get_available_markets` AND `get_available_areas` to fetch the canonical lists from the DB. Never trust the user's wording as-is — even for plain-looking names.
+     2. Find the canonical match using case-insensitive comparison and common-sense fuzzy matching (e.g. "dallas" → "Dallas", "tx" → "TX", "newyork" → "New York", "chgo" → "Chicago").
+     3. Decide the geo level from where the match was found:
+        - Match found in markets list → it is a MARKET → put it in the `market` param.
+        - Match found in areas list → it is an AREA → put it in the `area` param.
+        - Match found in BOTH lists → ask the user to clarify which level they meant.
+        - Match found in NEITHER list → DO NOT generate an action. Reply with the available markets and areas and ask the user to pick a valid one.
+     4. **In the POST body / DELETE query, use the EXACT canonical string from the DB list — never the user's typed form.** For example if user says "dallas" and the DB has "Dallas", the action MUST contain `"market": "Dallas"` (not "dallas").
+     5. **Clarify in the human-readable `message` whenever the canonical value differs from what the user typed**, in the form: "You mentioned '<what user typed>' — I matched that to the <market/area> '<canonical DB value>'. Removing/Enabling …". This way the user can confirm or correct.
+
+   - If user mentions BOTH a market and an area, ask them to pick ONE — the API rejects skips that set both.
+   - If user does NOT mention either, omit both (skip applies GLOBALLY across all markets and areas).
    - If the milestone is already removed for that scope, inform the user.
    - If not removed, return a POST action:
-     Example (global / all markets+areas): {{"message": "Removing 'NTP' prerequisite globally. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}]}}
-     Example (market-scoped): {{"message": "Removing 'NTP' prerequisite for market 'Dallas'.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp", "market": "Dallas"}}}}]}}
-     Example (area-scoped): {{"message": "Removing 'NTP' prerequisite for area 'Urban'.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp", "area": "Urban"}}}}]}}
+     Example (global): {{"message": "Removing 'NTP' prerequisite globally. Downstream milestones will recalculate.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}]}}
+     Example (canonical match — no user mismatch): {{"message": "Removing 'NTP' prerequisite for market 'Dallas'.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp", "market": "Dallas"}}}}]}}
+     Example (user typed differently from DB): user says "skip NTP for dallas" — DB has "Dallas". Response: {{"message": "You mentioned 'dallas' — I matched that to the market 'Dallas'. Removing 'NTP' prerequisite for market 'Dallas'.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp", "market": "Dallas"}}}}]}}
+     Example (area-scoped with mismatch): user says "skip NTP for tx" — DB has "TX". Response: {{"message": "You mentioned 'tx' — I matched that to the area 'TX'. Removing 'NTP' prerequisite for area 'TX'.", "actions": [{{"method": "POST", "endpoint": "/api/v1/schedular/skip-prerequisites?project_type=ahloa", "params": {{"user_id": "<actual_user_id>", "milestone_key": "ntp", "area": "TX"}}}}]}}
+     Example (invalid name): user says "skip NTP for Atlantis" — not in markets or areas. Response: {{"message": "I couldn't find 'Atlantis' in the available markets or areas. Available markets: Atlanta, Chicago, Dallas, Denver, Detroit, Houston, Los Angeles, New York. Available areas: CA, CO, GA, IL, MI, NY, PA, TX. Which one did you mean?", "actions": []}}
 
 5d. When user asks to ADD or ENABLE an AHLOA prerequisite, or asks which prerequisites are removed/disabled:
    - The user may say "add", "enable", "unskip", or similar words.
    - Call `get_available_prerequisites` to fetch current status.
    - **CRITICAL: Always use the EXACT `key` from the tool result.**
+   - **The same MANDATORY GEO VALIDATION from rule 5c applies here too**: if the user mentions a place name, call `get_available_markets` and `get_available_areas`, find the canonical match, decide the level, use the EXACT canonical DB value in the URL, and clarify in the message if the user's wording differed from the canonical value.
    - The DELETE URL geo scope must match how the skip was created — pass at most ONE of `market` / `area` (never both):
-     * To enable for a specific market, append `&market=<name>` to the DELETE URL.
-     * To enable for a specific area, append `&area=<name>` to the DELETE URL.
+     * To enable for a specific market, append `&market=<canonical_market>` to the DELETE URL.
+     * To enable for a specific area, append `&area=<canonical_area>` to the DELETE URL.
      * To enable the global (no-geo) entry, do NOT append `market` or `area`.
-     Example (market-scoped): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa&market=Dallas", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
-     Example (area-scoped): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa&area=Urban", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
+     Example (canonical match): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa&market=Dallas", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
+     Example (user typed "dallas", DB "Dallas"): {{"message": "You mentioned 'dallas' — I matched that to the market 'Dallas'. Re-enabling 'NTP' for market 'Dallas'.", "actions": [{{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa&market=Dallas", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}]}}
+     Example (area-scoped): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa&area=TX", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
      Example (global): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>/ntp?project_type=ahloa", "pathparams": {{"user_id": "<actual_user_id>", "milestone_key": "ntp"}}}}
    - To enable all for the user (across markets AND areas): {{"method": "DELETE", "endpoint": "/api/v1/schedular/skip-prerequisites/<user_id>?project_type=ahloa", "params": {{"user_id": "<actual_user_id>"}}}}
    - To list removed/disabled: show them in the message with empty actions, including the geo scope (market/area/global) for each.
