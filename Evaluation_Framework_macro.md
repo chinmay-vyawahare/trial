@@ -3,22 +3,22 @@
 
 Every macro site is graded against the same fixed catalog of 14 milestones, stored in `milestone_definitions` and `milestone_columns`. Order, owners, durations, and dependencies are admin‑configurable.
 
-| # | Milestone | Owner | Phase | Duration (days) | Depends on |
-|---|---|---|---|---|---|
-| 1 | Entitlement Complete (MS 3710) | TMO | Pre‑Con | 0 | — (root) |
-| 2 | Pre‑NTP Document Received (MS 1310) | Proj Ops | Pre‑Con | 2 | 3710 |
-| 3 | Site Walk Performed | CM | Pre‑Con | 7 | 1310 |
-| 4 | Ready for Scoping (MS 1323) | SE‑CoE | Pre‑Con | 3 | Site Walk |
-| 5 | Scoping Validated by GC (MS 1327) | SE‑CoE | Scoping | 7 | 1323 |
-| 6 | BOM in BAT (MS 3850) | TMO | Scoping | max of parents | 3710 + 1327 |
-| 7 | Quote Submitted to Customer | PM | Scoping | 7 | 1327 |
-| 8 | BOM Received in AIMS (MS 3875) | TMO | Material & NTP | 21 | 3850 |
-| 9 | CPO Available | TMO | Material & NTP | 14 (text) | Quote |
-| 10 | SPO Issued (MS 1555) | PDM | Material & NTP | 2 | CPO |
-| 11 | Steel Received (if applicable) | GC | Material & NTP | 14 (date + status) | 1327 |
-| 12 | Material Pickup by GC (MS 3925) | GC | Material & NTP | 5 | 3875 |
-| 13 | NTP Received (MS 1407) | TMO | Material & NTP | 7 | 1327 |
-| 14 | Access Confirmation (MS 4000) | CM | Material & NTP | 7 (text) | 1327 |
+| # | Milestone | Owner | Phase | Duration (days) | Back Days (Actual view) | Depends on |
+|---|---|---|---|---|---|---|
+| 1 | Entitlement Complete (MS 3710) | TMO | Pre‑Con | 0 | 49 | — (root) |
+| 2 | Pre‑NTP Document Received (MS 1310) | Proj Ops | Pre‑Con | 2 | 47 | 3710 |
+| 3 | Site Walk Performed | CM | Pre‑Con | 7 | 40 | 1310 |
+| 4 | Ready for Scoping (MS 1323) | SE‑CoE | Pre‑Con | 3 | 37 | Site Walk |
+| 5 | Scoping Validated by GC (MS 1327) | SE‑CoE | Scoping | 7 | 30 | 1323 |
+| 6 | BOM in BAT (MS 3850) | TMO | Scoping | max of parents | 30 | 3710 + 1327 |
+| 7 | Quote Submitted to Customer | PM | Scoping | 7 | 21 | 1327 |
+| 8 | BOM Received in AIMS (MS 3875) | TMO | Material & NTP | 21 | 9 | 3850 |
+| 9 | CPO Available | TMO | Material & NTP | 14 (text) | 7 | Quote |
+| 10 | SPO Issued (MS 1555) | PDM | Material & NTP | 2 | 5 | CPO |
+| 11 | Steel Received (if applicable) | GC | Material & NTP | 14 (date + status) | 7 | 1327 |
+| 12 | Material Pickup by GC (MS 3925) | GC | Material & NTP | 5 | 4 | 3875 |
+| 13 | NTP Received (MS 1407) | TMO | Material & NTP | 7 | 7 | 1327 |
+| 14 | Access Confirmation (MS 4000) | CM | Material & NTP | 7 (text) | 7 | 1327 |
 
 Five milestones (3925, Steel, 1555, 4000, 1407) are **tails** — their finish dates plus a per‑tail buffer (4 / 7 / 5 / 7 / 7) feed the Forecasted CX Start. A further global **4‑day** buffer (`gantt_config.CX_START_OFFSET_DAYS`) is added on top. CPO and Access Confirmation are text‑presence checks; Steel is a date + status check (status `A` uses the date, `N` / blank auto‑skips).
 
